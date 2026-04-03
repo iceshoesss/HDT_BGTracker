@@ -23,10 +23,6 @@ namespace HDT_BGTracker
             _tracker = new RatingTracker();
             _overlay = new LobbyOverlay();
             _tracker.SetOverlay(_overlay);
-
-            // 将 overlay 添加到 HDT 的覆盖层
-            Core.OverlayWindow.Children.Add(_overlay);
-
             _tracker.Start();
             CreateMenuItem();
         }
@@ -36,11 +32,8 @@ namespace HDT_BGTracker
             _tracker?.Stop();
             _tracker = null;
 
-            if (_overlay != null)
-            {
-                Core.OverlayWindow.Children.Remove(_overlay);
-                _overlay = null;
-            }
+            _overlay?.Cleanup();
+            _overlay = null;
         }
 
         public void OnUpdate()
