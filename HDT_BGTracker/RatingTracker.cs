@@ -261,37 +261,61 @@ namespace HDT_BGTracker
                 var entities = Core.Game?.Entities?.Values;
                 if (entities == null) { Log("Entities 为 null"); return; }
 
-                var seen = new System.Collections.Generic.HashSet<int>();
+                var seen = new System.Collections.Generic.HashSet<string>();
                 foreach (var e in entities)
                 {
                     try
                     {
                         string name = e.Name;
                         if (string.IsNullOrEmpty(name)) continue;
-                        if (seen.Contains(e.EntityId)) continue;
+                        if (seen.Contains(name)) continue;
                         if (name == "调酒师鲍勃") continue;
 
-                        // 检查是否是 PLAYER_IDENTITY（GameTag 271）
-                        bool isIdentity = false;
-                        try
+                        // 用反射安全读取属性
+                        var type = e.GetType();
+
+                        string entityId = "";
+                        var idProp = type.GetProperty("Id");
+                        if (idProp != null) entityId = idProp.GetValue(e)?.ToString() ?? "";
+
+                        string isLocal = "";
+                        var localProp = type.GetProperty("IsLocalPlayer");
+                        if (localProp != null)
                         {
-                            // Entity.GetTag(GameTag.PLAYER_IDENTITY)
-                            var getTagMethod = e.GetType().GetMethod("GetTag",
-                                new[] { typeof(HearthDb.Enums.GameTag) });
-                            if (getTagMethod != null)
+                            var val = localProp.GetValue(e);
+                            if (val is bool b && b) isLocal = " [LOCAL]";
+                        }
+
+                        // 检查 Tags 字典里是否有 PLAYER_IDENTITY (271)
+                        string identity = "";
+                        var tagsProp = type.GetProperty("Tags");
+                        if (tagsProp != null)
+                        {
+                            var tags = tagsProp.GetValue(e);
+                            if (tags != null)
                             {
-                                var val = getTagMethod.Invoke(e, new object[] { (HearthDb.Enums.GameTag)271 });
-                                if (val is int i && i > 0) isIdentity = true;
+                                // 用反射找 TryGetValue(object, out int) 重载
+                                var tryGet = tags.GetType().GetMethod("TryGetValue");
+                                if (tryGet != null)
+                                {
+                                    // 传入整数 271 作为 key（PLAYER_IDENTITY）
+                                    var keyType = tryGet.GetParameters()[0].ParameterType;
+                                    object key = keyType.IsEnum ? Enum.ToObject(keyType, 271) : (object)271;
+                                    object[] args = { key, 0 };
+                                    var found = tryGet.Invoke(tags, args);
+                                    if (found is bool ok && ok && (int)args[1] > 0)
+                                        identity = " [IDENTITY]";
+                                }
                             }
                         }
-                        catch { }
 
-                        string local = e.IsLocalPlayer ? " [LOCAL]" : "";
-                        string idTag = isIdentity ? " [IDENTITY]" : "";
-                        Log($"  {name}{local}{idTag} entityId={e.EntityId}");
-                        seen.Add(e.EntityId);
+                        Log($"  {name}{isLocal}{identity} id={entityId}");
+                        seen.Add(name);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        Log($"  实体遍历异常: {ex.Message}");
+                    }
                 }
             }
             catch (Exception ex)
