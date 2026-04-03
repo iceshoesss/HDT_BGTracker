@@ -8,6 +8,7 @@
 - ✅ 玩家 ID 获取（`Player.Name`，游戏开始 3 秒后缓存）
 - ✅ 对手 ID 获取（`BattlegroundsLobbyInfo.Players`，排除自己）
 - ✅ MongoDB 上传（rating + mode + region）
+- ✅ 浮动面板显示玩家名字+序号（LobbyOverlay）
 - MongoDB 连接: `mongodb://192.168.31.2:27017`
 - 数据库: `hearthstone`, 集合: `bg_ratings`
 
@@ -32,6 +33,19 @@
 - 自己的 Name 格式带 BattleTag 号（如 `南怀北瑾丨少头脑`），`Player.Name` 也类似但完整格式不同
 - 需要在 csproj 中添加 `HearthMirror.dll` 引用，否则编译报错（`BattlegroundsLobbyInfo` 类型在 HearthMirror 程序集中定义）
 
+### HDT Overlay API
+- 添加覆盖层元素：`Core.OverlayCanvas.Children.Add(element)`（`OverlayCanvas` 是 `Canvas` 类型）
+- 移除：`Core.OverlayCanvas.Children.Remove(element)`
+- 鼠标事件穿透控制：`OverlayExtensions.SetIsOverlayHitTestVisible(element, true)`（需要 `using Hearthstone_Deck_Tracker.Utility.Extensions`）
+- `Core.OverlayWindow` 是 `Window` 类型，没有 `Children` 属性，不能直接添加子元素
+- 参考项目：[HDT_BGrank](https://github.com/IBM5100o/HDT_BGrank)
+
+### net472 SDK 项目 WPF 限制
+- `net472` SDK-style 项目**不支持** `<UseWPF>true</UseWPF>`（仅 .NET Core 3.0+ 支持）
+- XAML 编译（`<Page>` + `InitializeComponent`）在 net472 SDK 项目中**无法正常工作**
+- **解决方案**：纯 C# 代码创建 WPF UI，不用 XAML（`new TextBlock()`, `new Grid()` 等）
+- 需要手动添加 `<Reference Include="System.Xaml">` 引用（`UserControl` 依赖此程序集）
+
 ## 修改历史（claw_version 分支）
 
 1. **初始修复** - 尝试从 `AccountInfo` / `Config` 获取 BattleTag
@@ -46,10 +60,14 @@
 8. **回撤调试代码** - 重置到 547a4a4 稳定版本，移除所有调试方法
 9. **LogLobbyPlayers** - 在获取 PlayerId 后，从 `BattlegroundsLobbyInfo` 输出 lobby 玩家名单日志（仅名字）
 10. **添加 HearthMirror 引用** - csproj 中添加 `HearthMirror.dll` 引用，解决 `BattlegroundsLobbyInfo` 类型编译错误
+11. **LobbyOverlay 浮动面板** - 参考 BGrank 插件，用纯 C# 代码创建 WPF 浮动面板，显示玩家名字+序号
+    - 第一版用 XAML：net472 SDK 项目无法编译 XAML（`InitializeComponent` 不存在）
+    - 第二版用 `Core.OverlayWindow.Children`：`OverlayWindow` 没有 `Children` 属性
+    - 最终：纯代码创建 UI + `Core.OverlayCanvas.Children.Add()`，成功编译运行
 
 ## 下一步工作
 1. 将 lobby 玩家名单上传到 MongoDB（opponents 数组）
-2. 清理调试日志，保留关键信息
+2. 后续获取真实分数后替换序号显示
 
 ## 编译方法
 ```cmd
