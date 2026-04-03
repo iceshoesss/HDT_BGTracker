@@ -5,8 +5,9 @@
 
 ## 当前状态
 - ✅ 分数获取正常
-- ✅ 玩家 ID 获取已修复（`Player.Name`）
-- ⏳ 对手 ID 获取待实现
+- ✅ 玩家 ID 获取（`Player.Name`，游戏开始 3 秒后缓存）
+- ✅ 对手 ID 获取（`BattlegroundsLobbyInfo.Players`，排除自己）
+- ✅ MongoDB 上传（rating + mode + region）
 - MongoDB 连接: `mongodb://192.168.31.2:27017`
 - 数据库: `hearthstone`, 集合: `bg_ratings`
 
@@ -24,11 +25,12 @@
 
 **当前方案**：检测到酒馆战棋游戏开始后，等 3 秒读取 `Player.Name` 并缓存，游戏结束后用缓存值上传。
 
-### 对手 ID 获取（待实现）
-- 酒馆战棋有 7 个对手轮换
-- `Core.Game.Opponent.Name` 返回 `调酒师鲍勃`（NPC，非真人对手）
-- 需要遍历游戏实体找其他玩家的 BattleTag
-- 参考调试方法：遍历 `Core.Game.Entities.Values`，筛选非本地玩家、非 NPC 的 `PLAYER_IDENTITY` 实体
+### 对手 ID 获取
+- `Core.Game.MetaData.BattlegroundsLobbyInfo` 在游戏加载后可用（不是立即可用，需要等待）
+- `BattlegroundsLobbyInfo.Players` 返回 8 个玩家（含自己），每个有 `Name` 和 `AccountId`
+- `heroCardId` 通常为空字符串（LobbyInfo 不包含英雄选择信息）
+- 自己的 Name 格式带 BattleTag 号（如 `南怀北瑾丨少头脑`），`Player.Name` 也类似但完整格式不同
+- 需要在 csproj 中添加 `HearthMirror.dll` 引用，否则编译报错（`BattlegroundsLobbyInfo` 类型在 HearthMirror 程序集中定义）
 
 ## 修改历史（claw_version 分支）
 
@@ -40,11 +42,14 @@
 4. **5 秒轮询** - 每 5 秒读一次 `Player.Name`，成功获取到 ID
 5. **简化为游戏开始读取** - 改为进入游戏时读一次
 6. **添加 3 秒延迟** - 进入游戏后 Player.Name 需要初始化时间
+7. **对手 ID 调试** - 通过 DumpAllPlayers / DumpBGLobbyInfo 等调试方法，发现 `BattlegroundsLobbyInfo.Players` 可获取所有玩家名字
+8. **回撤调试代码** - 重置到 547a4a4 稳定版本，移除所有调试方法
+9. **LogLobbyPlayers** - 在获取 PlayerId 后，从 `BattlegroundsLobbyInfo` 输出 lobby 玩家名单日志（仅名字）
+10. **添加 HearthMirror 引用** - csproj 中添加 `HearthMirror.dll` 引用，解决 `BattlegroundsLobbyInfo` 类型编译错误
 
 ## 下一步工作
-1. 实现对手 ID 获取（遍历游戏实体）
-2. 将对手信息也上传到 MongoDB
-3. 清理调试日志，保留关键信息
+1. 将 lobby 玩家名单上传到 MongoDB（opponents 数组）
+2. 清理调试日志，保留关键信息
 
 ## 编译方法
 ```cmd
