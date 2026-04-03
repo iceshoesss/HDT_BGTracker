@@ -8,6 +8,7 @@
     <LangVersion>8.0</LangVersion>
     <Version>1.0.0</Version>
     <Description>酒馆战棋分数记录插件</Description>
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <!-- HDT 引用：编译时从本地 HDT 目录引用，不复制到输出 -->

@@ -22,6 +22,7 @@ namespace HDT_BGTracker
         private DateTime _bgGameStartTime = DateTime.MinValue;
         private static readonly TimeSpan IdReadDelay = TimeSpan.FromSeconds(3);
         private bool _lobbyLogged;
+        private LobbyOverlay _overlay;
 
         private MongoDB.Driver.MongoClient _mongoClient;
         private MongoDB.Driver.IMongoCollection<MongoDB.Bson.BsonDocument> _collection;
@@ -56,7 +57,13 @@ namespace HDT_BGTracker
             _enabled = false;
             _mongoClient = null;
             _collection = null;
+            _overlay = null;
             Log("插件已停止");
+        }
+
+        public void SetOverlay(LobbyOverlay overlay)
+        {
+            _overlay = overlay;
         }
 
         /// <summary>
@@ -112,6 +119,7 @@ namespace HDT_BGTracker
                     _cachedPlayerId = null;
                     _bgGameStartTime = DateTime.MinValue;
                     _lobbyLogged = false;
+                    _overlay?.Hide();
                 }
             }
             catch (Exception ex)
@@ -263,11 +271,23 @@ namespace HDT_BGTracker
 
                 string gameUuid = lobbyInfo.GameUuid ?? "";
                 Log($"GameUuid: {gameUuid}");
+
+                // 构建 overlay 显示文本
+                string displayText = "";
                 for (int i = 0; i < players.Count; i++)
                 {
-                    Log($"[{i}] {players[i].Name}");
+                    string name = players[i].Name;
+                    Log($"[{i}] {name}");
+                    displayText += $"\n{name} {i}";
                 }
                 Log($"共 {players.Count} 个玩家");
+
+                // 显示 overlay
+                if (_overlay != null && !string.IsNullOrEmpty(displayText))
+                {
+                    _overlay.DisplayResult(displayText);
+                }
+
                 _lobbyLogged = true;
             }
             catch (Exception ex)
