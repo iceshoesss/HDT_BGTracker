@@ -21,6 +21,8 @@ namespace HDT_BGTracker
         private string _cachedPlayerId;
         private DateTime _bgGameStartTime = DateTime.MinValue;
         private static readonly TimeSpan IdReadDelay = TimeSpan.FromSeconds(3);
+        private DateTime _lastEntityDump = DateTime.MinValue;
+        private static readonly TimeSpan EntityDumpInterval = TimeSpan.FromSeconds(5);
 
         private MongoDB.Driver.MongoClient _mongoClient;
         private MongoDB.Driver.IMongoCollection<MongoDB.Bson.BsonDocument> _collection;
@@ -85,6 +87,13 @@ namespace HDT_BGTracker
                     {
                         _cachedPlayerId = GetPlayerId();
                     }
+
+                    // 每5秒 dump 所有玩家实体信息
+                    if (DateTime.Now - _lastEntityDump >= EntityDumpInterval)
+                    {
+                        _lastEntityDump = DateTime.Now;
+                        DumpAllPlayers();
+                    }
                 }
                 else if (_wasInBgGame && Core.Game.IsInMenu && !_ratingUploaded)
                 {
@@ -104,6 +113,7 @@ namespace HDT_BGTracker
                     _gameEndTime = DateTime.MinValue;
                     _cachedPlayerId = null;
                     _bgGameStartTime = DateTime.MinValue;
+                    _lastEntityDump = DateTime.MinValue;
                 }
             }
             catch (Exception ex)
@@ -241,6 +251,53 @@ namespace HDT_BGTracker
 
             Log("GetPlayerId: 未找到有效 ID");
             return "unknown";
+        }
+
+        private void DumpAllPlayers()
+        {
+            Log("--- DumpAllPlayers ---");
+            try
+            {
+                var entities = Core.Game?.Entities?.Values;
+                if (entities == null) { Log("Entities 为 null"); return; }
+
+                var seen = new System.Collections.Generic.HashSet<int>();
+                foreach (var e in entities)
+                {
+                    try
+                    {
+                        string name = e.Name;
+                        if (string.IsNullOrEmpty(name)) continue;
+                        if (seen.Contains(e.EntityId)) continue;
+                        if (name == "调酒师鲍勃") continue;
+
+                        // 检查是否是 PLAYER_IDENTITY（GameTag 271）
+                        bool isIdentity = false;
+                        try
+                        {
+                            // Entity.GetTag(GameTag.PLAYER_IDENTITY)
+                            var getTagMethod = e.GetType().GetMethod("GetTag",
+                                new[] { typeof(HearthDb.Enums.GameTag) });
+                            if (getTagMethod != null)
+                            {
+                                var val = getTagMethod.Invoke(e, new object[] { (HearthDb.Enums.GameTag)271 });
+                                if (val is int i && i > 0) isIdentity = true;
+                            }
+                        }
+                        catch { }
+
+                        string local = e.IsLocalPlayer ? " [LOCAL]" : "";
+                        string idTag = isIdentity ? " [IDENTITY]" : "";
+                        Log($"  {name}{local}{idTag} entityId={e.EntityId}");
+                        seen.Add(e.EntityId);
+                    }
+                    catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"DumpAllPlayers 异常: {ex.Message}");
+            }
         }
 
         private string GetRegion()
