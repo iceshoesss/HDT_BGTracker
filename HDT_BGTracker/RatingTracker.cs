@@ -189,48 +189,7 @@ namespace HDT_BGTracker
         {
             try
             {
-                // 方法1：从 AccountInfo 获取 BattleTag（最可靠）
-                // 兼容不同 HDT 版本，用反射安全访问
-                try
-                {
-                    var accountInfo = Core.Game?.AccountInfo;
-                    if (accountInfo != null)
-                    {
-                        // 尝试 BattleTag 属性
-                        var btProp = accountInfo.GetType().GetProperty("BattleTag");
-                        if (btProp != null)
-                        {
-                            var btVal = btProp.GetValue(accountInfo);
-                            if (btVal != null)
-                            {
-                                string btStr = btVal.ToString();
-                                if (!string.IsNullOrEmpty(btStr) && btStr != "-1")
-                                {
-                                    Log($"GetPlayerId: AccountInfo.BattleTag = {btStr}");
-                                    return btStr;
-                                }
-                            }
-                        }
-
-                        // 尝试直接 Name 属性
-                        var nameProp = accountInfo.GetType().GetProperty("Name");
-                        if (nameProp != null)
-                        {
-                            string nameVal = nameProp.GetValue(accountInfo)?.ToString();
-                            if (!string.IsNullOrEmpty(nameVal) && nameVal != "-1")
-                            {
-                                Log($"GetPlayerId: AccountInfo.Name = {nameVal}");
-                                return nameVal;
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log($"GetPlayerId: AccountInfo 读取失败: {ex.Message}");
-                }
-
-                // 方法2：从 Config.Instance 获取 BattleTag（全限定名避免 Core 歧义）
+                // 方法1：从 Config.Instance 获取 BattleTag
                 try
                 {
                     var configType = typeof(Hearthstone_Deck_Tracker.Config);
@@ -253,7 +212,7 @@ namespace HDT_BGTracker
                                 }
                             }
 
-                            // 尝试 AccountName / PlayerName
+                            // 尝试 AccountName / PlayerName / HearthstoneAccount
                             string[] configCandidates = { "AccountName", "PlayerName", "HearthstoneAccount" };
                             foreach (var cName in configCandidates)
                             {
@@ -274,7 +233,7 @@ namespace HDT_BGTracker
                     Log($"GetPlayerId: Config 读取失败: {ex.Message}");
                 }
 
-                // 方法3：从 Core.Game.Player 兜底（列出属性便于调试）
+                // 方法2：从 Core.Game.Player 兜底（列出属性便于调试）
                 var player = Core.Game?.Player;
                 if (player != null)
                 {
