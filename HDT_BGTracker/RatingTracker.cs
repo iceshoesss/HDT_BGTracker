@@ -21,8 +21,7 @@ namespace HDT_BGTracker
         private string _cachedPlayerId;
         private DateTime _bgGameStartTime = DateTime.MinValue;
         private static readonly TimeSpan IdReadDelay = TimeSpan.FromSeconds(3);
-        private DateTime _lastEntityDump = DateTime.MinValue;
-        private static readonly TimeSpan EntityDumpInterval = TimeSpan.FromSeconds(5);
+        private bool _lobbyLogged;
 
         private MongoDB.Driver.MongoClient _mongoClient;
         private MongoDB.Driver.IMongoCollection<MongoDB.Bson.BsonDocument> _collection;
@@ -88,11 +87,10 @@ namespace HDT_BGTracker
                         _cachedPlayerId = GetPlayerId();
                     }
 
-                    // 每5秒 dump 所有玩家实体信息
-                    if (DateTime.Now - _lastEntityDump >= EntityDumpInterval)
+                    // PlayerId 获取后，尝试输出 lobby 玩家名单
+                    if (!string.IsNullOrEmpty(_cachedPlayerId) && _cachedPlayerId != "unknown" && !_lobbyLogged)
                     {
-                        _lastEntityDump = DateTime.Now;
-                        DumpAllPlayers();
+                        LogLobbyPlayers();
                     }
                 }
                 else if (_wasInBgGame && Core.Game.IsInMenu && !_ratingUploaded)
@@ -113,7 +111,7 @@ namespace HDT_BGTracker
                     _gameEndTime = DateTime.MinValue;
                     _cachedPlayerId = null;
                     _bgGameStartTime = DateTime.MinValue;
-                    _lastEntityDump = DateTime.MinValue;
+                    _lobbyLogged = false;
                 }
             }
             catch (Exception ex)
@@ -253,74 +251,29 @@ namespace HDT_BGTracker
             return "unknown";
         }
 
-        private void DumpAllPlayers()
+        private void LogLobbyPlayers()
         {
-            Log("--- DumpAllPlayers ---");
             try
             {
-                var entities = Core.Game?.Entities?.Values;
-                if (entities == null) { Log("Entities 为 null"); return; }
+                var lobbyInfo = Core.Game?.MetaData?.BattlegroundsLobbyInfo;
+                if (lobbyInfo == null) return; // lobby 尚未加载，下次再试
 
-                var seen = new System.Collections.Generic.HashSet<string>();
-                foreach (var e in entities)
+                var players = lobbyInfo.Players;
+                if (players == null || players.Count == 0) return;
+
+                string gameUuid = lobbyInfo.GameUuid ?? "";
+                Log($"GameUuid: {gameUuid}");
+                for (int i = 0; i < players.Count; i++)
                 {
-                    try
-                    {
-                        string name = e.Name;
-                        if (string.IsNullOrEmpty(name)) continue;
-                        if (seen.Contains(name)) continue;
-                        if (name == "调酒师鲍勃") continue;
-
-                        // 用反射安全读取属性
-                        var type = e.GetType();
-
-                        string entityId = "";
-                        var idProp = type.GetProperty("Id");
-                        if (idProp != null) entityId = idProp.GetValue(e)?.ToString() ?? "";
-
-                        string isLocal = "";
-                        var localProp = type.GetProperty("IsLocalPlayer");
-                        if (localProp != null)
-                        {
-                            var val = localProp.GetValue(e);
-                            if (val is bool b && b) isLocal = " [LOCAL]";
-                        }
-
-                        // 检查 Tags 字典里是否有 PLAYER_IDENTITY (271)
-                        string identity = "";
-                        var tagsProp = type.GetProperty("Tags");
-                        if (tagsProp != null)
-                        {
-                            var tags = tagsProp.GetValue(e);
-                            if (tags != null)
-                            {
-                                // 用反射找 TryGetValue(object, out int) 重载
-                                var tryGet = tags.GetType().GetMethod("TryGetValue");
-                                if (tryGet != null)
-                                {
-                                    // 传入整数 271 作为 key（PLAYER_IDENTITY）
-                                    var keyType = tryGet.GetParameters()[0].ParameterType;
-                                    object key = keyType.IsEnum ? Enum.ToObject(keyType, 271) : (object)271;
-                                    object[] args = { key, 0 };
-                                    var found = tryGet.Invoke(tags, args);
-                                    if (found is bool ok && ok && (int)args[1] > 0)
-                                        identity = " [IDENTITY]";
-                                }
-                            }
-                        }
-
-                        Log($"  {name}{isLocal}{identity} id={entityId}");
-                        seen.Add(name);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log($"  实体遍历异常: {ex.Message}");
-                    }
+                    Log($"[{i}] {players[i].Name}");
                 }
+                Log($"共 {players.Count} 个玩家");
+                _lobbyLogged = true;
             }
             catch (Exception ex)
             {
-                Log($"DumpAllPlayers 异常: {ex.Message}");
+                // lobby 数据可能还没准备好，不标记为已记录，下次重试
+                Log($"LogLobbyPlayers 等待中: {ex.Message}");
             }
         }
 
