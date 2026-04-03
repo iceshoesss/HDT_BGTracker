@@ -16,6 +16,10 @@
       <HintPath>$(HDT_PATH)\HearthstoneDeckTracker.exe</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="HearthMirror">
+      <HintPath>$(HDT_PATH)\HearthMirror.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <!-- WPF 引用（MenuItem 需要） -->
     <Reference Include="PresentationCore">
       <Private>False</Private>
