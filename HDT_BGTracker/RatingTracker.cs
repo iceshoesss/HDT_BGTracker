@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Hearthstone_Deck_Tracker.API;
 
@@ -18,6 +19,8 @@ namespace HDT_BGTracker
         private DateTime _gameEndTime = DateTime.MinValue;
         private bool _ratingUploaded;
         private string _cachedPlayerId;
+        private DateTime _lastIdCheck = DateTime.MinValue;
+        private static readonly TimeSpan IdCheckInterval = TimeSpan.FromSeconds(5);
 
         private MongoDB.Driver.MongoClient _mongoClient;
         private MongoDB.Driver.IMongoCollection<MongoDB.Bson.BsonDocument> _collection;
@@ -72,9 +75,15 @@ namespace HDT_BGTracker
                     _wasInBgGame = true;
                     _ratingUploaded = false;
 
-                    // 持续尝试获取 PlayerId，直到拿到非 null 值
-                    if (string.IsNullOrEmpty(_cachedPlayerId))
-                        _cachedPlayerId = GetPlayerId();
+                    // 每 5 秒尝试获取一次 PlayerId
+                    if (string.IsNullOrEmpty(_cachedPlayerId) || _cachedPlayerId == "unknown")
+                    {
+                        if (DateTime.Now - _lastIdCheck >= IdCheckInterval)
+                        {
+                            _lastIdCheck = DateTime.Now;
+                            _cachedPlayerId = GetPlayerId();
+                        }
+                    }
                 }
                 else if (_wasInBgGame && Core.Game.IsInMenu && !_ratingUploaded)
                 {
@@ -92,6 +101,7 @@ namespace HDT_BGTracker
 
                     _wasInBgGame = false;
                     _gameEndTime = DateTime.MinValue;
+                    _lastIdCheck = DateTime.MinValue;
                     _cachedPlayerId = null;
                 }
             }
@@ -106,10 +116,10 @@ namespace HDT_BGTracker
             try
             {
                 // 兜底：确保 playerId 不为 null
-                if (string.IsNullOrEmpty(_cachedPlayerId))
+                if (string.IsNullOrEmpty(_cachedPlayerId) || _cachedPlayerId == "unknown")
                 {
                     _cachedPlayerId = GetPlayerId();
-                    if (string.IsNullOrEmpty(_cachedPlayerId))
+                    if (string.IsNullOrEmpty(_cachedPlayerId) || _cachedPlayerId == "unknown")
                     {
                         _cachedPlayerId = "unknown";
                         Log("警告: 无法获取 PlayerId，使用 'unknown'");
@@ -187,98 +197,186 @@ namespace HDT_BGTracker
 
         private string GetPlayerId()
         {
+            Log("=== GetPlayerId 开始 ===");
+
+            // 方法1：遍历 Config.Instance 所有字符串属性，找 BattleTag / Account 相关
             try
             {
-                // 方法1：从 Config.Instance 获取 BattleTag
-                try
+                var configType = typeof(Hearthstone_Deck_Tracker.Config);
+                var instanceProp = configType.GetProperty("Instance",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+
+                Log($"GetPlayerId: Config.Instance prop = {(instanceProp != null ? "found" : "null")}");
+
+                if (instanceProp != null)
                 {
-                    var configType = typeof(Hearthstone_Deck_Tracker.Config);
-                    var instanceProp = configType.GetProperty("Instance",
-                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                    if (instanceProp != null)
+                    var config = instanceProp.GetValue(null);
+                    Log($"GetPlayerId: Config value = {(config != null ? config.GetType().FullName : "null")}");
+
+                    if (config != null)
                     {
-                        var config = instanceProp.GetValue(null);
-                        if (config != null)
+                        // 列出 Config 的所有属性，找出包含账号信息的
+                        foreach (var prop in config.GetType().GetProperties(
+                            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
                         {
-                            // 尝试 BattleTag
-                            var btProp = config.GetType().GetProperty("BattleTag");
-                            if (btProp != null)
+                            try
                             {
-                                string btVal = btProp.GetValue(config)?.ToString();
-                                if (!string.IsNullOrEmpty(btVal) && btVal != "-1")
+                                // 只打印字符串类型的和看起来跟账号相关的
+                                if (prop.PropertyType == typeof(string))
                                 {
-                                    Log($"GetPlayerId: Config.BattleTag = {btVal}");
-                                    return btVal;
+                                    var val = prop.GetValue(config)?.ToString();
+                                    if (!string.IsNullOrEmpty(val))
+                                    {
+                                        string lower = prop.Name.ToLower();
+                                        if (lower.Contains("name") || lower.Contains("tag") ||
+                                            lower.Contains("account") || lower.Contains("battle") ||
+                                            lower.Contains("player") || lower.Contains("user"))
+                                        {
+                                            Log($"GetPlayerId: Config.{prop.Name} = {val}");
+                                        }
+                                    }
                                 }
                             }
+                            catch { }
+                        }
 
-                            // 尝试 AccountName / PlayerName / HearthstoneAccount
-                            string[] configCandidates = { "AccountName", "PlayerName", "HearthstoneAccount" };
-                            foreach (var cName in configCandidates)
+                        // 尝试 BattleTag
+                        var btProp = config.GetType().GetProperty("BattleTag");
+                        if (btProp != null)
+                        {
+                            string btVal = btProp.GetValue(config)?.ToString();
+                            if (!string.IsNullOrEmpty(btVal) && btVal != "-1")
                             {
-                                var cProp = config.GetType().GetProperty(cName);
-                                if (cProp == null) continue;
-                                string cVal = cProp.GetValue(config)?.ToString();
-                                if (!string.IsNullOrEmpty(cVal) && cVal != "-1")
-                                {
-                                    Log($"GetPlayerId: Config.{cName} = {cVal}");
-                                    return cVal;
-                                }
+                                Log($"GetPlayerId: ✓ Config.BattleTag = {btVal}");
+                                return btVal;
+                            }
+                            else
+                            {
+                                Log($"GetPlayerId: Config.BattleTag = '{btVal}' (无效)");
+                            }
+                        }
+                        else
+                        {
+                            Log("GetPlayerId: Config 没有 BattleTag 属性");
+                        }
+
+                        // 尝试其他候选
+                        string[] configCandidates = { "AccountName", "PlayerName", "HearthstoneAccount", "DisplayName" };
+                        foreach (var cName in configCandidates)
+                        {
+                            var cProp = config.GetType().GetProperty(cName);
+                            if (cProp == null) continue;
+                            string cVal = cProp.GetValue(config)?.ToString();
+                            if (!string.IsNullOrEmpty(cVal) && cVal != "-1")
+                            {
+                                Log($"GetPlayerId: ✓ Config.{cName} = {cVal}");
+                                return cVal;
                             }
                         }
                     }
                 }
-                catch (Exception ex)
-                {
-                    Log($"GetPlayerId: Config 读取失败: {ex.Message}");
-                }
+            }
+            catch (Exception ex)
+            {
+                Log($"GetPlayerId: Config 读取异常: {ex.Message}");
+            }
 
-                // 方法2：从 Core.Game.Player 兜底（列出属性便于调试）
+            // 方法2：从游戏实体中找玩家名（BATTLETAG 在 entity tags 里）
+            try
+            {
+                var game = Core.Game;
+                if (game?.Player != null)
+                {
+                    // 遍历 Player 的实体，找 PLAYER_IDENTITY 或 BATTLETAG
+                    var entities = game.Player.PlayerEntities?.ToList();
+                    if (entities != null)
+                    {
+                        foreach (var entity in entities)
+                        {
+                            try
+                            {
+                                var name = entity.Name;
+                                if (!string.IsNullOrEmpty(name))
+                                {
+                                    Log($"GetPlayerId: PlayerEntity Name = {name}");
+                                }
+
+                                // 通过反射读取 entity 的 tags，找 GameTag.PLAYER_IDENTITY
+                                var entityType = entity.GetType();
+                                var tagsProp = entityType.GetProperty("Tags");
+                                if (tagsProp != null)
+                                {
+                                    var tags = tagsProp.GetValue(entity);
+                                    if (tags != null)
+                                    {
+                                        // 尝试转成 Dictionary 或类似结构
+                                        var tagsStr = tags.ToString();
+                                        if (!string.IsNullOrEmpty(tagsStr) && tagsStr.Length < 500)
+                                        {
+                                            Log($"GetPlayerId: Entity tags = {tagsStr}");
+                                        }
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+
+                    // 也试试 Opponent
+                    var opponent = game.Opponent;
+                    if (opponent != null)
+                    {
+                        var oppName = opponent.Name;
+                        if (!string.IsNullOrEmpty(oppName))
+                        {
+                            Log($"GetPlayerId: Opponent.Name = {oppName}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"GetPlayerId: GameEntities 读取异常: {ex.Message}");
+            }
+
+            // 方法3：Core.Game.Player 兜底
+            try
+            {
                 var player = Core.Game?.Player;
                 if (player != null)
                 {
+                    // Name 和 Id 已在日志中看到为空/-1，这里只检查是否有新属性出现
                     var type = player.GetType();
-                    Log($"GetPlayerId: Player 类型 = {type.FullName}");
-
-                    // 调试：列出所有公共属性
                     foreach (var prop in type.GetProperties(
                         System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
                     {
                         try
                         {
-                            var val = prop.GetValue(player)?.ToString() ?? "null";
-                            Log($"  {prop.Name} [{prop.PropertyType.Name}] = {val}");
+                            if (prop.PropertyType == typeof(string))
+                            {
+                                var val = prop.GetValue(player)?.ToString();
+                                if (!string.IsNullOrEmpty(val))
+                                {
+                                    string lower = prop.Name.ToLower();
+                                    if (lower.Contains("name") || lower.Contains("id") ||
+                                        lower.Contains("tag") || lower.Contains("account") ||
+                                        lower.Contains("battle"))
+                                    {
+                                        Log($"GetPlayerId: Player.{prop.Name} = {val}");
+                                    }
+                                }
+                            }
                         }
-                        catch (Exception ex)
-                        {
-                            Log($"  {prop.Name} = 读取失败: {ex.Message}");
-                        }
+                        catch { }
                     }
-
-                    // 优先级：Name > AccountId > Id
-                    string[] candidates = { "Name", "AccountId", "Id" };
-                    foreach (var cName in candidates)
-                    {
-                        var prop = type.GetProperty(cName);
-                        if (prop == null) continue;
-                        var val = prop.GetValue(player)?.ToString();
-                        if (!string.IsNullOrEmpty(val) && val != "-1")
-                        {
-                            Log($"GetPlayerId: Player.{cName} = {val}");
-                            return val;
-                        }
-                    }
-                }
-                else
-                {
-                    Log("GetPlayerId: Player 对象为 null");
                 }
             }
             catch (Exception ex)
             {
-                Log("GetPlayerId 异常: " + ex.Message);
+                Log($"GetPlayerId: Player 读取异常: {ex.Message}");
             }
-            Log("GetPlayerId: 所有方法都失败，返回 unknown");
+
+            Log("=== GetPlayerId: 未找到有效 ID ===");
             return "unknown";
         }
 
