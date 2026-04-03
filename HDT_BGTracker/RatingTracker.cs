@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
-using Hearthstone_Deck_Tracker;
 using Hearthstone_Deck_Tracker.API;
 
 namespace HDT_BGTracker
@@ -231,7 +230,7 @@ namespace HDT_BGTracker
                     Log($"GetPlayerId: AccountInfo 读取失败: {ex.Message}");
                 }
 
-                // 方法2：从 Config.Instance 获取 BattleTag
+                // 方法2：从 Config.Instance 获取 BattleTag（全限定名避免 Core 歧义）
                 try
                 {
                     var configType = typeof(Hearthstone_Deck_Tracker.Config);
