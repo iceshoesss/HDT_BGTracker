@@ -19,6 +19,8 @@ namespace HDT_BGTracker
         private DateTime _gameEndTime = DateTime.MinValue;
         private bool _ratingUploaded;
         private string _cachedPlayerId;
+        private DateTime _bgGameStartTime = DateTime.MinValue;
+        private static readonly TimeSpan IdReadDelay = TimeSpan.FromSeconds(3);
 
         private MongoDB.Driver.MongoClient _mongoClient;
         private MongoDB.Driver.IMongoCollection<MongoDB.Bson.BsonDocument> _collection;
@@ -73,9 +75,16 @@ namespace HDT_BGTracker
                     _wasInBgGame = true;
                     _ratingUploaded = false;
 
-                    // 进入游戏时读取一次 PlayerId
-                    if (string.IsNullOrEmpty(_cachedPlayerId))
+                    // 记录游戏开始时间
+                    if (_bgGameStartTime == DateTime.MinValue)
+                        _bgGameStartTime = DateTime.Now;
+
+                    // 延迟 3 秒后再读取 PlayerId（游戏初始化需要时间）
+                    if (string.IsNullOrEmpty(_cachedPlayerId)
+                        && DateTime.Now - _bgGameStartTime >= IdReadDelay)
+                    {
                         _cachedPlayerId = GetPlayerId();
+                    }
                 }
                 else if (_wasInBgGame && Core.Game.IsInMenu && !_ratingUploaded)
                 {
@@ -94,6 +103,7 @@ namespace HDT_BGTracker
                     _wasInBgGame = false;
                     _gameEndTime = DateTime.MinValue;
                     _cachedPlayerId = null;
+                    _bgGameStartTime = DateTime.MinValue;
                 }
             }
             catch (Exception ex)
