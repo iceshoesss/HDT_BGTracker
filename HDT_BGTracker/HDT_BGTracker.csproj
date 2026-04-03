@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <OutputType>Library</OutputType>
+    <RootNamespace>HDT_BGTracker</RootNamespace>
+    <AssemblyName>HDT_BGTracker</AssemblyName>
+    <LangVersion>8.0</LangVersion>
+    <Version>1.0.0</Version>
+    <Description>酒馆战棋分数记录插件</Description>
+  </PropertyGroup>
+
+  <!-- HDT 引用：编译时从本地 HDT 目录引用，不复制到输出 -->
+  <ItemGroup>
+    <Reference Include="HearthstoneDeckTracker">
+      <HintPath>$(HDT_PATH)\HearthstoneDeckTracker.exe</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <!-- WPF 引用（MenuItem 需要） -->
+    <Reference Include="PresentationCore">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="PresentationFramework">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="WindowsBase">
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- MongoDB 驱动 -->
+  <ItemGroup>
+    <PackageReference Include="MongoDB.Driver" Version="2.19.2" />
+  </ItemGroup>
+
+</Project>
