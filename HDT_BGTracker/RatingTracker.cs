@@ -19,6 +19,7 @@ namespace HDT_BGTracker
         private DateTime _gameEndTime = DateTime.MinValue;
         private bool _ratingUploaded;
         private string _cachedPlayerId;
+        private string _cachedOpponentId;
         private DateTime _bgGameStartTime = DateTime.MinValue;
         private static readonly TimeSpan IdReadDelay = TimeSpan.FromSeconds(3);
         private DateTime _lastEntityDump = DateTime.MinValue;
@@ -81,11 +82,13 @@ namespace HDT_BGTracker
                     if (_bgGameStartTime == DateTime.MinValue)
                         _bgGameStartTime = DateTime.Now;
 
-                    // 延迟 3 秒后再读取 PlayerId（游戏初始化需要时间）
-                    if (string.IsNullOrEmpty(_cachedPlayerId)
-                        && DateTime.Now - _bgGameStartTime >= IdReadDelay)
+                    // 延迟 3 秒后再读取 PlayerId / OpponentId（游戏初始化需要时间）
+                    if (DateTime.Now - _bgGameStartTime >= IdReadDelay)
                     {
-                        _cachedPlayerId = GetPlayerId();
+                        if (string.IsNullOrEmpty(_cachedPlayerId))
+                            _cachedPlayerId = GetPlayerId();
+                        if (string.IsNullOrEmpty(_cachedOpponentId))
+                            _cachedOpponentId = GetOpponentId();
                     }
 
                     // 每5秒 dump 所有玩家实体信息
@@ -112,6 +115,7 @@ namespace HDT_BGTracker
                     _wasInBgGame = false;
                     _gameEndTime = DateTime.MinValue;
                     _cachedPlayerId = null;
+                    _cachedOpponentId = null;
                     _bgGameStartTime = DateTime.MinValue;
                     _lastEntityDump = DateTime.MinValue;
                 }
@@ -173,6 +177,7 @@ namespace HDT_BGTracker
 
             // 最后一道防线：确保所有字段非 null
             string playerId = string.IsNullOrEmpty(_cachedPlayerId) ? "unknown" : _cachedPlayerId;
+            string opponentId = string.IsNullOrEmpty(_cachedOpponentId) ? "unknown" : _cachedOpponentId;
             string region = GetRegion();
             string timestamp = DateTime.UtcNow.ToString("o");
 
@@ -188,7 +193,8 @@ namespace HDT_BGTracker
                                 { "rating", rating },
                                 { "mode", mode },
                                 { "timestamp", timestamp },
-                                { "region", region }
+                                { "region", region },
+                                { "opponentId", opponentId }
                             }
                         },
                         { "$inc", new MongoDB.Bson.BsonDocument { { "gameCount", 1 } } }
@@ -196,7 +202,7 @@ namespace HDT_BGTracker
 
                     _collection.UpdateOne(filter, update, new MongoDB.Driver.UpdateOptions { IsUpsert = true });
                     _ratingUploaded = true;
-                    Log($"已上传分数: {rating} ({mode}) playerId={playerId}");
+                    Log($"已上传分数: {rating} ({mode}) playerId={playerId} opponentId={opponentId}");
                 }
                 catch (Exception ex)
                 {
@@ -251,6 +257,55 @@ namespace HDT_BGTracker
 
             Log("GetPlayerId: 未找到有效 ID");
             return "unknown";
+        }
+
+        private string GetOpponentId()
+        {
+            try
+            {
+                string localId = _cachedPlayerId ?? "";
+                var entities = Core.Game?.Entities?.Values;
+                if (entities == null) return null;
+
+                foreach (var e in entities)
+                {
+                    try
+                    {
+                        string name = e.Name;
+                        if (string.IsNullOrEmpty(name)) continue;
+                        if (name == localId) continue;           // 跳过本地玩家
+                        if (name == "GameEntity") continue;      // 跳过系统实体
+                        if (name == "调酒师鲍勃") continue;       // 跳过 NPC
+
+                        // 检查是否有 PLAYER_IDENTITY (271) 标签
+                        var tagsProp = e.GetType().GetProperty("Tags");
+                        if (tagsProp == null) continue;
+                        var tags = tagsProp.GetValue(e);
+                        if (tags == null) continue;
+
+                        var tryGet = tags.GetType().GetMethod("TryGetValue");
+                        if (tryGet == null) continue;
+
+                        var keyType = tryGet.GetParameters()[0].ParameterType;
+                        object key = keyType.IsEnum ? Enum.ToObject(keyType, 271) : (object)271;
+                        object[] args = { key, 0 };
+                        var found = tryGet.Invoke(tags, args);
+                        if (found is bool ok && ok && (int)args[1] > 0)
+                        {
+                            Log($"GetOpponentId: 找到对手 = {name}");
+                            return name;
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"GetOpponentId 异常: {ex.Message}");
+            }
+
+            Log("GetOpponentId: 未找到对手");
+            return null;
         }
 
         private void DumpAllPlayers()

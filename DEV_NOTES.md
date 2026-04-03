@@ -5,8 +5,8 @@
 
 ## 当前状态
 - ✅ 分数获取正常
-- ✅ 玩家 ID 获取已修复（`Player.Name`）
-- ⏳ 对手 ID 获取待实现
+- ✅ 玩家 ID 获取已修复（`Player.Name`，游戏开始 3 秒后缓存）
+- ✅ 对手 ID 获取已实现（遍历实体，过滤本地玩家 + 系统实体 + NPC，找 PLAYER_IDENTITY 标签）
 - MongoDB 连接: `mongodb://192.168.31.2:27017`
 - 数据库: `hearthstone`, 集合: `bg_ratings`
 
@@ -24,11 +24,12 @@
 
 **当前方案**：检测到酒馆战棋游戏开始后，等 3 秒读取 `Player.Name` 并缓存，游戏结束后用缓存值上传。
 
-### 对手 ID 获取（待实现）
-- 酒馆战棋有 7 个对手轮换
-- `Core.Game.Opponent.Name` 返回 `调酒师鲍勃`（NPC，非真人对手）
-- 需要遍历游戏实体找其他玩家的 BattleTag
-- 参考调试方法：遍历 `Core.Game.Entities.Values`，筛选非本地玩家、非 NPC 的 `PLAYER_IDENTITY` 实体
+### 对手 ID 获取（已实现）
+- 从 `Core.Game.Entities.Values` 遍历所有实体
+- 过滤条件：跳过本地玩家（`_cachedPlayerId`）、`GameEntity`、`调酒师鲍勃`
+- 匹配有 `PLAYER_IDENTITY (271)` 标签的实体即为对手
+- 实测日志确认：`大暴龙 [IDENTITY] id=15` 为对手实体
+- 对手信息随分数一起上传到 MongoDB（`opponentId` 字段）
 
 ## 修改历史（claw_version 分支）
 
@@ -40,11 +41,12 @@
 4. **5 秒轮询** - 每 5 秒读一次 `Player.Name`，成功获取到 ID
 5. **简化为游戏开始读取** - 改为进入游戏时读一次
 6. **添加 3 秒延迟** - 进入游戏后 Player.Name 需要初始化时间
+7. **实现对手 ID 获取** - 遍历实体，过滤本地玩家/系统/NPC，找 PLAYER_IDENTITY 标签
 
 ## 下一步工作
-1. 实现对手 ID 获取（遍历游戏实体）
-2. 将对手信息也上传到 MongoDB
-3. 清理调试日志，保留关键信息
+1. 对手获取逻辑已实现，待实际游戏验证
+2. 考虑酒馆战棋有多个对手轮换 — 当前记录的是对战时的当前对手
+3. 清理调试日志（`DumpAllPlayers`），保留关键信息或改为可选
 
 ## 编译方法
 ```cmd
