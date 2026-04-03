@@ -186,6 +186,7 @@ namespace HDT_BGTracker
             {
                 try
                 {
+                    // 注意：不存储对手ID
                     var filter = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.Eq("playerId", playerId);
                     var update = new MongoDB.Bson.BsonDocument
                     {
