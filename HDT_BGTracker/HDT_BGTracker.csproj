@@ -30,6 +30,9 @@
     <Reference Include="WindowsBase">
       <Private>False</Private>
     </Reference>
+    <Reference Include="System.Xaml">
+      <Private>False</Private>
+    </Reference>
   </ItemGroup>
 
   <!-- MongoDB 驱动 -->

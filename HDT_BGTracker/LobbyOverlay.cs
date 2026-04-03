@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using Hearthstone_Deck_Tracker.API;
+using Hearthstone_Deck_Tracker.Utility.Extensions;
 
 namespace HDT_BGTracker
 {
