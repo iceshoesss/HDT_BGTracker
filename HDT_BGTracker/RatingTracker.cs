@@ -25,6 +25,7 @@ namespace HDT_BGTracker
         private DateTime _bgGameStartTime = DateTime.MinValue;
         private static readonly TimeSpan IdReadDelay = TimeSpan.FromSeconds(3);
         private bool _heroLogged; // 英雄名是否已输出
+        private bool _lobbyLogged; // lobby 玩家名单是否已输出（不带英雄）
         private string _cachedGameUuid; // 当局游戏 UUID
         private int _lastStepValue = -1; // 诊断用：上一次 STEP tag 的值
         private static readonly Dictionary<int, string> StepNames = new Dictionary<int, string>
@@ -166,9 +167,10 @@ namespace HDT_BGTracker
                     }
 
                     // PlayerId 获取后，输出 lobby 玩家名单（不带英雄，此时英雄还没选）
-                    if (!string.IsNullOrEmpty(_cachedPlayerId) && _cachedPlayerId != "unknown" && !_heroLogged)
+                    if (!string.IsNullOrEmpty(_cachedPlayerId) && _cachedPlayerId != "unknown" && !_lobbyLogged)
                     {
                         LogLobbyPlayers(includeHeroes: false);
+                        _lobbyLogged = true;
                     }
                 }
                 else if (_wasInBgGame && Core.Game.IsInMenu && !_ratingUploaded)
@@ -193,6 +195,7 @@ namespace HDT_BGTracker
                     _lastStepValue = -1;
                     _bgGameStartTime = DateTime.MinValue;
                     _heroLogged = false;
+                    _lobbyLogged = false;
                     _overlay?.Hide();
                 }
             }
