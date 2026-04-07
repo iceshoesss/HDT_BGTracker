@@ -113,6 +113,34 @@
 2. 后续获取真实分数后替换序号显示
 3. 验证 FinalPlacement 在不同场景下是否可靠（单人/双人/掉线重连等）
 
+## 🏆 联赛功能规划（待开发）
+
+### 概述
+利用插件实现酒馆战棋联赛，根据排名计分（第1名9分，第2名7分，第3名6分，以此类推）。
+
+### 流程
+1. 玩家通过游戏 ID 截图注册，获得唯一 ID
+2. 联赛网站点击加入队列，满 8 人后比赛开始
+3. 插件在游戏开始时获取大厅 8 人名字，调后端 API 检查是否匹配队列
+4. 匹配则标记为联赛局，游戏结束时上传 placement 到联赛数据库
+
+### 数据库设计
+- `players` — 注册选手（playerId, battleTag, registeredAt）
+- `queue` — 当前队列（满 8 人触发比赛）
+- `league_games` — 联赛局记录（gameId, seasonId, players[], placement, points）
+  - points 直接算好存入（9/7/6/5/4/3/2/1）
+
+### 需要的后端 API
+- `POST /api/register` — 注册选手
+- `POST /api/queue/join` — 加入队列
+- `POST /api/match/check` — 插件传入大厅 8 人名字，返回是否匹配队列 + gameId
+- `POST /api/match/result` — 插件传入 gameId + placement
+- `GET /api/standings` — 积分榜
+
+### 待确认
+- `BattlegroundsLobbyInfo.Players` 的名字是否带 BattleTag 号（如 `名#1234`），决定匹配策略
+- 将来可能拆分插件：分数追踪 vs 联赛功能，作为独立插件维护
+
 ## 编译方法
 ```cmd
 cd HDT_BGTracker\HDT_BGTracker\HDT_BGTracker
