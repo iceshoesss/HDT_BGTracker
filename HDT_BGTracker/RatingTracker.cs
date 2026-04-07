@@ -321,12 +321,46 @@ namespace HDT_BGTracker
                 string gameUuid = lobbyInfo.GameUuid ?? "";
                 Log($"GameUuid: {gameUuid}");
 
-                // 构建 overlay 显示文本
+                // === 调试：Dump Player 对象所有属性 ===
+                try
+                {
+                    var player = Core.Game?.Player;
+                    if (player != null)
+                    {
+                        Log("=== Player 对象属性 Dump ===");
+                        DumpProperties(player, "Player");
+                        Log("=============================");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log($"Player Dump 异常: {ex.Message}");
+                }
+
+                // === 调试：Dump MetaData 对象 ===
+                try
+                {
+                    var meta = Core.Game?.MetaData;
+                    if (meta != null)
+                    {
+                        Log("=== MetaData 对象属性 Dump ===");
+                        DumpProperties(meta, "MetaData");
+                        Log("==============================");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log($"MetaData Dump 异常: {ex.Message}");
+                }
+
+                // === 调试：Dump 每个 lobby 玩家的属性 ===
                 string displayText = "";
                 for (int i = 0; i < players.Count; i++)
                 {
-                    string name = players[i].Name;
-                    Log($"[{i}] {name}");
+                    var p = players[i];
+                    string name = p.Name;
+                    Log($"--- Lobby Player [{i}] ---");
+                    DumpProperties(p, $"LobbyPlayer[{i}]");
                     displayText += $"\n{name} {i}";
                 }
                 Log($"共 {players.Count} 个玩家");
@@ -343,6 +377,56 @@ namespace HDT_BGTracker
             {
                 // lobby 数据可能还没准备好，不标记为已记录，下次重试
                 Log($"LogLobbyPlayers 等待中: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 用反射 Dump 对象的所有公共属性和字段（调试用）
+        /// </summary>
+        private void DumpProperties(object obj, string label)
+        {
+            if (obj == null)
+            {
+                Log($"  {label}: null");
+                return;
+            }
+
+            var type = obj.GetType();
+            Log($"  {label} Type: {type.FullName}");
+
+            // 公共属性
+            foreach (var prop in type.GetProperties(
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            {
+                try
+                {
+                    var val = prop.GetValue(obj);
+                    string valStr = val == null ? "null" : val.ToString();
+                    // 截断过长的值
+                    if (valStr.Length > 200) valStr = valStr.Substring(0, 200) + "...";
+                    Log($"    {prop.Name} ({prop.PropertyType.Name}): {valStr}");
+                }
+                catch (Exception ex)
+                {
+                    Log($"    {prop.Name}: [读取异常: {ex.Message}]");
+                }
+            }
+
+            // 公共字段
+            foreach (var field in type.GetFields(
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            {
+                try
+                {
+                    var val = field.GetValue(obj);
+                    string valStr = val == null ? "null" : val.ToString();
+                    if (valStr.Length > 200) valStr = valStr.Substring(0, 200) + "...";
+                    Log($"    {field.Name} ({field.FieldType.Name}): {valStr}");
+                }
+                catch (Exception ex)
+                {
+                    Log($"    {field.Name}: [读取异常: {ex.Message}]");
+                }
             }
         }
 
