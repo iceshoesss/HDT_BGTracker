@@ -6,11 +6,16 @@
 ## 当前状态
 - ✅ 分数获取正常
 - ✅ 玩家 ID 获取（`Player.Name`，游戏开始 3 秒后缓存）
-- ✅ 对手 ID 获取（`BattlegroundsLobbyInfo.Players`，排除自己）
-- ✅ MongoDB 上传（rating + mode + region + placement）
+- ✅ 玩家 AccountId.Lo 获取（唯一标识，存为 string 避免大数问题）
+- ✅ 对手 ID 获取（`BattlegroundsLobbyInfo.Players`，排除自己，含 name + accountIdLo）
+- ✅ GameUuid 获取（`BattlegroundsLobbyInfo.GameUuid`）
+- ✅ MongoDB 上传（rating + mode + region + placement + accountIdLo + games 数组）
 - ✅ 分差记录（聚合管道原子计算，存储在 `ratingChanges` 数组）
 - ✅ 排名获取（`CurrentGameStats.BattlegroundsDetails.FinalPlacement`）
 - ✅ 浮动面板显示玩家名字+序号（LobbyOverlay）
+- ✅ 对局数据记录（games 数组：gameUuid, isLeague, placement, opponents, endTime, ratingChange）
+- ✅ STEP tag 检测（替代 63s 固定延迟，STEP 13 时输出带英雄名的 lobby）
+- ✅ 日志自动清理（启动时删除超过 3 天的 .log 文件）
 - MongoDB 连接: 通过 `skip-worktree` 本地配置，不暴露到 GitHub
 - 数据库: `hearthstone`, 集合: `bg_ratings`
 
@@ -62,7 +67,22 @@
   { $set: { arrayField: { $concatArrays: [{ $ifNull: ["$arrayField", []] }, [newItem]] } } }
   ```
 - `$ifNull` 兜底：字段不存在时用默认值
+- `$toString` 可以在管道中将 Int64 转 String，兼容旧数据类型不一致
+- 管道内引用计算值：`"$ratingChange"` 引用 Stage 1 的 `$set` 结果
 - MongoDB 驱动版本 2.19.2
+
+### STEP Tag 与游戏阶段检测
+- `GameEntity` 上的 `STEP` tag（tag ID 198）标记当前游戏阶段
+- BG 模式下 step 流转（实测数据）：
+  ```
+  0 (INVALID) → 4 (BEGIN_MULLIGAN) → 13 (MAIN_CLEANUP) → 9 (MAIN_START) → 10 (MAIN_ACTION) → ...
+  ```
+- BG 不走标准天梯的 MAIN_READY(6) 等中间 step
+- **STEP 13 (MAIN_CLEANUP)** 是第一个可靠的变化点，约 40s，替代了原来的 63s 固定延迟
+- STEP 4 (BEGIN_MULLIGAN) = 英雄选择阶段开始
+- STEP 13 (MAIN_CLEANUP) = 第一轮战斗结束，英雄选择早已完成
+- 枚举值：`HearthDb.Enums.GameStep`（需 `using HearthDb.Enums`）
+- Tag 读取：`entity.GetTag(GameTag.STEP)` 返回 int
 
 ## 🔍 如何查找 HDT API（速查）
 
@@ -108,6 +128,11 @@
 12. **MongoDB 地址外置** - 经历环境变量 / local.config 方案后撤回，最终用 `git update-index --skip-worktree` 方案
 13. **排名获取** - 通过查 HDT 源码发现 `CurrentGameStats.BattlegroundsDetails.FinalPlacement`
 14. **BattleTag 调试**（2026-04-07 session）— 见下方详细记录
+15. **数据库结构扩展 accountIdLo + games 数组** — 新增玩家唯一标识和对局明细记录
+16. **AccountId.Lo 类型修复** — ulong → string（避免 BsonInt64 隐式转换歧义）
+17. **日志自动清理** — 插件启动时删除超过 3 天的 .log 文件
+18. **STEP tag 诊断** — 通过 dump STEP 变化确定 BG 模式下 step 流转
+19. **STEP 13 替代固定延迟** — 用 MAIN_CLEANUP 检测替代 63s HeroSelectionDelay
 
 ## 📋 2026-04-07 开发日志：BattleTag / AccountId / 英雄映射
 
@@ -192,10 +217,11 @@
 4. **开始联赛功能开发** — 后端 API + 插件匹配逻辑
 
 ## 下一步工作
-1. 编译验证 HearthDb 引用是否可用
-2. 将 lobby 玩家名单上传到 MongoDB（opponents 数组：name, accountIdLo, heroName, placement）
+1. **测试未验证的改动** — accountIdLo + games 数组上传、STEP 13 英雄名获取（本次开发未测试，需实际开局验证）
+2. 编译验证 HearthDb 引用是否可用
 3. 联赛功能：后端 API + 插件 lobby 匹配逻辑
 4. 验证 FinalPlacement 在不同场景下是否可靠（单人/双人/掉线重连等）
+5. games 数组中增加英雄名字段（需先验证 HearthDb）
 
 ## 编译方法
 ```cmd
