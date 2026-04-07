@@ -153,7 +153,22 @@ namespace HDT_BGTracker
                 if (rating.HasValue)
                 {
                     string mode = Core.Game.IsBattlegroundsDuosMatch ? "duo" : "solo";
-                    UploadToMongo(rating.Value, mode);
+
+                    // 尝试获取排名
+                    int? placement = null;
+                    try
+                    {
+                        var stats = Core.Game.CurrentGameStats;
+                        var details = stats?.BattlegroundsDetails;
+                        placement = details?.FinalPlacement;
+                        Log($"排名读取: FinalPlacement = {placement?.ToString() ?? "null"}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"排名读取异常: {ex.Message}");
+                    }
+
+                    UploadToMongo(rating.Value, mode, placement);
                 }
                 else
                 {
@@ -168,7 +183,7 @@ namespace HDT_BGTracker
             }
         }
 
-        private void UploadToMongo(int rating, string mode)
+        private void UploadToMongo(int rating, string mode, int? placement)
         {
             if (_collection == null)
             {
@@ -219,14 +234,25 @@ namespace HDT_BGTracker
                                     new MongoDB.Bson.BsonDocument("$ifNull",
                                         new MongoDB.Bson.BsonArray { "$ratingChanges", new MongoDB.Bson.BsonArray() }),
                                     new MongoDB.Bson.BsonArray { "$ratingChange" }
-                                }) }
+                                }) },
+                            { "placements", placement.HasValue
+                                ? (MongoDB.Bson.BsonValue)new MongoDB.Bson.BsonDocument("$concatArrays",
+                                    new MongoDB.Bson.BsonArray
+                                    {
+                                        new MongoDB.Bson.BsonDocument("$ifNull",
+                                            new MongoDB.Bson.BsonArray { "$placements", new MongoDB.Bson.BsonArray() }),
+                                        new MongoDB.Bson.BsonArray { placement.Value }
+                                    })
+                                : new MongoDB.Bson.BsonDocument("$ifNull",
+                                    new MongoDB.Bson.BsonArray { "$placements", new MongoDB.Bson.BsonArray() }) },
+                            { "placement", placement.HasValue ? (MongoDB.Bson.BsonValue)placement.Value : MongoDB.Bson.BsonNull.Value }
                         })
                     };
                     var update = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Update.Pipeline(stages);
 
                     _collection.UpdateOne(filter, update, new MongoDB.Driver.UpdateOptions { IsUpsert = true });
                     _ratingUploaded = true;
-                    Log($"已上传分数: {rating} ({mode}) playerId={playerId}");
+                    Log($"已上传分数: {rating} ({mode}) 排名={placement?.ToString() ?? "无"} playerId={playerId}");
                 }
                 catch (Exception ex)
                 {
