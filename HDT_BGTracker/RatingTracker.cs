@@ -334,9 +334,6 @@ namespace HDT_BGTracker
                 }
                 Log($"共 {players.Count} 个玩家");
 
-                // 额外：Dump 所有带 PLAYER_IDENTITY 的实体名，看是否有 tag
-                DumpIdentityEntities();
-
                 // 显示 overlay
                 if (_overlay != null && !string.IsNullOrEmpty(displayText))
                 {
@@ -349,78 +346,6 @@ namespace HDT_BGTracker
             {
                 // lobby 数据可能还没准备好，不标记为已记录，下次重试
                 Log($"LogLobbyPlayers 等待中: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 遍历所有 Entities，输出带 PLAYER_IDENTITY (271) 标签的实体名字
-        /// 目的：确认 Entity.Name 是否比 LobbyPlayer.Name 多 #tag
-        /// </summary>
-        private void DumpIdentityEntities()
-        {
-            try
-            {
-                var entities = Core.Game?.Entities?.Values;
-                if (entities == null) return;
-
-                string localId = _cachedPlayerId ?? "";
-                var seen = new System.Collections.Generic.HashSet<string>();
-
-                Log("--- Entity PLAYER_IDENTITY Dump ---");
-                foreach (var e in entities)
-                {
-                    try
-                    {
-                        string name = e.Name;
-                        if (string.IsNullOrEmpty(name)) continue;
-                        if (seen.Contains(name)) continue;
-
-                        // 检查 Tags 字典里是否有 PLAYER_IDENTITY (271)
-                        var tagsProp = e.GetType().GetProperty("Tags");
-                        if (tagsProp == null) continue;
-                        var tags = tagsProp.GetValue(e);
-                        if (tags == null) continue;
-
-                        var tryGet = tags.GetType().GetMethod("TryGetValue");
-                        if (tryGet == null) continue;
-
-                        var keyType = tryGet.GetParameters()[0].ParameterType;
-                        object key = keyType.IsEnum ? Enum.ToObject(keyType, 271) : (object)271;
-                        object[] args = { key, 0 };
-                        var found = tryGet.Invoke(tags, args);
-                        if (found is bool ok && ok && (int)args[1] > 0)
-                        {
-                            bool isLocal = name == localId;
-                            Log($"  IDENTITY: \"{name}\" isLocal={isLocal} entityId={e.Id}");
-                            seen.Add(name);
-                        }
-                    }
-                    catch { }
-                }
-
-                // 同时 dump 所有有名实体（不限 PLAYER_IDENTITY），看看有没有其他来源的名字
-                Log("--- All Named Entities ---");
-                seen.Clear();
-                foreach (var e in entities)
-                {
-                    try
-                    {
-                        string name = e.Name;
-                        if (string.IsNullOrEmpty(name)) continue;
-                        if (seen.Contains(name)) continue;
-                        if (name == "GameEntity" || name == "调酒师鲍勃") continue;
-
-                        bool isLocal = name == localId;
-                        Log($"  Entity: \"{name}\" isLocal={isLocal} entityId={e.Id}");
-                        seen.Add(name);
-                    }
-                    catch { }
-                }
-                Log("--- End Entity Dump ---");
-            }
-            catch (Exception ex)
-            {
-                Log($"DumpIdentityEntities 异常: {ex.Message}");
             }
         }
 
