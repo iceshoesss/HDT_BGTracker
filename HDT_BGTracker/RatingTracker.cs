@@ -24,9 +24,7 @@ namespace HDT_BGTracker
         private string _cachedAccountIdLo; // 玩家自己的 AccountId.Lo（字符串避免大数问题）
         private DateTime _bgGameStartTime = DateTime.MinValue;
         private static readonly TimeSpan IdReadDelay = TimeSpan.FromSeconds(3);
-        private static readonly TimeSpan HeroSelectionDelay = TimeSpan.FromSeconds(63); // 英雄选择约60s + 3s buffer
-        private bool _lobbyNamesLogged;
-        private bool _lobbyHeroesLogged;
+        private bool _heroLogged; // 英雄名是否已输出
         private string _cachedGameUuid; // 当局游戏 UUID
         private int _lastStepValue = -1; // 诊断用：上一次 STEP tag 的值
         private LobbyOverlay _overlay;
@@ -112,7 +110,7 @@ namespace HDT_BGTracker
                         catch { }
                     }
 
-                    // === STEP 诊断：持续输出 STEP tag 变化 ===
+                    // === STEP 变化：记录日志 + 检测英雄选择结束 ===
                     try
                     {
                         var gameEntity = Core.Game?.Entities?.Values
@@ -128,11 +126,17 @@ namespace HDT_BGTracker
                                     : $"UNKNOWN({currentStep})";
                                 Log($"STEP变化: {stepName} = {currentStep} (距开始 {elapsed:F1}s)");
                                 _lastStepValue = currentStep;
+
+                                // STEP 13 (MAIN_CLEANUP) = 第一轮战斗结束，英雄选择早已完成
+                                if (currentStep == (int)HearthDb.Enums.GameStep.MAIN_CLEANUP && !_heroLogged)
+                                {
+                                    LogLobbyPlayers(includeHeroes: true);
+                                    _heroLogged = true;
+                                }
                             }
                         }
                     }
                     catch { }
-                    // === END STEP 诊断 ===
 
                     // 延迟 3 秒后再读取 PlayerId（游戏初始化需要时间）
                     if (string.IsNullOrEmpty(_cachedPlayerId)
@@ -144,17 +148,10 @@ namespace HDT_BGTracker
                         Log($"缓存: playerId={_cachedPlayerId}, accountIdLo={_cachedAccountIdLo}, gameUuid={_cachedGameUuid}");
                     }
 
-                    // PlayerId 获取后，先输出 lobby 玩家名单（不带英雄）
-                    if (!string.IsNullOrEmpty(_cachedPlayerId) && _cachedPlayerId != "unknown" && !_lobbyNamesLogged)
+                    // PlayerId 获取后，输出 lobby 玩家名单（不带英雄，此时英雄还没选）
+                    if (!string.IsNullOrEmpty(_cachedPlayerId) && _cachedPlayerId != "unknown" && !_heroLogged)
                     {
                         LogLobbyPlayers(includeHeroes: false);
-                    }
-
-                    // 英雄选择完成后（~63s），再次输出带英雄名的玩家名单
-                    if (!string.IsNullOrEmpty(_cachedPlayerId) && _cachedPlayerId != "unknown"
-                        && !_lobbyHeroesLogged && DateTime.Now - _bgGameStartTime >= HeroSelectionDelay)
-                    {
-                        LogLobbyPlayers(includeHeroes: true);
                     }
                 }
                 else if (_wasInBgGame && Core.Game.IsInMenu && !_ratingUploaded)
@@ -178,8 +175,7 @@ namespace HDT_BGTracker
                     _cachedGameUuid = null;
                     _lastStepValue = -1;
                     _bgGameStartTime = DateTime.MinValue;
-                    _lobbyNamesLogged = false;
-                    _lobbyHeroesLogged = false;
+                    _heroLogged = false;
                     _overlay?.Hide();
                 }
             }
@@ -551,11 +547,6 @@ namespace HDT_BGTracker
                 {
                     _overlay.DisplayResult(displayText);
                 }
-
-                if (includeHeroes)
-                    _lobbyHeroesLogged = true;
-                else
-                    _lobbyNamesLogged = true;
             }
             catch (Exception ex)
             {
