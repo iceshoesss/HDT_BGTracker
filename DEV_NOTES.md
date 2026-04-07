@@ -7,9 +7,11 @@
 - ✅ 分数获取正常
 - ✅ 玩家 ID 获取（`Player.Name`，游戏开始 3 秒后缓存）
 - ✅ 对手 ID 获取（`BattlegroundsLobbyInfo.Players`，排除自己）
-- ✅ MongoDB 上传（rating + mode + region）
+- ✅ MongoDB 上传（rating + mode + region + placement）
+- ✅ 分差记录（聚合管道原子计算，存储在 `ratingChanges` 数组）
+- ✅ 排名获取（`CurrentGameStats.BattlegroundsDetails.FinalPlacement`）
 - ✅ 浮动面板显示玩家名字+序号（LobbyOverlay）
-- MongoDB 连接: `mongodb://192.168.31.2:27017`
+- MongoDB 连接: 通过 `skip-worktree` 本地配置，不暴露到 GitHub
 - 数据库: `hearthstone`, 集合: `bg_ratings`
 
 ## 重要发现
@@ -40,6 +42,49 @@
 - `Core.OverlayWindow` 是 `Window` 类型，没有 `Children` 属性，不能直接添加子元素
 - 参考项目：[HDT_BGrank](https://github.com/IBM5100o/HDT_BGrank)
 
+### 排名获取（FinalPlacement）
+- 来源：`Core.Game.CurrentGameStats.BattlegroundsDetails.FinalPlacement`
+- 返回 `int?`，值为 1-8（第几名），null 表示未获取到
+- `BattlegroundsDetails` 类型是 `BattlegroundsLobbyDetails`，包含：
+  - `FinalPlacement` — 最终排名
+  - `LobbyRawHeroDbfIds` — 大厅可用英雄 DBF ID 列表
+  - `FriendlyPlayerEntityId` — 自己的实体 ID
+  - `FriendlyRawHeroDbfId` — 自己选的英雄 DBF ID
+  - `AnomalyDbfId` — 异常模式 DBF ID
+- 在游戏结束后、返回主菜单时读取（和 rating 读取时机一致）
+- 时机很重要：太早可能为 null，当前方案等 2 秒再读
+
+### MongoDB 聚合管道更新
+- `Update.Pipeline(BsonDocument[])` — 传入聚合管道 stage 数组
+- 管道内 `$rating` 引用文档当前字段值（不是 C# 变量）
+- **`$push` 不能作为管道 stage**，用 `$set` + `$concatArrays` 替代：
+  ```javascript
+  { $set: { arrayField: { $concatArrays: [{ $ifNull: ["$arrayField", []] }, [newItem]] } } }
+  ```
+- `$ifNull` 兜底：字段不存在时用默认值
+- MongoDB 驱动版本 2.19.2
+
+## 🔍 如何查找 HDT API（速查）
+
+当需要某个功能但不知道 HDT 提供了什么 API 时：
+
+1. **HDT 源码在 GitHub**：`https://github.com/HearthSim/Hearthstone-Deck-Tracker`
+2. **关键文件**：
+   - `Hearthstone Deck Tracker/Hearthstone/GameV2.cs` — 主游戏类，包含大部分 BG 相关属性
+   - `Hearthstone Deck Tracker/Stats/GameStats.cs` — 游戏统计，包含 `BattlegroundsLobbyDetails`（含 `FinalPlacement`）
+   - `Hearthstone Deck Tracker/Hearthstone/Player.cs` — 玩家类
+   - `Hearthstone Deck Tracker/API/` — 插件 API 接口
+3. **查看源码方式**：
+   - 直接访问 raw 文件：`https://raw.githubusercontent.com/HearthSim/Hearthstone-Deck-Tracker/refs/heads/master/Hearthstone%20Deck%20Tracker/Hearthstone/GameV2.cs`
+   - 注意 URL 中空格编码为 `%20`
+4. **查找技巧**：
+   - 在 HDT GitHub 上搜关键字（如 `Placement`、`Rating`、`Leaderboard`）
+   - 先看 `GameV2.cs` 中的 public 属性，大部分 BG 数据都在这里
+   - `HearthMirror.Reflection.Client` 提供了从游戏内存读取数据的方法
+5. **参考项目**：
+   - [HDT_BGrank](https://github.com/IBM5100o/HDT_BGrank) — 显示对手 MMR
+   - [Battlegrounds-Match-Data](https://github.com/jawslouis/Battlegrounds-Match-Data) — 记录 BG 比赛数据到 CSV
+
 ### net472 SDK 项目 WPF 限制
 - `net472` SDK-style 项目**不支持** `<UseWPF>true</UseWPF>`（仅 .NET Core 3.0+ 支持）
 - XAML 编译（`<Page>` + `InitializeComponent`）在 net472 SDK 项目中**无法正常工作**
@@ -51,23 +96,22 @@
 1. **初始修复** - 尝试从 `AccountInfo` / `Config` 获取 BattleTag
    - 失败：`GameV2` 没有 `AccountInfo`，`Config` 没有 `BattleTag`
 2. **解决 Core 歧义** - `using Hearthstone_Deck_Tracker` 导致 `Core` 引用歧义
-   - 改用 `typeof(Hearthstone_Deck_Tracker.Config)` 全限定名
-3. **添加调试日志** - 列出 Player 所有属性，发现 `Player.Name` 在游戏中有值
-4. **5 秒轮询** - 每 5 秒读一次 `Player.Name`，成功获取到 ID
-5. **简化为游戏开始读取** - 改为进入游戏时读一次
-6. **添加 3 秒延迟** - 进入游戏后 Player.Name 需要初始化时间
-7. **对手 ID 调试** - 通过 DumpAllPlayers / DumpBGLobbyInfo 等调试方法，发现 `BattlegroundsLobbyInfo.Players` 可获取所有玩家名字
-8. **回撤调试代码** - 重置到 547a4a4 稳定版本，移除所有调试方法
-9. **LogLobbyPlayers** - 在获取 PlayerId 后，从 `BattlegroundsLobbyInfo` 输出 lobby 玩家名单日志（仅名字）
-10. **添加 HearthMirror 引用** - csproj 中添加 `HearthMirror.dll` 引用，解决 `BattlegroundsLobbyInfo` 类型编译错误
-11. **LobbyOverlay 浮动面板** - 参考 BGrank 插件，用纯 C# 代码创建 WPF 浮动面板，显示玩家名字+序号
-    - 第一版用 XAML：net472 SDK 项目无法编译 XAML（`InitializeComponent` 不存在）
-    - 第二版用 `Core.OverlayWindow.Children`：`OverlayWindow` 没有 `Children` 属性
-    - 最终：纯代码创建 UI + `Core.OverlayCanvas.Children.Add()`，成功编译运行
+3. **添加调试日志** - 发现 `Player.Name` 在游戏中有值
+4. **5 秒轮询 → 简化为游戏开始读取** - 成功获取 PlayerId
+5. **添加 3 秒延迟** - Player.Name 初始化时间
+6. **对手 ID 调试** - 发现 `BattlegroundsLobbyInfo.Players`
+7. **LogLobbyPlayers** - 输出 lobby 玩家名单日志
+8. **添加 HearthMirror 引用** - 解决 `BattlegroundsLobbyInfo` 类型编译错误
+9. **LobbyOverlay 浮动面板** - 纯 C# WPF UI（XAML 在 net472 SDK 项目中不可用）
+10. **分差记录** - MongoDB 聚合管道原子计算 `lastRating` + `ratingChanges`
+11. **修复 `$push` 管道错误** - `$push` 不能作为管道 stage，改用 `$set` + `$concatArrays`
+12. **MongoDB 地址外置** - 经历环境变量 / local.config 方案后撤回，最终用 `git update-index --skip-worktree` 方案
+13. **排名获取** - 通过查 HDT 源码发现 `CurrentGameStats.BattlegroundsDetails.FinalPlacement`
 
 ## 下一步工作
 1. 将 lobby 玩家名单上传到 MongoDB（opponents 数组）
 2. 后续获取真实分数后替换序号显示
+3. 验证 FinalPlacement 在不同场景下是否可靠（单人/双人/掉线重连等）
 
 ## 编译方法
 ```cmd
