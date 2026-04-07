@@ -193,7 +193,7 @@ namespace HDT_BGTracker
                     //   1. lastRating = rating（当前分存为上局分）
                     //   2. rating = 新分数
                     //   3. ratingChange = 新分数 - 上局分
-                    //   4. $push 追加到 ratingChanges 数组
+                    //   4. $concatArrays 追加分差到 ratingChanges 数组
                     // 首次游戏 lastRating 为 null 时用 $ifNull 兜底，分差为 0
                     var stages = new MongoDB.Bson.BsonDocument[]
                     {
@@ -211,8 +211,16 @@ namespace HDT_BGTracker
                                 { rating, new MongoDB.Bson.BsonDocument("$ifNull",
                                     new MongoDB.Bson.BsonArray { "$rating", rating }) }) }
                         }),
-                        new MongoDB.Bson.BsonDocument("$push", new MongoDB.Bson.BsonDocument
-                            { { "ratingChanges", "$ratingChange" } })
+                        new MongoDB.Bson.BsonDocument("$set", new MongoDB.Bson.BsonDocument
+                        {
+                            { "ratingChanges", new MongoDB.Bson.BsonDocument("$concatArrays",
+                                new MongoDB.Bson.BsonArray
+                                {
+                                    new MongoDB.Bson.BsonDocument("$ifNull",
+                                        new MongoDB.Bson.BsonArray { "$ratingChanges", new MongoDB.Bson.BsonArray() }),
+                                    new MongoDB.Bson.BsonArray { "$ratingChange" }
+                                }) }
+                        })
                     };
                     var update = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Update.Pipeline(stages);
 
