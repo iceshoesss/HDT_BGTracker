@@ -21,7 +21,7 @@ namespace HDT_BGTracker
         private DateTime _gameEndTime = DateTime.MinValue;
         private bool _ratingUploaded;
         private string _cachedPlayerId;
-        private long? _cachedAccountIdLo; // 玩家自己的 AccountId.Lo
+        private string _cachedAccountIdLo; // 玩家自己的 AccountId.Lo（字符串避免大数问题）
         private DateTime _bgGameStartTime = DateTime.MinValue;
         private static readonly TimeSpan IdReadDelay = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan HeroSelectionDelay = TimeSpan.FromSeconds(63); // 英雄选择约60s + 3s buffer
@@ -220,7 +220,7 @@ namespace HDT_BGTracker
 
             // 最后一道防线：确保所有字段非 null
             string playerId = string.IsNullOrEmpty(_cachedPlayerId) ? "unknown" : _cachedPlayerId;
-            long? accountIdLo = _cachedAccountIdLo;
+            string accountIdLo = _cachedAccountIdLo; // 字符串类型，避免大数溢出
             string region = GetRegion();
             string timestamp = DateTime.UtcNow.ToString("o");
 
@@ -268,8 +268,8 @@ namespace HDT_BGTracker
                         // Stage 2: accountIdLo（仅首次设置）
                         new MongoDB.Bson.BsonDocument("$set", new MongoDB.Bson.BsonDocument
                         {
-                            { "accountIdLo", accountIdLo.HasValue
-                                ? (MongoDB.Bson.BsonValue)new MongoDB.Bson.BsonInt64(accountIdLo.Value)
+                            { "accountIdLo", !string.IsNullOrEmpty(accountIdLo)
+                                ? (MongoDB.Bson.BsonValue)new MongoDB.Bson.BsonString(accountIdLo)
                                 : new MongoDB.Bson.BsonDocument("$ifNull",
                                     new MongoDB.Bson.BsonArray { "$accountIdLo", MongoDB.Bson.BsonNull.Value }) },
                         }),
@@ -378,7 +378,7 @@ namespace HDT_BGTracker
             return "unknown";
         }
 
-        private long? GetAccountIdLo()
+        private string GetAccountIdLo()
         {
             // 从 LobbyInfo 中获取自己的 AccountId.Lo
             try
@@ -395,7 +395,7 @@ namespace HDT_BGTracker
                     {
                         if (p.Name == myNameNoTag && p.AccountId != null)
                         {
-                            long lo = p.AccountId.Lo;
+                            string lo = p.AccountId.Lo.ToString();
                             Log($"GetAccountIdLo: 自己 = {p.Name}, Lo = {lo}");
                             return lo;
                         }
@@ -451,7 +451,7 @@ namespace HDT_BGTracker
                     var doc = new MongoDB.Bson.BsonDocument
                     {
                         { "name", p.Name ?? "" },
-                        { "accountIdLo", p.AccountId?.Lo ?? 0 }
+                        { "accountIdLo", p.AccountId != null ? p.AccountId.Lo.ToString() : "" }
                     };
                     opponents.Add(doc);
                 }
