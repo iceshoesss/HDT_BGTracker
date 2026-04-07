@@ -20,6 +20,10 @@
       <HintPath>$(HDT_PATH)\HearthMirror.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="HearthDb">
+      <HintPath>$(HDT_PATH)\HearthDb.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <!-- WPF 引用（MenuItem 需要） -->
     <Reference Include="PresentationCore">
       <Private>False</Private>
