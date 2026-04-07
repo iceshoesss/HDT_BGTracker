@@ -9,7 +9,7 @@ namespace HDT_BGTracker
     public class RatingTracker
     {
         // ── 配置 ──────────────────────────────────────────
-        private const string MongoUrl = "mongodb://192.168.31.2:27017";
+        private const string MongoUrl = "mongodb://localhost:27017";
         private const string DbName = "hearthstone";
         private const string CollectionName = "bg_ratings";
 
