@@ -16,13 +16,13 @@ namespace HDT_BGTracker
         public MenuItem MenuItem { get; private set; }
 
         private RatingTracker _tracker;
-        private LobbyOverlay _overlay;
+        // private LobbyOverlay _overlay; // 浮动窗口已禁用
 
         public void OnLoad()
         {
             _tracker = new RatingTracker();
-            _overlay = new LobbyOverlay();
-            _tracker.SetOverlay(_overlay);
+            // _overlay = new LobbyOverlay();
+            // _tracker.SetOverlay(_overlay);
             _tracker.Start();
             CreateMenuItem();
         }
@@ -32,8 +32,8 @@ namespace HDT_BGTracker
             _tracker?.Stop();
             _tracker = null;
 
-            _overlay?.Cleanup();
-            _overlay = null;
+            // _overlay?.Cleanup();
+            // _overlay = null;
         }
 
         public void OnUpdate()

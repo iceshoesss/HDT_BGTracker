@@ -28,7 +28,7 @@ namespace HDT_BGTracker
         private bool _lobbyLogged; // lobby 玩家名单是否已输出（不带英雄）
         private string _cachedGameUuid; // 当局游戏 UUID
         private int _lastStepValue = -1; // 上一次 STEP tag 的值，用于检测变化
-        private LobbyOverlay _overlay;
+        // private LobbyOverlay _overlay; // 浮动窗口已禁用
 
         private MongoDB.Driver.MongoClient _mongoClient;
         private MongoDB.Driver.IMongoCollection<MongoDB.Bson.BsonDocument> _collection;
@@ -64,14 +64,14 @@ namespace HDT_BGTracker
             _enabled = false;
             _mongoClient = null;
             _collection = null;
-            _overlay = null;
+            // _overlay = null; // 浮动窗口已禁用
             Log("插件已停止");
         }
 
-        public void SetOverlay(LobbyOverlay overlay)
-        {
-            _overlay = overlay;
-        }
+        // public void SetOverlay(LobbyOverlay overlay) // 浮动窗口已禁用
+        // {
+        //     _overlay = overlay;
+        // }
 
         /// <summary>
         /// 由 OnUpdate() 每 ~100ms 调用一次
@@ -157,7 +157,7 @@ namespace HDT_BGTracker
                     _bgGameStartTime = DateTime.MinValue;
                     _heroLogged = false;
                     _lobbyLogged = false;
-                    _overlay?.Hide();
+                    // _overlay?.Hide(); // 浮动窗口已禁用
                 }
             }
             catch (Exception ex)
@@ -523,11 +523,11 @@ namespace HDT_BGTracker
                 Log(logText);
                 Log($"共 {players.Count} 个玩家");
 
-                // 显示 overlay
-                if (_overlay != null && !string.IsNullOrEmpty(displayText))
-                {
-                    _overlay.DisplayResult(displayText);
-                }
+                // 显示 overlay（浮动窗口已禁用）
+                // if (_overlay != null && !string.IsNullOrEmpty(displayText))
+                // {
+                //     _overlay.DisplayResult(displayText);
+                // }
             }
             catch (Exception ex)
             {
