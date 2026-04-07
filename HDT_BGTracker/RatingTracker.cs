@@ -9,7 +9,7 @@ namespace HDT_BGTracker
     public class RatingTracker
     {
         // ── 配置 ──────────────────────────────────────────
-        private const string MongoUrl = "mongodb://localhost:27017";
+        private const string MongoUrl = "mongodb://YOUR_MONGO_HOST:27017";
         private const string DbName = "hearthstone";
         private const string CollectionName = "bg_ratings";
 
@@ -44,7 +44,7 @@ namespace HDT_BGTracker
                 _mongoClient = new MongoDB.Driver.MongoClient(MongoUrl);
                 var db = _mongoClient.GetDatabase(DbName);
                 _collection = db.GetCollection<MongoDB.Bson.BsonDocument>(CollectionName);
-                Log("插件已启动，MongoDB: " + MongoUrl);
+                Log("插件已启动，MongoDB 已连接");
             }
             catch (Exception ex)
             {
