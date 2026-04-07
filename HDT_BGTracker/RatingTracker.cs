@@ -93,7 +93,24 @@ namespace HDT_BGTracker
 
                     // 记录游戏开始时间
                     if (_bgGameStartTime == DateTime.MinValue)
+                    {
                         _bgGameStartTime = DateTime.Now;
+                        // 记录初始 STEP
+                        try
+                        {
+                            var gameEntity = Core.Game?.Entities?.Values
+                                ?.FirstOrDefault(e => e.Name == "GameEntity");
+                            if (gameEntity != null)
+                            {
+                                _lastStepValue = gameEntity.GetTag(HearthDb.Enums.GameTag.STEP);
+                                string stepName = Enum.IsDefined(typeof(HearthDb.Enums.GameStep), _lastStepValue)
+                                    ? ((HearthDb.Enums.GameStep)_lastStepValue).ToString()
+                                    : $"UNKNOWN({_lastStepValue})";
+                                Log($"STEP初始: {stepName} = {_lastStepValue}");
+                            }
+                        }
+                        catch { }
+                    }
 
                     // === STEP 诊断：持续输出 STEP tag 变化 ===
                     try
@@ -106,7 +123,10 @@ namespace HDT_BGTracker
                             if (currentStep != _lastStepValue)
                             {
                                 double elapsed = (DateTime.Now - _bgGameStartTime).TotalSeconds;
-                                Log($"STEP变化: {currentStep} (距开始 {elapsed:F1}s)");
+                                string stepName = Enum.IsDefined(typeof(HearthDb.Enums.GameStep), currentStep)
+                                    ? ((HearthDb.Enums.GameStep)currentStep).ToString()
+                                    : $"UNKNOWN({currentStep})";
+                                Log($"STEP变化: {stepName} = {currentStep} (距开始 {elapsed:F1}s)");
                                 _lastStepValue = currentStep;
                             }
                         }
