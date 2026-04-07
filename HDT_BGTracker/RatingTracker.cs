@@ -390,7 +390,7 @@ namespace HDT_BGTracker
                         var found = tryGet.Invoke(tags, args);
                         if (found is bool ok && ok && (int)args[1] > 0)
                         {
-                            bool isLocal = name == localId || (e.IsLocalPlayer);
+                            bool isLocal = name == localId;
                             Log($"  IDENTITY: \"{name}\" isLocal={isLocal} entityId={e.Id}");
                             seen.Add(name);
                         }
@@ -410,7 +410,7 @@ namespace HDT_BGTracker
                         if (seen.Contains(name)) continue;
                         if (name == "GameEntity" || name == "调酒师鲍勃") continue;
 
-                        bool isLocal = e.IsLocalPlayer;
+                        bool isLocal = name == localId;
                         Log($"  Entity: \"{name}\" isLocal={isLocal} entityId={e.Id}");
                         seen.Add(name);
                     }
