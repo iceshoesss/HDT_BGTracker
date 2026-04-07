@@ -28,6 +28,7 @@ namespace HDT_BGTracker
         private bool _lobbyNamesLogged;
         private bool _lobbyHeroesLogged;
         private string _cachedGameUuid; // 当局游戏 UUID
+        private int _lastStepValue = -1; // 诊断用：上一次 STEP tag 的值
         private LobbyOverlay _overlay;
 
         private MongoDB.Driver.MongoClient _mongoClient;
@@ -94,6 +95,25 @@ namespace HDT_BGTracker
                     if (_bgGameStartTime == DateTime.MinValue)
                         _bgGameStartTime = DateTime.Now;
 
+                    // === STEP 诊断：持续输出 STEP tag 变化 ===
+                    try
+                    {
+                        var gameEntity = Core.Game?.Entities?.Values
+                            ?.FirstOrDefault(e => e.Name == "GameEntity");
+                        if (gameEntity != null)
+                        {
+                            int currentStep = gameEntity.GetTag(HearthDb.Enums.GameTag.STEP);
+                            if (currentStep != _lastStepValue)
+                            {
+                                double elapsed = (DateTime.Now - _bgGameStartTime).TotalSeconds;
+                                Log($"STEP变化: {currentStep} (距开始 {elapsed:F1}s)");
+                                _lastStepValue = currentStep;
+                            }
+                        }
+                    }
+                    catch { }
+                    // === END STEP 诊断 ===
+
                     // 延迟 3 秒后再读取 PlayerId（游戏初始化需要时间）
                     if (string.IsNullOrEmpty(_cachedPlayerId)
                         && DateTime.Now - _bgGameStartTime >= IdReadDelay)
@@ -136,6 +156,7 @@ namespace HDT_BGTracker
                     _cachedPlayerId = null;
                     _cachedAccountIdLo = null;
                     _cachedGameUuid = null;
+                    _lastStepValue = -1;
                     _bgGameStartTime = DateTime.MinValue;
                     _lobbyNamesLogged = false;
                     _lobbyHeroesLogged = false;
