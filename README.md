@@ -13,7 +13,6 @@ MongoDB 数据库: `hearthstone`，集合: `bg_ratings`
   "lastRating": 6477,
   "ratingChange": 23,
   "ratingChanges": [23, -15, 40, -30],
-  "placement": 3,
   "placements": [4, 1, 3, 6],
   "gameCount": 42,
   "mode": "solo",
@@ -26,8 +25,7 @@ MongoDB 数据库: `hearthstone`，集合: `bg_ratings`
 - `lastRating` — 上一局的分数
 - `ratingChange` — 本局分差（`当前分 - 上局分`）
 - `ratingChanges` — 每局分差的历史数组
-- `placement` — 本局排名（1-8，null 表示未获取到）
-- `placements` — 每局排名的历史数组
+- `placements` — 每局排名的历史数组（1-8，null 表示未获取到）
 - `gameCount` — 累计上传局数
 - `mode` — `solo`（单人）或 `duo`（双人）
 - `timestamp` — UTC 时间
