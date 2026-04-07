@@ -27,6 +27,25 @@ namespace HDT_BGTracker
         private bool _heroLogged; // 英雄名是否已输出
         private string _cachedGameUuid; // 当局游戏 UUID
         private int _lastStepValue = -1; // 诊断用：上一次 STEP tag 的值
+        private static readonly Dictionary<int, string> StepNames = new Dictionary<int, string>
+        {
+            { 0, "INVALID" },
+            { 1, "BEGIN_FIRST" },
+            { 2, "BEGIN_SHUFFLE" },
+            { 3, "BEGIN_DRAW" },
+            { 4, "BEGIN_MULLIGAN" },
+            { 5, "MAIN_BEGIN" },
+            { 6, "MAIN_READY" },
+            { 7, "MAIN_RESOURCE" },
+            { 8, "MAIN_DRAW" },
+            { 9, "MAIN_START" },
+            { 10, "MAIN_ACTION" },
+            { 11, "MAIN_COMBAT" },
+            { 12, "MAIN_NEXT" },
+            { 13, "MAIN_CLEANUP" },
+            { 14, "MAIN_START_TRIGGERS" },
+            { 15, "MAIN_GAMEOVER" },
+        };
         private LobbyOverlay _overlay;
 
         private MongoDB.Driver.MongoClient _mongoClient;
@@ -101,9 +120,8 @@ namespace HDT_BGTracker
                             if (gameEntity != null)
                             {
                                 _lastStepValue = gameEntity.GetTag(HearthDb.Enums.GameTag.STEP);
-                                string stepName = Enum.IsDefined(typeof(HearthDb.Enums.GameStep), _lastStepValue)
-                                    ? ((HearthDb.Enums.GameStep)_lastStepValue).ToString()
-                                    : $"UNKNOWN({_lastStepValue})";
+                                StepNames.TryGetValue(_lastStepValue, out string stepName);
+                                stepName = stepName ?? $"UNKNOWN({_lastStepValue})";
                                 Log($"STEP初始: {stepName} = {_lastStepValue}");
                             }
                         }
@@ -121,14 +139,13 @@ namespace HDT_BGTracker
                             if (currentStep != _lastStepValue)
                             {
                                 double elapsed = (DateTime.Now - _bgGameStartTime).TotalSeconds;
-                                string stepName = Enum.IsDefined(typeof(HearthDb.Enums.GameStep), currentStep)
-                                    ? ((HearthDb.Enums.GameStep)currentStep).ToString()
-                                    : $"UNKNOWN({currentStep})";
+                                StepNames.TryGetValue(currentStep, out string stepName);
+                                stepName = stepName ?? $"UNKNOWN({currentStep})";
                                 Log($"STEP变化: {stepName} = {currentStep} (距开始 {elapsed:F1}s)");
                                 _lastStepValue = currentStep;
 
                                 // STEP 13 (MAIN_CLEANUP) = 第一轮战斗结束，英雄选择早已完成
-                                if (currentStep == (int)HearthDb.Enums.GameStep.MAIN_CLEANUP && !_heroLogged)
+                                if (currentStep == 13 && !_heroLogged)
                                 {
                                     LogLobbyPlayers(includeHeroes: true);
                                     _heroLogged = true;
