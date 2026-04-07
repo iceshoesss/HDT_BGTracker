@@ -334,6 +334,7 @@ namespace HDT_BGTracker
                 Log($"=== Lobby {phase} (GameUuid: {gameUuid}) ===");
 
                 // 输出 lobby 玩家名单
+                string logText = "";
                 string displayText = "";
                 for (int i = 0; i < players.Count; i++)
                 {
@@ -341,19 +342,20 @@ namespace HDT_BGTracker
                     string name = p.Name;
                     string acctLo = p.AccountId?.Lo.ToString() ?? "?";
 
+                    displayText += $"\n{name} {i}";
+
                     if (includeHeroes)
                     {
                         string heroId = p.HeroCardId ?? "";
                         string heroName = GetHeroName(heroId);
-                        Log($"  [{i}] {name} (Lo={acctLo}) 英雄={heroName}");
-                        displayText += $"\n{name} {i} {heroName}";
+                        logText += $"\n  [{i}] {name} (Lo={acctLo}) 英雄={heroName}";
                     }
                     else
                     {
-                        Log($"  [{i}] {name} (Lo={acctLo})");
-                        displayText += $"\n{name} {i}";
+                        logText += $"\n  [{i}] {name} (Lo={acctLo})";
                     }
                 }
+                Log(logText);
                 Log($"共 {players.Count} 个玩家");
 
                 // 显示 overlay
