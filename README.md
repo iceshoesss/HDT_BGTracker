@@ -9,6 +9,7 @@ MongoDB 数据库: `hearthstone`，集合: `bg_ratings`
 ```json
 {
   "playerId": "玩家名#1234",
+  "accountIdLo": "1708070391",
   "rating": 6500,
   "lastRating": 6477,
   "ratingChange": 23,
@@ -17,10 +18,24 @@ MongoDB 数据库: `hearthstone`，集合: `bg_ratings`
   "gameCount": 42,
   "mode": "solo",
   "timestamp": "2026-04-07T09:15:00.0000000Z",
-  "region": "CN"
+  "region": "CN",
+  "games": [
+    {
+      "gameUuid": "888fc109-8a0c-42d8-8b21-fcee26708e8f",
+      "isLeague": false,
+      "placement": 3,
+      "opponents": [
+        { "name": "对手名", "accountIdLo": "12345678" }
+      ],
+      "endTime": "2026-04-07T15:05:00.0000000Z",
+      "ratingChange": 23
+    }
+  ]
 }
 ```
 
+- `playerId` — 玩家 BattleTag（如 `南怀北瑾丨少头脑#5267`）
+- `accountIdLo` — 玩家唯一标识（暴雪 AccountId.Lo，字符串存储避免大数问题）
 - `rating` — 当前酒馆战棋分数
 - `lastRating` — 上一局的分数
 - `ratingChange` — 本局分差（`当前分 - 上局分`）
@@ -30,6 +45,13 @@ MongoDB 数据库: `hearthstone`，集合: `bg_ratings`
 - `mode` — `solo`（单人）或 `duo`（双人）
 - `timestamp` — UTC 时间
 - `region` — 服务器区域
+- `games` — 对局明细数组
+  - `gameUuid` — 游戏唯一标识
+  - `isLeague` — 是否联赛（当前固定 false）
+  - `placement` — 本局排名（1-8 或 null）
+  - `opponents` — 对手列表（name + accountIdLo）
+  - `endTime` — 对局结束时间 UTC
+  - `ratingChange` — 本局分数变化
 
 ## 编译
 
