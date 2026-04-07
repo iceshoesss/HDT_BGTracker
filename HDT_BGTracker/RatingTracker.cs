@@ -245,7 +245,6 @@ namespace HDT_BGTracker
                                     })
                                 : new MongoDB.Bson.BsonDocument("$ifNull",
                                     new MongoDB.Bson.BsonArray { "$placements", new MongoDB.Bson.BsonArray() }) },
-                            { "placement", placement.HasValue ? (MongoDB.Bson.BsonValue)placement.Value : MongoDB.Bson.BsonNull.Value }
                         })
                     };
                     var update = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Update.Pipeline(stages);
