@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Hearthstone_Deck_Tracker.API;
+using HearthDb;
 
 namespace HDT_BGTracker
 {
@@ -329,7 +330,8 @@ namespace HDT_BGTracker
                     string name = p.Name;
                     string heroId = p.HeroCardId ?? "";
                     string acctLo = p.AccountId?.Lo.ToString() ?? "?";
-                    Log($"  [{i}] {name} (Lo={acctLo}) hero={heroId}");
+                    string heroName = GetHeroName(heroId);
+                    Log($"  [{i}] {name} (Lo={acctLo}) hero={heroId} ({heroName})");
                     displayText += $"\n{name} {i}";
                 }
                 Log($"共 {players.Count} 个玩家");
@@ -346,6 +348,67 @@ namespace HDT_BGTracker
             {
                 // lobby 数据可能还没准备好，不标记为已记录，下次重试
                 Log($"LogLobbyPlayers 等待中: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 通过 HearthDb 查询英雄 cardId 对应的英雄名
+        /// </summary>
+        private static string GetHeroName(string heroCardId)
+        {
+            if (string.IsNullOrEmpty(heroCardId)) return "";
+            try
+            {
+                if (Cards.All.TryGetValue(heroCardId, out var card))
+                {
+                    // 优先中文名，fallback 英文
+                    return card.GetLocName(HearthDb.Enums.Locale.zhCN) ?? card.Name ?? heroCardId;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"GetHeroName 异常: {ex.Message}");
+            }
+            return heroCardId;
+        }
+
+        /// <summary>
+        /// 验证 HearthDb 是否可用，输出 3 个酒馆战棋英雄名
+        /// </summary>
+        public static void TestHearthDb()
+        {
+            try
+            {
+                Log("=== HearthDb 验证开始 ===");
+                Log($"Cards.All 总数: {Cards.All.Count}");
+
+                // 测试几个已知的 BG 英雄
+                string[] testHeroes = {
+                    "TB_BaconShop_HERO_56",   // 阿莱克丝塔萨
+                    "TB_BaconShop_HERO_50",   // 苔丝·格雷迈恩
+                    "BG20_HERO_202",          // 阮大师
+                    "BG31_HERO_802",          // 阿塔尼斯
+                };
+
+                foreach (var heroId in testHeroes)
+                {
+                    if (Cards.All.TryGetValue(heroId, out var card))
+                    {
+                        string enName = card.Name ?? "?";
+                        string zhName = card.GetLocName(HearthDb.Enums.Locale.zhCN) ?? "?";
+                        Log($"  {heroId} → EN: {enName}, CN: {zhName}");
+                    }
+                    else
+                    {
+                        Log($"  {heroId} → NOT FOUND");
+                    }
+                }
+
+                Log("=== HearthDb 验证完成 ===");
+            }
+            catch (Exception ex)
+            {
+                Log($"HearthDb 验证失败: {ex.Message}");
             }
         }
 
