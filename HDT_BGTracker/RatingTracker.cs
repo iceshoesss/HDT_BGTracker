@@ -27,26 +27,7 @@ namespace HDT_BGTracker
         private bool _heroLogged; // 英雄名是否已输出
         private bool _lobbyLogged; // lobby 玩家名单是否已输出（不带英雄）
         private string _cachedGameUuid; // 当局游戏 UUID
-        private int _lastStepValue = -1; // 诊断用：上一次 STEP tag 的值
-        private static readonly Dictionary<int, string> StepNames = new Dictionary<int, string>
-        {
-            { 0, "INVALID" },
-            { 1, "BEGIN_FIRST" },
-            { 2, "BEGIN_SHUFFLE" },
-            { 3, "BEGIN_DRAW" },
-            { 4, "BEGIN_MULLIGAN" },
-            { 5, "MAIN_BEGIN" },
-            { 6, "MAIN_READY" },
-            { 7, "MAIN_RESOURCE" },
-            { 8, "MAIN_DRAW" },
-            { 9, "MAIN_START" },
-            { 10, "MAIN_ACTION" },
-            { 11, "MAIN_COMBAT" },
-            { 12, "MAIN_NEXT" },
-            { 13, "MAIN_CLEANUP" },
-            { 14, "MAIN_START_TRIGGERS" },
-            { 15, "MAIN_GAMEOVER" },
-        };
+        private int _lastStepValue = -1; // 上一次 STEP tag 的值，用于检测变化
         private LobbyOverlay _overlay;
 
         private MongoDB.Driver.MongoClient _mongoClient;
@@ -113,23 +94,9 @@ namespace HDT_BGTracker
                     if (_bgGameStartTime == DateTime.MinValue)
                     {
                         _bgGameStartTime = DateTime.Now;
-                        // 记录初始 STEP
-                        try
-                        {
-                            var gameEntity = Core.Game?.Entities?.Values
-                                ?.FirstOrDefault(e => e.Name == "GameEntity");
-                            if (gameEntity != null)
-                            {
-                                _lastStepValue = gameEntity.GetTag(HearthDb.Enums.GameTag.STEP);
-                                StepNames.TryGetValue(_lastStepValue, out string stepName);
-                                stepName = stepName ?? $"UNKNOWN({_lastStepValue})";
-                                Log($"STEP初始: {stepName} = {_lastStepValue}");
-                            }
-                        }
-                        catch { }
                     }
 
-                    // === STEP 变化：记录日志 + 检测英雄选择结束 ===
+                    // STEP 13 (MAIN_CLEANUP) = 第一轮战斗结束，英雄选择早已完成
                     try
                     {
                         var gameEntity = Core.Game?.Entities?.Values
@@ -139,13 +106,7 @@ namespace HDT_BGTracker
                             int currentStep = gameEntity.GetTag(HearthDb.Enums.GameTag.STEP);
                             if (currentStep != _lastStepValue)
                             {
-                                double elapsed = (DateTime.Now - _bgGameStartTime).TotalSeconds;
-                                StepNames.TryGetValue(currentStep, out string stepName);
-                                stepName = stepName ?? $"UNKNOWN({currentStep})";
-                                Log($"STEP变化: {stepName} = {currentStep} (距开始 {elapsed:F1}s)");
                                 _lastStepValue = currentStep;
-
-                                // STEP 13 (MAIN_CLEANUP) = 第一轮战斗结束，英雄选择早已完成
                                 if (currentStep == 13 && !_heroLogged)
                                 {
                                     LogLobbyPlayers(includeHeroes: true);
