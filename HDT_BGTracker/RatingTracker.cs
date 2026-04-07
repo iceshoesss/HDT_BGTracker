@@ -22,7 +22,9 @@ namespace HDT_BGTracker
         private string _cachedPlayerId;
         private DateTime _bgGameStartTime = DateTime.MinValue;
         private static readonly TimeSpan IdReadDelay = TimeSpan.FromSeconds(3);
-        private bool _lobbyLogged;
+        private static readonly TimeSpan HeroSelectionDelay = TimeSpan.FromSeconds(63); // 英雄选择约60s + 3s buffer
+        private bool _lobbyNamesLogged;
+        private bool _lobbyHeroesLogged;
         private LobbyOverlay _overlay;
 
         private MongoDB.Driver.MongoClient _mongoClient;
@@ -95,10 +97,17 @@ namespace HDT_BGTracker
                         _cachedPlayerId = GetPlayerId();
                     }
 
-                    // PlayerId 获取后，尝试输出 lobby 玩家名单
-                    if (!string.IsNullOrEmpty(_cachedPlayerId) && _cachedPlayerId != "unknown" && !_lobbyLogged)
+                    // PlayerId 获取后，先输出 lobby 玩家名单（不带英雄）
+                    if (!string.IsNullOrEmpty(_cachedPlayerId) && _cachedPlayerId != "unknown" && !_lobbyNamesLogged)
                     {
-                        LogLobbyPlayers();
+                        LogLobbyPlayers(includeHeroes: false);
+                    }
+
+                    // 英雄选择完成后（~63s），再次输出带英雄名的玩家名单
+                    if (!string.IsNullOrEmpty(_cachedPlayerId) && _cachedPlayerId != "unknown"
+                        && !_lobbyHeroesLogged && DateTime.Now - _bgGameStartTime >= HeroSelectionDelay)
+                    {
+                        LogLobbyPlayers(includeHeroes: true);
                     }
                 }
                 else if (_wasInBgGame && Core.Game.IsInMenu && !_ratingUploaded)
@@ -119,7 +128,8 @@ namespace HDT_BGTracker
                     _gameEndTime = DateTime.MinValue;
                     _cachedPlayerId = null;
                     _bgGameStartTime = DateTime.MinValue;
-                    _lobbyLogged = false;
+                    _lobbyNamesLogged = false;
+                    _lobbyHeroesLogged = false;
                     _overlay?.Hide();
                 }
             }
@@ -309,7 +319,7 @@ namespace HDT_BGTracker
             return "unknown";
         }
 
-        private void LogLobbyPlayers()
+        private void LogLobbyPlayers(bool includeHeroes = false)
         {
             try
             {
@@ -320,19 +330,29 @@ namespace HDT_BGTracker
                 if (players == null || players.Count == 0) return;
 
                 string gameUuid = lobbyInfo.GameUuid ?? "";
-                Log($"GameUuid: {gameUuid}");
+                string phase = includeHeroes ? "英雄选择后" : "游戏开始";
+                Log($"=== Lobby {phase} (GameUuid: {gameUuid}) ===");
 
-                // 输出 lobby 玩家名单：名字 + AccountId.Lo + 英雄
+                // 输出 lobby 玩家名单
                 string displayText = "";
                 for (int i = 0; i < players.Count; i++)
                 {
                     var p = players[i];
                     string name = p.Name;
-                    string heroId = p.HeroCardId ?? "";
                     string acctLo = p.AccountId?.Lo.ToString() ?? "?";
-                    string heroName = GetHeroName(heroId);
-                    Log($"  [{i}] {name} (Lo={acctLo}) hero={heroId} ({heroName})");
-                    displayText += $"\n{name} {i}";
+
+                    if (includeHeroes)
+                    {
+                        string heroId = p.HeroCardId ?? "";
+                        string heroName = GetHeroName(heroId);
+                        Log($"  [{i}] {name} (Lo={acctLo}) 英雄={heroName}");
+                        displayText += $"\n{name} {i} {heroName}";
+                    }
+                    else
+                    {
+                        Log($"  [{i}] {name} (Lo={acctLo})");
+                        displayText += $"\n{name} {i}";
+                    }
                 }
                 Log($"共 {players.Count} 个玩家");
 
@@ -342,12 +362,16 @@ namespace HDT_BGTracker
                     _overlay.DisplayResult(displayText);
                 }
 
-                _lobbyLogged = true;
+                if (includeHeroes)
+                    _lobbyHeroesLogged = true;
+                else
+                    _lobbyNamesLogged = true;
             }
             catch (Exception ex)
             {
                 // lobby 数据可能还没准备好，不标记为已记录，下次重试
-                Log($"LogLobbyPlayers 等待中: {ex.Message}");
+                string phase = includeHeroes ? "英雄选择后" : "游戏开始";
+                Log($"LogLobbyPlayers({phase}) 等待中: {ex.Message}");
             }
         }
 
