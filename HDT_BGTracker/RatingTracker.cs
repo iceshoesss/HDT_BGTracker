@@ -188,20 +188,34 @@ namespace HDT_BGTracker
                 {
                     // 注意：不存储对手ID
                     var filter = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.Eq("playerId", playerId);
-                    var update = new MongoDB.Bson.BsonDocument
+
+                    // 聚合管道更新：原子操作完成
+                    //   1. lastRating = rating（当前分存为上局分）
+                    //   2. rating = 新分数
+                    //   3. ratingChange = 新分数 - 上局分
+                    //   4. $push 追加到 ratingChanges 数组
+                    // 首次游戏 lastRating 为 null 时用 $ifNull 兜底，分差为 0
+                    var pipeline = new MongoDB.Bson.BsonDocument[]
                     {
-                        { "$set", new MongoDB.Bson.BsonDocument
-                            {
-                                { "rating", rating },
-                                { "mode", mode },
-                                { "timestamp", timestamp },
-                                { "region", region }
-                            }
-                        },
-                        { "$inc", new MongoDB.Bson.BsonDocument { { "gameCount", 1 } } }
+                        new MongoDB.Bson.BsonDocument("$set", new MongoDB.Bson.BsonDocument
+                        {
+                            { "lastRating", "$rating" },
+                            { "rating", rating },
+                            { "mode", mode },
+                            { "timestamp", timestamp },
+                            { "region", region },
+                            { "gameCount", new MongoDB.Bson.BsonDocument("$add",
+                                new MongoDB.Bson.BsonArray { new MongoDB.Bson.BsonDocument("$ifNull",
+                                    new MongoDB.Bson.BsonArray { "$gameCount", 0 }), 1 }) },
+                            { "ratingChange", new MongoDB.Bson.BsonDocument("$subtract", new MongoDB.Bson.BsonArray
+                                { rating, new MongoDB.Bson.BsonDocument("$ifNull",
+                                    new MongoDB.Bson.BsonArray { "$rating", rating }) }) }
+                        }),
+                        new MongoDB.Bson.BsonDocument("$push", new MongoDB.Bson.BsonDocument
+                            { { "ratingChanges", "$ratingChange" } })
                     };
 
-                    _collection.UpdateOne(filter, update, new MongoDB.Driver.UpdateOptions { IsUpsert = true });
+                    _collection.UpdateOne(filter, pipeline, new MongoDB.Driver.UpdateOptions { IsUpsert = true });
                     _ratingUploaded = true;
                     Log($"已上传分数: {rating} ({mode}) playerId={playerId}");
                 }
