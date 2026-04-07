@@ -107,39 +107,95 @@
 11. **修复 `$push` 管道错误** - `$push` 不能作为管道 stage，改用 `$set` + `$concatArrays`
 12. **MongoDB 地址外置** - 经历环境变量 / local.config 方案后撤回，最终用 `git update-index --skip-worktree` 方案
 13. **排名获取** - 通过查 HDT 源码发现 `CurrentGameStats.BattlegroundsDetails.FinalPlacement`
+14. **BattleTag 调试**（2026-04-07 session）— 见下方详细记录
+
+## 📋 2026-04-07 开发日志：BattleTag / AccountId / 英雄映射
+
+### 目标
+确认能否获取其他玩家的 BattleTag（名字#号），为联赛匹配做准备。
+
+### 实验过程
+
+#### 实验 1：全量 Dump Player/LobbyPlayer/MetaData 属性
+- 用反射 Dump 所有公共属性，嵌套对象递归展开（最多 2 层）
+- **结果**：
+  - `Player.Name` = `南怀北瑾丨少头脑#5267` ✅ 自己有完整 BattleTag
+  - `LobbyPlayer.Name` = `南怀北瑾丨少头脑` ❌ 不带 #tag
+  - `LobbyPlayer.AccountId` = `HearthMirror.Objects.AccountId` { Hi, Lo }
+  - `MetaData.AccountId` = 同上（自己的 AccountId）
+
+#### 实验 2：确认 AccountId.Lo 是否跨局稳定
+- 测试了 3 次（2 局游戏 + 1 次插件重启）
+- 自己的 `AccountId.Lo = 1708070391` 三次完全一致 ✅
+- **结论**：`AccountId.Lo` 是暴雪内部的账号唯一标识，不会变
+
+#### 实验 3：Entity 系统中的 PLAYER_IDENTITY
+- 遍历 `Core.Game.Entities.Values`，检查 `Tags` 字典中 `PLAYER_IDENTITY (271)` 标签
+- **结果**：只有 `GameEntity`、`调酒师鲍勃`、自己（带 `#5267`）有 PLAYER_IDENTITY
+- 对手的 entity **没有** PLAYER_IDENTITY 标签
+- 对手的 entity.Name 也是不带 #tag 的纯名字
+- **结论**：Entity 系统也无法获取其他玩家的 BattleTag
+
+#### 实验 4：能否从 AccountId.Lo 推算 #tag
+- 自己：`#5267` vs `Lo=1708070391`
+- `1708070391 % 10000 = 391 ≠ 5267`
+- **结论**：两者无数学关系，是暴雪内部并行的两套独立 ID 体系
+
+#### 实验 5：能否通过 Blizzard API 反查
+- 查了 Battle.net API 文档
+- `/account/user` 只能查自己的 BattleTag（需要 OAuth）
+- **没有**通过 AccountId 查他人 BattleTag 的公开接口
+- **结论**：暴雪不暴露这个映射关系
+
+### 最终结论：玩家 ID 获取
+| 数据源 | Name 格式 | 有 #tag？ | 唯一标识 |
+|--------|----------|----------|---------|
+| `Player.Name` | `南怀北瑾丨少头脑#5267` | ✅ | — |
+| `LobbyPlayer.Name` | `南怀北瑾丨少头脑` | ❌ | `AccountId.Lo` |
+| Entity `e.Name` | 同上 | ❌ | `EntityId` |
+| `AccountId.Lo` | 数字 | N/A | ✅ 跨局稳定不变 |
+
+**联赛匹配方案**：用 **LobbyPlayer.Name** 匹配已注册玩家，`AccountId.Lo` 作备用唯一标识（防同名）。
+
+### 英雄 ID → 英雄名映射
+- HeroCardId 格式：`TB_BaconShop_HERO_56`、`BG20_HERO_202`、`BG31_HERO_802` 等
+- **最佳方案**：使用 `HearthDb.Cards.All[cardId].Name`
+  - HDT 自带的卡牌数据库，不需要自己维护映射表
+  - 不需要网络请求，HDT 更新时自动同步
+  - 用法：`using HearthDb.CardDefs; Cards.All.TryGetValue(heroCardId, out var card)` → `card.Name`
+- 需要在 csproj 中添加 `HearthDb.dll` 引用（位于 HDT 目录）
+- 已添加引用，**待编译验证**（本次会话时间不够）
+- 备选数据源：`https://api.hearthstonejson.com/v1/latest/zhCN/cards.json`（如果 HearthDb 不可用）
+
+### 实验中的英雄名对应关系（部分，来自 HearthstoneJSON）
+| CardId | 英雄名 |
+|--------|--------|
+| TB_BaconShop_HERO_56 | 阿莱克丝塔萨 |
+| TB_BaconShop_HERO_50 | 苔丝·格雷迈恩 |
+| TB_BaconShop_HERO_36 | 舞者达瑞尔 |
+| TB_BaconShop_HERO_57 | 诺兹多姆 |
+| TB_BaconShop_HERO_76 | 奥拉基尔 |
+| TB_BaconShop_HERO_74 | 林地守护者欧穆 |
+| TB_BaconShop_HERO_92 | 亚煞极 |
+| TB_BaconShop_HERO_23 | 沙德沃克 |
+| TB_BaconShop_HERO_64 | 尤朵拉船长 |
+| TB_BaconShop_HERO_16 | 挂机的阿凯 |
+| BG20_HERO_202 | 阮大师 |
+| BG20_HERO_102 | 萨鲁法尔大王 |
+| BG23_HERO_306 | 希尔瓦娜斯·风行者 |
+| BG31_HERO_802 | 阿塔尼斯 |
+
+### 下一步
+1. **编译验证 HearthDb** — 确认 `HearthDb.dll` 在 HDT 目录下，`Cards.All` 可用
+2. **集成英雄名到 overlay** — 用 `Cards.All` 查英雄名替换 cardId 显示
+3. **将 lobby 玩家信息上传到 MongoDB** — opponents 数组（name + AccountId.Lo + hero + placement）
+4. **开始联赛功能开发** — 后端 API + 插件匹配逻辑
 
 ## 下一步工作
-1. 将 lobby 玩家名单上传到 MongoDB（opponents 数组）
-2. 后续获取真实分数后替换序号显示
-3. 验证 FinalPlacement 在不同场景下是否可靠（单人/双人/掉线重连等）
-
-## 🏆 联赛功能规划（待开发）
-
-### 概述
-利用插件实现酒馆战棋联赛，根据排名计分（第1名9分，第2名7分，第3名6分，以此类推）。
-
-### 流程
-1. 玩家通过游戏 ID 截图注册，获得唯一 ID
-2. 联赛网站点击加入队列，满 8 人后比赛开始
-3. 插件在游戏开始时获取大厅 8 人名字，调后端 API 检查是否匹配队列
-4. 匹配则标记为联赛局，游戏结束时上传 placement 到联赛数据库
-
-### 数据库设计
-- `players` — 注册选手（playerId, battleTag, registeredAt）
-- `queue` — 当前队列（满 8 人触发比赛）
-- `league_games` — 联赛局记录（gameId, seasonId, players[], placement, points）
-  - points 直接算好存入（9/7/6/5/4/3/2/1）
-
-### 需要的后端 API
-- `POST /api/register` — 注册选手
-- `POST /api/queue/join` — 加入队列
-- `POST /api/match/check` — 插件传入大厅 8 人名字，返回是否匹配队列 + gameId
-- `POST /api/match/result` — 插件传入 gameId + placement
-- `GET /api/standings` — 积分榜
-
-### 待确认
-- `BattlegroundsLobbyInfo.Players` 的名字是否带 BattleTag 号（如 `名#1234`），决定匹配策略
-- 将来可能拆分插件：分数追踪 vs 联赛功能，作为独立插件维护
+1. 编译验证 HearthDb 引用是否可用
+2. 将 lobby 玩家名单上传到 MongoDB（opponents 数组：name, accountIdLo, heroName, placement）
+3. 联赛功能：后端 API + 插件 lobby 匹配逻辑
+4. 验证 FinalPlacement 在不同场景下是否可靠（单人/双人/掉线重连等）
 
 ## 编译方法
 ```cmd
