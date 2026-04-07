@@ -1,5 +1,6 @@
 using System;
 using System.Windows.Controls;
+using Hearthstone_Deck_Tracker.API;
 using Hearthstone_Deck_Tracker.Plugins;
 
 namespace HDT_BGTracker
@@ -15,10 +16,13 @@ namespace HDT_BGTracker
         public MenuItem MenuItem { get; private set; }
 
         private RatingTracker _tracker;
+        // private LobbyOverlay _overlay; // 浮动窗口已禁用
 
         public void OnLoad()
         {
             _tracker = new RatingTracker();
+            // _overlay = new LobbyOverlay();
+            // _tracker.SetOverlay(_overlay);
             _tracker.Start();
             CreateMenuItem();
         }
@@ -27,6 +31,9 @@ namespace HDT_BGTracker
         {
             _tracker?.Stop();
             _tracker = null;
+
+            // _overlay?.Cleanup();
+            // _overlay = null;
         }
 
         public void OnUpdate()
@@ -37,6 +44,7 @@ namespace HDT_BGTracker
         public void OnButtonPress()
         {
             _tracker?.TestConnection();
+            RatingTracker.TestHearthDb();
         }
 
         private void CreateMenuItem()

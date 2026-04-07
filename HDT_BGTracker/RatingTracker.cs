@@ -1,14 +1,17 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Hearthstone_Deck_Tracker.API;
+using HearthDb;
 
 namespace HDT_BGTracker
 {
     public class RatingTracker
     {
         // ── 配置 ──────────────────────────────────────────
-        private const string MongoUrl = "mongodb://192.168.31.2:27017";
+        private const string MongoUrl = "mongodb://YOUR_MONGO_HOST:27017";
         private const string DbName = "hearthstone";
         private const string CollectionName = "bg_ratings";
 
@@ -18,6 +21,14 @@ namespace HDT_BGTracker
         private DateTime _gameEndTime = DateTime.MinValue;
         private bool _ratingUploaded;
         private string _cachedPlayerId;
+        private string _cachedAccountIdLo; // 玩家自己的 AccountId.Lo（字符串避免大数问题）
+        private DateTime _bgGameStartTime = DateTime.MinValue;
+        private static readonly TimeSpan IdReadDelay = TimeSpan.FromSeconds(3);
+        private bool _heroLogged; // 英雄名是否已输出
+        private bool _lobbyLogged; // lobby 玩家名单是否已输出（不带英雄）
+        private string _cachedGameUuid; // 当局游戏 UUID
+        private int _lastStepValue = -1; // 上一次 STEP tag 的值，用于检测变化
+        // private LobbyOverlay _overlay; // 浮动窗口已禁用
 
         private MongoDB.Driver.MongoClient _mongoClient;
         private MongoDB.Driver.IMongoCollection<MongoDB.Bson.BsonDocument> _collection;
@@ -36,10 +47,11 @@ namespace HDT_BGTracker
             try
             {
                 Directory.CreateDirectory(LogDir);
+                CleanOldLogs();
                 _mongoClient = new MongoDB.Driver.MongoClient(MongoUrl);
                 var db = _mongoClient.GetDatabase(DbName);
                 _collection = db.GetCollection<MongoDB.Bson.BsonDocument>(CollectionName);
-                Log("插件已启动，MongoDB: " + MongoUrl);
+                Log("插件已启动，MongoDB 已连接");
             }
             catch (Exception ex)
             {
@@ -52,8 +64,14 @@ namespace HDT_BGTracker
             _enabled = false;
             _mongoClient = null;
             _collection = null;
+            // _overlay = null; // 浮动窗口已禁用
             Log("插件已停止");
         }
+
+        // public void SetOverlay(LobbyOverlay overlay) // 浮动窗口已禁用
+        // {
+        //     _overlay = overlay;
+        // }
 
         /// <summary>
         /// 由 OnUpdate() 每 ~100ms 调用一次
@@ -72,9 +90,49 @@ namespace HDT_BGTracker
                     _wasInBgGame = true;
                     _ratingUploaded = false;
 
-                    // 持续尝试获取 PlayerId，直到拿到非 null 值
-                    if (string.IsNullOrEmpty(_cachedPlayerId))
+                    // 记录游戏开始时间
+                    if (_bgGameStartTime == DateTime.MinValue)
+                    {
+                        _bgGameStartTime = DateTime.Now;
+                    }
+
+                    // STEP 13 (MAIN_CLEANUP) = 第一轮战斗结束，英雄选择早已完成
+                    try
+                    {
+                        var gameEntity = Core.Game?.Entities?.Values
+                            ?.FirstOrDefault(e => e.Name == "GameEntity");
+                        if (gameEntity != null)
+                        {
+                            int currentStep = gameEntity.GetTag(HearthDb.Enums.GameTag.STEP);
+                            if (currentStep != _lastStepValue)
+                            {
+                                _lastStepValue = currentStep;
+                                if (currentStep == 13 && !_heroLogged)
+                                {
+                                    LogLobbyPlayers(includeHeroes: true);
+                                    _heroLogged = true;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+
+                    // 延迟 3 秒后再读取 PlayerId（游戏初始化需要时间）
+                    if (string.IsNullOrEmpty(_cachedPlayerId)
+                        && DateTime.Now - _bgGameStartTime >= IdReadDelay)
+                    {
                         _cachedPlayerId = GetPlayerId();
+                        _cachedAccountIdLo = GetAccountIdLo();
+                        _cachedGameUuid = GetGameUuid();
+                        Log($"缓存: playerId={_cachedPlayerId}, accountIdLo={_cachedAccountIdLo}, gameUuid={_cachedGameUuid}");
+                    }
+
+                    // PlayerId 获取后，输出 lobby 玩家名单（不带英雄，此时英雄还没选）
+                    if (!string.IsNullOrEmpty(_cachedPlayerId) && _cachedPlayerId != "unknown" && !_lobbyLogged)
+                    {
+                        LogLobbyPlayers(includeHeroes: false);
+                        _lobbyLogged = true;
+                    }
                 }
                 else if (_wasInBgGame && Core.Game.IsInMenu && !_ratingUploaded)
                 {
@@ -93,6 +151,13 @@ namespace HDT_BGTracker
                     _wasInBgGame = false;
                     _gameEndTime = DateTime.MinValue;
                     _cachedPlayerId = null;
+                    _cachedAccountIdLo = null;
+                    _cachedGameUuid = null;
+                    _lastStepValue = -1;
+                    _bgGameStartTime = DateTime.MinValue;
+                    _heroLogged = false;
+                    _lobbyLogged = false;
+                    // _overlay?.Hide(); // 浮动窗口已禁用
                 }
             }
             catch (Exception ex)
@@ -106,10 +171,10 @@ namespace HDT_BGTracker
             try
             {
                 // 兜底：确保 playerId 不为 null
-                if (string.IsNullOrEmpty(_cachedPlayerId))
+                if (string.IsNullOrEmpty(_cachedPlayerId) || _cachedPlayerId == "unknown")
                 {
                     _cachedPlayerId = GetPlayerId();
-                    if (string.IsNullOrEmpty(_cachedPlayerId))
+                    if (string.IsNullOrEmpty(_cachedPlayerId) || _cachedPlayerId == "unknown")
                     {
                         _cachedPlayerId = "unknown";
                         Log("警告: 无法获取 PlayerId，使用 'unknown'");
@@ -126,7 +191,27 @@ namespace HDT_BGTracker
                 if (rating.HasValue)
                 {
                     string mode = Core.Game.IsBattlegroundsDuosMatch ? "duo" : "solo";
-                    UploadToMongo(rating.Value, mode);
+
+                    // 尝试获取排名
+                    int? placement = null;
+                    try
+                    {
+                        var stats = Core.Game.CurrentGameStats;
+                        var details = stats?.BattlegroundsDetails;
+                        placement = details?.FinalPlacement;
+                        Log($"排名读取: FinalPlacement = {placement?.ToString() ?? "null"}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"排名读取异常: {ex.Message}");
+                    }
+
+                    // 收集对手信息
+                    var opponents = GetOpponentInfo();
+                    string gameUuid = _cachedGameUuid ?? "";
+                    string endTime = DateTime.UtcNow.ToString("o");
+
+                    UploadToMongo(rating.Value, mode, placement, gameUuid, endTime, opponents);
                 }
                 else
                 {
@@ -141,7 +226,8 @@ namespace HDT_BGTracker
             }
         }
 
-        private void UploadToMongo(int rating, string mode)
+        private void UploadToMongo(int rating, string mode, int? placement, string gameUuid, string endTime,
+            List<MongoDB.Bson.BsonDocument> opponents)
         {
             if (_collection == null)
             {
@@ -152,6 +238,7 @@ namespace HDT_BGTracker
 
             // 最后一道防线：确保所有字段非 null
             string playerId = string.IsNullOrEmpty(_cachedPlayerId) ? "unknown" : _cachedPlayerId;
+            string accountIdLo = _cachedAccountIdLo; // 字符串类型，避免大数溢出
             string region = GetRegion();
             string timestamp = DateTime.UtcNow.ToString("o");
 
@@ -160,22 +247,101 @@ namespace HDT_BGTracker
                 try
                 {
                     var filter = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.Eq("playerId", playerId);
-                    var update = new MongoDB.Bson.BsonDocument
+
+                    // 构建新游戏记录
+                    var gameRecord = new MongoDB.Bson.BsonDocument
                     {
-                        { "$set", new MongoDB.Bson.BsonDocument
-                            {
-                                { "rating", rating },
-                                { "mode", mode },
-                                { "timestamp", timestamp },
-                                { "region", region }
-                            }
-                        },
-                        { "$inc", new MongoDB.Bson.BsonDocument { { "gameCount", 1 } } }
+                        { "gameUuid", gameUuid },
+                        { "isLeague", false },
+                        { "placement", placement.HasValue ? (MongoDB.Bson.BsonValue)new MongoDB.Bson.BsonInt32(placement.Value) : MongoDB.Bson.BsonNull.Value },
+                        { "opponents", new MongoDB.Bson.BsonArray(opponents) },
+                        { "endTime", endTime },
+                        { "ratingChange", MongoDB.Bson.BsonNull.Value } // 先占位，管道阶段2计算
                     };
+
+                    // 聚合管道更新：原子操作完成
+                    //   1. lastRating = rating（当前分存为上局分）
+                    //   2. rating = 新分数
+                    //   3. ratingChange = 新分数 - 上局分
+                    //   4. accountIdLo（如果获取到）
+                    //   5. $concatArrays 追加分差到 ratingChanges 数组
+                    //   6. 追加游戏记录到 games 数组
+                    var stages = new MongoDB.Bson.BsonDocument[]
+                    {
+                        // Stage 1: 设置基本字段 + 计算 ratingChange
+                        new MongoDB.Bson.BsonDocument("$set", new MongoDB.Bson.BsonDocument
+                        {
+                            { "lastRating", "$rating" },
+                            { "rating", rating },
+                            { "mode", mode },
+                            { "timestamp", timestamp },
+                            { "region", region },
+                            { "gameCount", new MongoDB.Bson.BsonDocument("$add",
+                                new MongoDB.Bson.BsonArray { new MongoDB.Bson.BsonDocument("$ifNull",
+                                    new MongoDB.Bson.BsonArray { "$gameCount", 0 }), 1 }) },
+                            { "ratingChange", new MongoDB.Bson.BsonDocument("$subtract", new MongoDB.Bson.BsonArray
+                                { rating, new MongoDB.Bson.BsonDocument("$ifNull",
+                                    new MongoDB.Bson.BsonArray { "$rating", rating }) }) }
+                        }),
+                        // Stage 2: accountIdLo（仅首次设置）
+                        new MongoDB.Bson.BsonDocument("$set", new MongoDB.Bson.BsonDocument
+                        {
+                            { "accountIdLo", !string.IsNullOrEmpty(accountIdLo)
+                                ? (MongoDB.Bson.BsonValue)new MongoDB.Bson.BsonString(accountIdLo)
+                                : new MongoDB.Bson.BsonDocument("$ifNull",
+                                    new MongoDB.Bson.BsonArray {
+                                        new MongoDB.Bson.BsonDocument("$toString", "$accountIdLo"),
+                                        MongoDB.Bson.BsonNull.Value }) },
+                        }),
+                        // Stage 3: 追加 ratingChanges 和 placements
+                        new MongoDB.Bson.BsonDocument("$set", new MongoDB.Bson.BsonDocument
+                        {
+                            { "ratingChanges", new MongoDB.Bson.BsonDocument("$concatArrays",
+                                new MongoDB.Bson.BsonArray
+                                {
+                                    new MongoDB.Bson.BsonDocument("$ifNull",
+                                        new MongoDB.Bson.BsonArray { "$ratingChanges", new MongoDB.Bson.BsonArray() }),
+                                    new MongoDB.Bson.BsonArray { "$ratingChange" }
+                                }) },
+                            { "placements", placement.HasValue
+                                ? (MongoDB.Bson.BsonValue)new MongoDB.Bson.BsonDocument("$concatArrays",
+                                    new MongoDB.Bson.BsonArray
+                                    {
+                                        new MongoDB.Bson.BsonDocument("$ifNull",
+                                            new MongoDB.Bson.BsonArray { "$placements", new MongoDB.Bson.BsonArray() }),
+                                        new MongoDB.Bson.BsonArray { placement.Value }
+                                    })
+                                : new MongoDB.Bson.BsonDocument("$ifNull",
+                                    new MongoDB.Bson.BsonArray { "$placements", new MongoDB.Bson.BsonArray() }) },
+                            // 追加游戏记录，把管道中计算的 ratingChange 填入 gameRecord
+                            { "games", new MongoDB.Bson.BsonDocument("$concatArrays",
+                                new MongoDB.Bson.BsonArray
+                                {
+                                    new MongoDB.Bson.BsonDocument("$ifNull",
+                                        new MongoDB.Bson.BsonArray { "$games", new MongoDB.Bson.BsonArray() }),
+                                    new MongoDB.Bson.BsonArray
+                                    {
+                                        new MongoDB.Bson.BsonDocument
+                                        {
+                                            { "gameUuid", gameUuid },
+                                            { "isLeague", false },
+                                            { "placement", placement.HasValue
+                                                ? (MongoDB.Bson.BsonValue)new MongoDB.Bson.BsonInt32(placement.Value)
+                                                : MongoDB.Bson.BsonNull.Value },
+                                            { "opponents", new MongoDB.Bson.BsonArray(opponents) },
+                                            { "endTime", endTime },
+                                            { "ratingChange", "$ratingChange" } // 引用 Stage 1 计算的值
+                                        }
+                                    }
+                                }) },
+                        })
+                    };
+                    var update = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Update.Pipeline(stages);
 
                     _collection.UpdateOne(filter, update, new MongoDB.Driver.UpdateOptions { IsUpsert = true });
                     _ratingUploaded = true;
-                    Log($"已上传分数: {rating} ({mode}) playerId={playerId}");
+                    string oppsStr = string.Join(", ", opponents.Select(o => o["name"].AsString + "#" + o["accountIdLo"].AsString));
+                    Log($"已上传分数: {rating} ({mode}) 排名={placement?.ToString() ?? "无"} playerId={playerId} gameUuid={gameUuid} opponents=[{oppsStr}]");
                 }
                 catch (Exception ex)
                 {
@@ -187,52 +353,249 @@ namespace HDT_BGTracker
 
         private string GetPlayerId()
         {
+            // 直接从 Player.Name 获取 BattleTag（游戏中有效，如"南怀北瑾丨少头脑#5267"）
             try
             {
-                var player = Core.Game.Player;
-                if (player == null)
+                var player = Core.Game?.Player;
+                if (player != null)
                 {
-                    Log("GetPlayerId: Player 对象为 null");
-                    return "unknown";
-                }
-
-                var type = player.GetType();
-                Log($"GetPlayerId: Player 类型 = {type.FullName}");
-
-                // 调试：列出所有公共属性及其值
-                foreach (var prop in type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
-                {
-                    try
+                    string name = player.Name;
+                    if (!string.IsNullOrEmpty(name))
                     {
-                        var val = prop.GetValue(player)?.ToString() ?? "null";
-                        Log($"  {prop.Name} [{prop.PropertyType.Name}] = {val}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Log($"  {prop.Name} = 读取失败: {ex.Message}");
-                    }
-                }
-
-                // 优先级：AccountId > Name > Id
-                string[] candidates = { "AccountId", "Name", "Id" };
-                foreach (var name in candidates)
-                {
-                    var prop = type.GetProperty(name);
-                    if (prop == null) continue;
-                    var val = prop.GetValue(player)?.ToString();
-                    if (!string.IsNullOrEmpty(val) && val != "-1")
-                    {
-                        Log($"GetPlayerId: 使用 {name} = {val}");
-                        return val;
+                        Log($"GetPlayerId: Player.Name = {name}");
+                        return name;
                     }
                 }
             }
             catch (Exception ex)
             {
-                Log("GetPlayerId 异常: " + ex.Message);
+                Log($"GetPlayerId: Player.Name 读取失败: {ex.Message}");
             }
-            Log("GetPlayerId: 所有属性都无效，返回 unknown");
+
+            // 兜底：从 PlayerEntities 找
+            try
+            {
+                var entities = Core.Game?.Player?.PlayerEntities?.ToList();
+                if (entities != null)
+                {
+                    foreach (var entity in entities)
+                    {
+                        string name = entity.Name;
+                        if (!string.IsNullOrEmpty(name))
+                        {
+                            Log($"GetPlayerId: PlayerEntity.Name = {name}");
+                            return name;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"GetPlayerId: PlayerEntities 读取失败: {ex.Message}");
+            }
+
+            Log("GetPlayerId: 未找到有效 ID");
             return "unknown";
+        }
+
+        private string GetAccountIdLo()
+        {
+            // 从 LobbyInfo 中获取自己的 AccountId.Lo
+            try
+            {
+                var lobbyInfo = Core.Game?.MetaData?.BattlegroundsLobbyInfo;
+                if (lobbyInfo?.Players != null && !string.IsNullOrEmpty(_cachedPlayerId))
+                {
+                    // Player.Name 带 #tag，LobbyPlayer.Name 不带，做前缀匹配
+                    string myNameNoTag = _cachedPlayerId;
+                    int hashIdx = myNameNoTag.IndexOf('#');
+                    if (hashIdx > 0) myNameNoTag = myNameNoTag.Substring(0, hashIdx);
+
+                    foreach (var p in lobbyInfo.Players)
+                    {
+                        if (p.Name == myNameNoTag && p.AccountId != null)
+                        {
+                            string lo = p.AccountId.Lo.ToString();
+                            Log($"GetAccountIdLo: 自己 = {p.Name}, Lo = {lo}");
+                            return lo;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"GetAccountIdLo 异常: {ex.Message}");
+            }
+            return null;
+        }
+
+        private string GetGameUuid()
+        {
+            try
+            {
+                var lobbyInfo = Core.Game?.MetaData?.BattlegroundsLobbyInfo;
+                if (lobbyInfo != null)
+                {
+                    string uuid = lobbyInfo.GameUuid ?? "";
+                    Log($"GetGameUuid: {uuid}");
+                    return uuid;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"GetGameUuid 异常: {ex.Message}");
+            }
+            return "";
+        }
+
+        /// <summary>
+        /// 收集对手信息（排除自己）
+        /// </summary>
+        private List<MongoDB.Bson.BsonDocument> GetOpponentInfo()
+        {
+            var opponents = new List<MongoDB.Bson.BsonDocument>();
+            try
+            {
+                var lobbyInfo = Core.Game?.MetaData?.BattlegroundsLobbyInfo;
+                if (lobbyInfo?.Players == null) return opponents;
+
+                // 获取自己的名字前缀（不含 #tag）
+                string myNameNoTag = _cachedPlayerId ?? "";
+                int hashIdx = myNameNoTag.IndexOf('#');
+                if (hashIdx > 0) myNameNoTag = myNameNoTag.Substring(0, hashIdx);
+
+                foreach (var p in lobbyInfo.Players)
+                {
+                    if (p.Name == myNameNoTag) continue; // 跳过自己
+
+                    var doc = new MongoDB.Bson.BsonDocument
+                    {
+                        { "name", p.Name ?? "" },
+                        { "accountIdLo", p.AccountId != null ? p.AccountId.Lo.ToString() : "" }
+                    };
+                    opponents.Add(doc);
+                }
+                Log($"对手数: {opponents.Count}");
+            }
+            catch (Exception ex)
+            {
+                Log($"GetOpponentInfo 异常: {ex.Message}");
+            }
+            return opponents;
+        }
+
+        private void LogLobbyPlayers(bool includeHeroes = false)
+        {
+            try
+            {
+                var lobbyInfo = Core.Game?.MetaData?.BattlegroundsLobbyInfo;
+                if (lobbyInfo == null) return; // lobby 尚未加载，下次再试
+
+                var players = lobbyInfo.Players;
+                if (players == null || players.Count == 0) return;
+
+                string gameUuid = lobbyInfo.GameUuid ?? "";
+                string phase = includeHeroes ? "英雄选择后" : "游戏开始";
+                Log($"=== Lobby {phase} (GameUuid: {gameUuid}) ===");
+
+                // 输出 lobby 玩家名单
+                string logText = "";
+                string displayText = "";
+                for (int i = 0; i < players.Count; i++)
+                {
+                    var p = players[i];
+                    string name = p.Name;
+                    string acctLo = p.AccountId?.Lo.ToString() ?? "?";
+
+                    displayText += $"\n{name} {i}";
+
+                    if (includeHeroes)
+                    {
+                        string heroId = p.HeroCardId ?? "";
+                        string heroName = GetHeroName(heroId);
+                        logText += $"\n  [{i}] {name} (Lo={acctLo}) 英雄={heroName}";
+                    }
+                    else
+                    {
+                        logText += $"\n  [{i}] {name} (Lo={acctLo})";
+                    }
+                }
+                Log(logText);
+                Log($"共 {players.Count} 个玩家");
+
+                // 显示 overlay（浮动窗口已禁用）
+                // if (_overlay != null && !string.IsNullOrEmpty(displayText))
+                // {
+                //     _overlay.DisplayResult(displayText);
+                // }
+            }
+            catch (Exception ex)
+            {
+                // lobby 数据可能还没准备好，不标记为已记录，下次重试
+                string phase = includeHeroes ? "英雄选择后" : "游戏开始";
+                Log($"LogLobbyPlayers({phase}) 等待中: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 通过 HearthDb 查询英雄 cardId 对应的英雄名
+        /// </summary>
+        private static string GetHeroName(string heroCardId)
+        {
+            if (string.IsNullOrEmpty(heroCardId)) return "";
+            try
+            {
+                if (Cards.All.TryGetValue(heroCardId, out var card))
+                {
+                    // 优先中文名，fallback 英文
+                    return card.GetLocName(HearthDb.Enums.Locale.zhCN) ?? card.Name ?? heroCardId;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"GetHeroName 异常: {ex.Message}");
+            }
+            return heroCardId;
+        }
+
+        /// <summary>
+        /// 验证 HearthDb 是否可用，输出 3 个酒馆战棋英雄名
+        /// </summary>
+        public static void TestHearthDb()
+        {
+            try
+            {
+                Log("=== HearthDb 验证开始 ===");
+                Log($"Cards.All 总数: {Cards.All.Count}");
+
+                // 测试几个已知的 BG 英雄
+                string[] testHeroes = {
+                    "TB_BaconShop_HERO_56",   // 阿莱克丝塔萨
+                    "TB_BaconShop_HERO_50",   // 苔丝·格雷迈恩
+                    "BG20_HERO_202",          // 阮大师
+                    "BG31_HERO_802",          // 阿塔尼斯
+                };
+
+                foreach (var heroId in testHeroes)
+                {
+                    if (Cards.All.TryGetValue(heroId, out var card))
+                    {
+                        string enName = card.Name ?? "?";
+                        string zhName = card.GetLocName(HearthDb.Enums.Locale.zhCN) ?? "?";
+                        Log($"  {heroId} → EN: {enName}, CN: {zhName}");
+                    }
+                    else
+                    {
+                        Log($"  {heroId} → NOT FOUND");
+                    }
+                }
+
+                Log("=== HearthDb 验证完成 ===");
+            }
+            catch (Exception ex)
+            {
+                Log($"HearthDb 验证失败: {ex.Message}");
+            }
         }
 
         private string GetRegion()
@@ -291,6 +654,30 @@ namespace HDT_BGTracker
             catch
             {
                 // 日志写入失败不影响功能
+            }
+        }
+
+        /// <summary>
+        /// 清理旧日志：保留最近 3 天的，超过 3 天的删除
+        /// </summary>
+        private static void CleanOldLogs()
+        {
+            try
+            {
+                if (!Directory.Exists(LogDir)) return;
+                var cutoff = DateTime.Now.AddDays(-3);
+                var logFiles = Directory.GetFiles(LogDir, "*.log");
+                foreach (var file in logFiles)
+                {
+                    if (File.GetLastWriteTime(file) < cutoff)
+                    {
+                        File.Delete(file);
+                    }
+                }
+            }
+            catch
+            {
+                // 清理失败不影响启动
             }
         }
     }
