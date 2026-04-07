@@ -321,63 +321,15 @@ namespace HDT_BGTracker
                 string gameUuid = lobbyInfo.GameUuid ?? "";
                 Log($"GameUuid: {gameUuid}");
 
-                // === 调试：Dump Player 对象所有属性 ===
-                try
-                {
-                    var player = Core.Game?.Player;
-                    if (player != null)
-                    {
-                        Log("=== Player 对象属性 Dump ===");
-                        DumpProperties(player, "Player");
-                        Log("=============================");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log($"Player Dump 异常: {ex.Message}");
-                }
-
-                // === 调试：Dump MetaData 对象 ===
-                try
-                {
-                    var meta = Core.Game?.MetaData;
-                    if (meta != null)
-                    {
-                        Log("=== MetaData 对象属性 Dump ===");
-                        DumpProperties(meta, "MetaData");
-                        Log("==============================");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log($"MetaData Dump 异常: {ex.Message}");
-                }
-
-                // === 调试：Dump ServerInfo 对象 ===
-                try
-                {
-                    var meta = Core.Game?.MetaData;
-                    var serverInfo = meta?.ServerInfo;
-                    if (serverInfo != null)
-                    {
-                        Log("=== ServerInfo 对象属性 Dump ===");
-                        DumpProperties(serverInfo, "ServerInfo");
-                        Log("================================");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log($"ServerInfo Dump 异常: {ex.Message}");
-                }
-
-                // === 调试：Dump 每个 lobby 玩家的属性 ===
+                // 输出 lobby 玩家名单：名字 + AccountId.Lo + 英雄
                 string displayText = "";
                 for (int i = 0; i < players.Count; i++)
                 {
                     var p = players[i];
                     string name = p.Name;
-                    Log($"--- Lobby Player [{i}] ---");
-                    DumpProperties(p, $"LobbyPlayer[{i}]");
+                    string heroId = p.HeroCardId ?? "";
+                    string acctLo = p.AccountId?.Lo.ToString() ?? "?";
+                    Log($"  [{i}] {name} (Lo={acctLo}) hero={heroId}");
                     displayText += $"\n{name} {i}";
                 }
                 Log($"共 {players.Count} 个玩家");
@@ -395,100 +347,6 @@ namespace HDT_BGTracker
                 // lobby 数据可能还没准备好，不标记为已记录，下次重试
                 Log($"LogLobbyPlayers 等待中: {ex.Message}");
             }
-        }
-
-        /// <summary>
-        /// 用反射 Dump 对象的所有公共属性和字段（调试用），嵌套对象递归展开一层
-        /// </summary>
-        private void DumpProperties(object obj, string label, int depth = 0)
-        {
-            if (obj == null)
-            {
-                Log($"  {label}: null");
-                return;
-            }
-
-            var type = obj.GetType();
-            string indent = new string(' ', depth * 4);
-            Log($"{indent}{label} Type: {type.FullName}");
-
-            // 公共属性
-            foreach (var prop in type.GetProperties(
-                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
-            {
-                try
-                {
-                    var val = prop.GetValue(obj);
-                    if (val == null)
-                    {
-                        Log($"{indent}  {prop.Name} ({prop.PropertyType.Name}): null");
-                    }
-                    else if (IsSimpleType(prop.PropertyType))
-                    {
-                        string valStr = val.ToString();
-                        if (valStr.Length > 200) valStr = valStr.Substring(0, 200) + "...";
-                        Log($"{indent}  {prop.Name} ({prop.PropertyType.Name}): {valStr}");
-                    }
-                    else if (depth < 2) // 嵌套对象最多展开 2 层
-                    {
-                        Log($"{indent}  {prop.Name} ({prop.PropertyType.Name}): {{");
-                        DumpProperties(val, prop.Name, depth + 1);
-                        Log($"{indent}  }}");
-                    }
-                    else
-                    {
-                        Log($"{indent}  {prop.Name} ({prop.PropertyType.Name}): {val}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log($"{indent}  {prop.Name}: [读取异常: {ex.Message}]");
-                }
-            }
-
-            // 公共字段
-            foreach (var field in type.GetFields(
-                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
-            {
-                try
-                {
-                    var val = field.GetValue(obj);
-                    if (val == null)
-                    {
-                        Log($"{indent}  {field.Name} ({field.FieldType.Name}): null");
-                    }
-                    else if (IsSimpleType(field.FieldType))
-                    {
-                        string valStr = val.ToString();
-                        if (valStr.Length > 200) valStr = valStr.Substring(0, 200) + "...";
-                        Log($"{indent}  {field.Name} ({field.FieldType.Name}): {valStr}");
-                    }
-                    else if (depth < 2)
-                    {
-                        Log($"{indent}  {field.Name} ({field.FieldType.Name}): {{");
-                        DumpProperties(val, field.Name, depth + 1);
-                        Log($"{indent}  }}");
-                    }
-                    else
-                    {
-                        Log($"{indent}  {field.Name} ({field.FieldType.Name}): {val}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log($"{indent}  {field.Name}: [读取异常: {ex.Message}]");
-                }
-            }
-        }
-
-        private static bool IsSimpleType(Type type)
-        {
-            return type.IsPrimitive || type.IsEnum
-                || type == typeof(string) || type == typeof(decimal)
-                || type == typeof(DateTime) || type == typeof(DateTimeOffset)
-                || type == typeof(TimeSpan) || type == typeof(Guid)
-                || (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>)
-                    && IsSimpleType(type.GetGenericArguments()[0]));
         }
 
         private string GetRegion()
