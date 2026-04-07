@@ -353,6 +353,23 @@ namespace HDT_BGTracker
                     Log($"MetaData Dump 异常: {ex.Message}");
                 }
 
+                // === 调试：Dump ServerInfo 对象 ===
+                try
+                {
+                    var meta = Core.Game?.MetaData;
+                    var serverInfo = meta?.ServerInfo;
+                    if (serverInfo != null)
+                    {
+                        Log("=== ServerInfo 对象属性 Dump ===");
+                        DumpProperties(serverInfo, "ServerInfo");
+                        Log("================================");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log($"ServerInfo Dump 异常: {ex.Message}");
+                }
+
                 // === 调试：Dump 每个 lobby 玩家的属性 ===
                 string displayText = "";
                 for (int i = 0; i < players.Count; i++)
@@ -381,9 +398,9 @@ namespace HDT_BGTracker
         }
 
         /// <summary>
-        /// 用反射 Dump 对象的所有公共属性和字段（调试用）
+        /// 用反射 Dump 对象的所有公共属性和字段（调试用），嵌套对象递归展开一层
         /// </summary>
-        private void DumpProperties(object obj, string label)
+        private void DumpProperties(object obj, string label, int depth = 0)
         {
             if (obj == null)
             {
@@ -392,7 +409,8 @@ namespace HDT_BGTracker
             }
 
             var type = obj.GetType();
-            Log($"  {label} Type: {type.FullName}");
+            string indent = new string(' ', depth * 4);
+            Log($"{indent}{label} Type: {type.FullName}");
 
             // 公共属性
             foreach (var prop in type.GetProperties(
@@ -401,14 +419,30 @@ namespace HDT_BGTracker
                 try
                 {
                     var val = prop.GetValue(obj);
-                    string valStr = val == null ? "null" : val.ToString();
-                    // 截断过长的值
-                    if (valStr.Length > 200) valStr = valStr.Substring(0, 200) + "...";
-                    Log($"    {prop.Name} ({prop.PropertyType.Name}): {valStr}");
+                    if (val == null)
+                    {
+                        Log($"{indent}  {prop.Name} ({prop.PropertyType.Name}): null");
+                    }
+                    else if (IsSimpleType(prop.PropertyType))
+                    {
+                        string valStr = val.ToString();
+                        if (valStr.Length > 200) valStr = valStr.Substring(0, 200) + "...";
+                        Log($"{indent}  {prop.Name} ({prop.PropertyType.Name}): {valStr}");
+                    }
+                    else if (depth < 2) // 嵌套对象最多展开 2 层
+                    {
+                        Log($"{indent}  {prop.Name} ({prop.PropertyType.Name}): {{");
+                        DumpProperties(val, prop.Name, depth + 1);
+                        Log($"{indent}  }}");
+                    }
+                    else
+                    {
+                        Log($"{indent}  {prop.Name} ({prop.PropertyType.Name}): {val}");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Log($"    {prop.Name}: [读取异常: {ex.Message}]");
+                    Log($"{indent}  {prop.Name}: [读取异常: {ex.Message}]");
                 }
             }
 
@@ -419,15 +453,42 @@ namespace HDT_BGTracker
                 try
                 {
                     var val = field.GetValue(obj);
-                    string valStr = val == null ? "null" : val.ToString();
-                    if (valStr.Length > 200) valStr = valStr.Substring(0, 200) + "...";
-                    Log($"    {field.Name} ({field.FieldType.Name}): {valStr}");
+                    if (val == null)
+                    {
+                        Log($"{indent}  {field.Name} ({field.FieldType.Name}): null");
+                    }
+                    else if (IsSimpleType(field.FieldType))
+                    {
+                        string valStr = val.ToString();
+                        if (valStr.Length > 200) valStr = valStr.Substring(0, 200) + "...";
+                        Log($"{indent}  {field.Name} ({field.FieldType.Name}): {valStr}");
+                    }
+                    else if (depth < 2)
+                    {
+                        Log($"{indent}  {field.Name} ({field.FieldType.Name}): {{");
+                        DumpProperties(val, field.Name, depth + 1);
+                        Log($"{indent}  }}");
+                    }
+                    else
+                    {
+                        Log($"{indent}  {field.Name} ({field.FieldType.Name}): {val}");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Log($"    {field.Name}: [读取异常: {ex.Message}]");
+                    Log($"{indent}  {field.Name}: [读取异常: {ex.Message}]");
                 }
             }
+        }
+
+        private static bool IsSimpleType(Type type)
+        {
+            return type.IsPrimitive || type.IsEnum
+                || type == typeof(string) || type == typeof(decimal)
+                || type == typeof(DateTime) || type == typeof(DateTimeOffset)
+                || type == typeof(TimeSpan) || type == typeof(Guid)
+                || (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>)
+                    && IsSimpleType(type.GetGenericArguments()[0]));
         }
 
         private string GetRegion()
