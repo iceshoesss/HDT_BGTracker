@@ -147,13 +147,13 @@ mongoimport --uri "$mongosh" --collection league_players --file league_players.j
 - 每个对局卡片显示玩家名 + 开始时间 + 已过时长（JavaScript 实时计时）
 - 对局结束（集合中删除）后自动消失
 
-### 选手个人页 — `/player/:battleTag`
+### 选手个人页 — `/player/<battleTag>`
 
 - 头部：玩家名 + 总积分 + 总场次 + 胜率 + 平均排名
 - 历史对局列表：时间、英雄、排名、得分
 - 积分变化趋势图（可选，后续迭代）
 
-### 对局详情 — `/match/:gameUuid`
+### 对局详情 — `/match/<gameUuid>`
 
 - 8 个玩家的排名、英雄、得分
 - 对局时间、区域
@@ -167,47 +167,103 @@ mongoimport --uri "$mongosh" --collection league_players --file league_players.j
 
 ## 技术选型
 
-- **前端**：Next.js 14+ (App Router) + Tailwind CSS
-- **后端**：Next.js API Routes（同项目内，不需要单独后端服务）
-- **数据库**：直接读 MongoDB（已有实例）
-- **部署**：自有 Linux 服务器，PM2 或 Docker，Nginx 反代
+- **前端**：Flask + Jinja2 模板 + 纯 CSS（已有 `league/` 目录骨架）
+- **后端**：Flask，直连 MongoDB
+- **数据库**：MongoDB（已有实例）
+- **部署**：gunicorn + systemd，Nginx 反代
 - **实时更新**：轮询（20桌规模不需要 WebSocket，每 5-10 秒 fetch active_games 即可）
 
 ---
 
-## API 设计（Next.js Routes）
+## 队列机制
+
+选手在网站点击"参赛"进入队列，凑齐 8 人后开赛，插件上报对局数据与队列匹配时记为联赛对局。
+
+### 数据流
+
+```
+网站队列 (league_queue)          插件上报 (raw_games)
+8人入队 → 标记 ready             游戏结束 → 上报完整对局
+[p1,p2...p8]                     [p1,p2...p8]
+         \                       /
+          └───── 后端匹配检查 ─────┘
+                 8人 accountIdLo 完全匹配？
+                ╱                  ╲
+              是                    否
+              ▼                     ▼
+        写入 league_matches     忽略（普通天梯局）
+        更新 league_players
+        清空队列
+```
+
+### league_queue 集合
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `_id` | ObjectId | 自动生成 |
+| `players` | array | 队列中的玩家列表 `{ accountIdLo, displayName }` |
+| `status` | string | `waiting`（凑人中）/ `ready`（8人已满，等待开赛） |
+| `createdAt` | datetime | 入队时间 |
+| `readyAt` | datetime | 标记 ready 的时间（用于超时判断） |
+
+### 匹配逻辑
+
+- 插件上报 `raw_games` 时，取该对局 8 个玩家的 `accountIdLo`
+- 查询 `league_queue` 中 status=ready 的队列，比对 accountIdLo 集合
+- **完全匹配** → 写入 `league_matches`，更新 `league_players` 统计，删除队列
+- **不匹配** → 忽略（普通天梯局）
+
+### 队列超时
+
+- ready 后 **10 分钟** 无匹配对局 → 自动清空队列
+- 超时后玩家需要重新入队
+
+---
+
+## API 设计
 
 | 路由 | 方法 | 说明 |
 |------|------|------|
 | `/api/players` | GET | 排行榜（支持 ?sort=points&order=desc） |
-| `/api/players/:battleTag` | GET | 选手详情 |
+| `/api/players/<battleTag>` | GET | 选手详情 |
 | `/api/matches` | GET | 最近对局列表 |
-| `/api/matches/:gameUuid` | GET | 对局详情 |
+| `/api/matches/<gameUuid>` | GET | 对局详情 |
 | `/api/active-games` | GET | 当前进行中的对局 |
+| `/api/queue` | GET | 当前队列状态 |
+| `/api/queue/join` | POST | 入队（accountIdLo） |
+| `/api/queue/leave` | POST | 离队（accountIdLo） |
 | `/api/register` | POST | 注册（输入 battleTag，返回 verificationCode） |
 | `/api/verify` | POST | 验证（输入 battleTag + code） |
+| `/api/raw-game` | POST | 插件上报对局数据（触发联赛匹配检查） |
 
 ---
 
 ## 开发顺序
 
-### Phase 1 — 网站外观（当前）
-1. Next.js 项目初始化 + Tailwind
-2. 主页面：排行榜表格 + 右侧实时对局侧边栏
-3. 用 mock 数据渲染，确认布局和交互
-4. 排序功能（纯前端排序，数据量小）
+### Phase 1 — 插件完善对局数据上报（当前）
+1. 上传数据补充 `heroName`、`startedAt`、完整 8 人 accountIdLo
+2. 新增 `raw_games` 集合写入（完整对局数据，供联赛匹配用）
+3. 保持原有 `bg_ratings` 写入不变
 
-### Phase 2 — 接入真实数据
-1. API Routes 读 MongoDB
-2. 前端改为 fetch API 数据
-3. 实时对局区域轮询更新
+### Phase 2 — Flask 网站接入真实数据
+1. `league/app.py` 从 mock 数据改为读 MongoDB
+2. 排行榜从 `league_players` 查询
+3. 对局列表从 `league_matches` 查询
+4. 实时对局轮询 `league_active_games`
 
-### Phase 3 — 插件对接
-1. 插件新增 GameUuid 上传
-2. 插件新增 active_games 写入/删除
-3. 选手注册验证码流程
+### Phase 3 — 注册与验证
+1. 注册流程（battleTag → 生成验证码）
+2. 插件端验证码输入与自动绑定
+3. `league_players` 自动创建与标记 verified
 
-### Phase 4 — 功能完善
+### Phase 4 — 队列系统
+1. 队列入队/离队 API
+2. 队列页面（显示当前排队状态）
+3. 8 人就绪 → ready 状态
+4. 后端匹配逻辑（raw_games 与队列比对）
+5. 超时自动清空
+
+### Phase 5 — 功能完善
 1. 选手个人页
 2. 对局详情页
 3. 积分趋势图
@@ -217,7 +273,8 @@ mongoimport --uri "$mongosh" --collection league_players --file league_players.j
 
 ## 待确认
 
-- [ ] 服务器上 Node.js 版本（推荐 18+）
 - [ ] MongoDB 连接地址（网站服务器能否直连现有 MongoDB）
 - [ ] 是否需要域名，还是先用 IP + 端口访问
 - [ ] 积分规则是否需要调整（当前：1st=9, 2nd=7, 3rd=6, ..., 8th=1）
+- [ ] 队列超时时间（当前默认 10 分钟）
+- [ ] 是否需要管理员手动确认开赛，还是 8 人满了自动 ready
