@@ -292,7 +292,9 @@ namespace HDT_BGTracker
                             { "accountIdLo", !string.IsNullOrEmpty(accountIdLo)
                                 ? (MongoDB.Bson.BsonValue)new MongoDB.Bson.BsonString(accountIdLo)
                                 : new MongoDB.Bson.BsonDocument("$ifNull",
-                                    new MongoDB.Bson.BsonArray { "$accountIdLo", MongoDB.Bson.BsonNull.Value }) },
+                                    new MongoDB.Bson.BsonArray {
+                                        new MongoDB.Bson.BsonDocument("$toString", "$accountIdLo"),
+                                        MongoDB.Bson.BsonNull.Value }) },
                         }),
                         // Stage 3: 追加 ratingChanges 和 placements
                         new MongoDB.Bson.BsonDocument("$set", new MongoDB.Bson.BsonDocument
