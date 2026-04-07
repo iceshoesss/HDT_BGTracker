@@ -195,8 +195,7 @@ namespace HDT_BGTracker
                     //   3. ratingChange = 新分数 - 上局分
                     //   4. $push 追加到 ratingChanges 数组
                     // 首次游戏 lastRating 为 null 时用 $ifNull 兜底，分差为 0
-                    var pipeline = new MongoDB.Bson.BsonDocument[]
-                    {
+                    var update = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Update.Pipeline(
                         new MongoDB.Bson.BsonDocument("$set", new MongoDB.Bson.BsonDocument
                         {
                             { "lastRating", "$rating" },
@@ -213,9 +212,9 @@ namespace HDT_BGTracker
                         }),
                         new MongoDB.Bson.BsonDocument("$push", new MongoDB.Bson.BsonDocument
                             { { "ratingChanges", "$ratingChange" } })
-                    };
+                    );
 
-                    _collection.UpdateOne(filter, pipeline, new MongoDB.Driver.UpdateOptions { IsUpsert = true });
+                    _collection.UpdateOne(filter, update, new MongoDB.Driver.UpdateOptions { IsUpsert = true });
                     _ratingUploaded = true;
                     Log($"已上传分数: {rating} ({mode}) playerId={playerId}");
                 }
