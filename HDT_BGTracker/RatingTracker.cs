@@ -46,6 +46,7 @@ namespace HDT_BGTracker
             try
             {
                 Directory.CreateDirectory(LogDir);
+                CleanOldLogs();
                 _mongoClient = new MongoDB.Driver.MongoClient(MongoUrl);
                 var db = _mongoClient.GetDatabase(DbName);
                 _collection = db.GetCollection<MongoDB.Bson.BsonDocument>(CollectionName);
@@ -637,6 +638,30 @@ namespace HDT_BGTracker
             catch
             {
                 // 日志写入失败不影响功能
+            }
+        }
+
+        /// <summary>
+        /// 清理旧日志：保留最近 3 天的，超过 3 天的删除
+        /// </summary>
+        private static void CleanOldLogs()
+        {
+            try
+            {
+                if (!Directory.Exists(LogDir)) return;
+                var cutoff = DateTime.Now.AddDays(-3);
+                var logFiles = Directory.GetFiles(LogDir, "*.log");
+                foreach (var file in logFiles)
+                {
+                    if (File.GetLastWriteTime(file) < cutoff)
+                    {
+                        File.Delete(file);
+                    }
+                }
+            }
+            catch
+            {
+                // 清理失败不影响启动
             }
         }
     }
