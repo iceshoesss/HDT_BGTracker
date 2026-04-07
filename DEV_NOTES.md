@@ -223,6 +223,79 @@
 4. 验证 FinalPlacement 在不同场景下是否可靠（单人/双人/掉线重连等）
 5. games 数组中增加英雄名字段（需先验证 HearthDb）
 
+## 📋 2026-04-08 开发日志：Bug 修复 + 联赛网站 Demo
+
+### 参与者
+- 用户 + Claw (AI pair programmer)
+
+### 插件 Bug 修复
+
+#### Bug 1：Lobby 玩家名单重复输出
+- **现象**：每 ~100ms 输出一次 "=== Lobby 游戏开始 ==="，同一局游戏重复输出数十次
+- **原因**：`LogLobbyPlayers(includeHeroes: false)` 的触发条件 `!_heroLogged` 不合理 — `_heroLogged` 要等 STEP 13 才变 true，而 PlayerId 就绪后这个条件在每个 OnUpdate 周期都满足
+- **修复**：新增 `_lobbyLogged` 标志，PlayerId 就绪后只输出一次 lobby 名单
+- **提交**：`8167dda`
+
+#### Bug 2：STEP 变化诊断日志清理
+- **说明**：STEP 变化日志是调试阶段添加的，确认 STEP 13 检测可行后已无用
+- **操作**：移除 39 行诊断代码（STEP 变化日志 + 启动时 STEP 初始值日志 + StepNames 字典），保留 STEP 13 英雄选择检测逻辑
+- **提交**：`ab58079`
+
+#### Bug 3：上传成功后日志报错 "BsonString→BsonInt64"
+- **现象**：日志显示"上传 MongoDB 失败: 无法将类型为 BsonString 的对象强制转换为 BsonInt64"
+- **原因**：上传实际成功，但成功日志中 `opponents.Select(o => o["accountIdLo"].AsInt64)` 用了 `.AsInt64`，而 accountIdLo 在 `GetOpponentInfo` 中存的是 `BsonString`（`p.AccountId.Lo.ToString()`）
+- **修复**：`.AsInt64` → `.AsString`
+- **提交**：`782379f`
+
+#### 浮动窗口代码注释
+- **说明**：LobbyOverlay（游戏内浮动面板）暂时不用，相关代码全部注释保留
+- **涉及文件**：`BGTrackerPlugin.cs`（_overlay 字段 + OnLoad/OnUnload 中的创建和清理）、`RatingTracker.cs`（_overlay 字段 + SetOverlay 方法 + Hide 调用 + DisplayResult 调用）
+- **提交**：`1b7fa84`
+
+### 联赛网站 Demo
+
+#### 技术选型
+- 放弃 Next.js，改用 **Flask + Jinja2 + Tailwind CSS CDN**
+- 理由：Python 更简单，不需要 Node.js 构建工具，一个文件就能跑
+- 暂不接入 MongoDB，使用内嵌 mock 数据
+
+#### 已实现功能
+- **排行榜页** (`/`)：12 名选手，积分/场次/胜率/场均排名/吃鸡，点击列头前端排序，右侧实时对局侧边栏（秒级计时器），最近 5 场对局摘要
+- **选手详情页** (`/player/<battleTag>`)：总积分/场次/吃鸡率/场均排名 + 历史对局列表
+- **对局详情页** (`/match/<gameUuid>`)：8 人排名、英雄、积分
+- **API**：`/api/players`、`/api/matches`、`/api/active-games`
+
+#### Bug：实时计时器不更新
+- **现象**：侧边栏计时器显示 `⏱️ --:--` 不动
+- **原因**：`startedAt` 使用 ISO 字符串（如 `2026-04-07T22:15:00Z`），JavaScript `new Date()` 在某些环境下解析不可靠；且脚本在 `<head>` 中被 Tailwind CDN 阻塞
+- **修复**：改用 epoch 时间戳（`time.time()`），JS 移至 `</body>` 前
+- **提交**：`44a0042`、`eb47fc8`
+
+#### 主播名替换
+- Mock 数据人名从虚构名称改为酒馆战棋邀请赛真实主播：衣锦夜行、瓦莉拉、墨衣、安德罗妮、驴鸽、异灵术、岛猫、赤小兔、甜水七、慕容清清、小呆萝拉、王师傅
+- **提交**：`0724eec`、`c9c76d1`
+
+### 数据库结构评审建议
+
+当前 LEAGUE_PLAN.md 中定义的三张表（`league_players`、`league_matches`、`league_active_games`）基本够用，但有以下潜在问题：
+
+1. **选手对局查询性能** — `league_matches` 中 `players` 是嵌套数组，查「某人历史对局」需全集合扫描
+   - 建议：`league_matches` 上加 `players.battleTag` 多键索引
+2. **积分一致性** — `totalPoints`、`wins`、`avgPlacement` 预计算在 player 表，插件每次上传自行更新；若多端同时写入可能不一致
+   - 建议：Phase 2 接入真实数据时，改为后端用聚合管道统一计算
+3. **活跃对局残留** — 插件崩溃时 `league_active_games` 记录不会被清理
+   - 建议：加 TTL 索引（如 2 小时自动删除）
+4. **赛季隔离** — 当前无赛季字段，若举办第二届联赛，历史积分和当前积分会混在一起
+   - 建议：`league_matches` 和 `league_players` 增加 `seasonId` 字段（可后期迭代）
+5. **对局表 vs 嵌入式方案** — 当前 `bg_ratings` 集合中 `games` 数组内嵌在 player 文档里，`league_matches` 又单独存了一份。两套数据有冗余
+   - 建议：明确以 `league_matches` 为对局数据唯一来源，`bg_ratings` 中的 `games` 仅作备份
+
+### 下一步（联赛网站）
+1. Phase 1（当前）：用 mock 数据打磨 UI 和交互 ✅ 基本完成
+2. Phase 2：安装 MongoDB，导入 mock 数据，API Routes 改为读 MongoDB
+3. Phase 3：插件对接 — 上传到 `league_matches` + 写入/删除 `league_active_games`
+4. Phase 4：选手注册验证码流程、选手个人页、对局详情页
+
 ## 编译方法
 ```cmd
 cd HDT_BGTracker\HDT_BGTracker\HDT_BGTracker
