@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Hearthstone_Deck_Tracker.API;
 using HearthDb;
+using MongoDB.Driver;
 
 namespace HDT_BGTracker
 {
@@ -424,14 +425,17 @@ namespace HDT_BGTracker
                     }
 
                     // upsert: 第一个到达的玩家创建文档，后续玩家跳过
-                    var filter = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>
-                        .Filter.Eq("gameUuid", gameUuid);
-                    var update = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Update
-                        .SetOnInsert("players", playersArray)
-                        .SetOnInsert("region", region)
-                        .SetOnInsert("mode", mode)
-                        .SetOnInsert("startedAt", startedAt)
-                        .SetOnInsert("endedAt", MongoDB.Bson.BsonNull.Value);
+                    // 2.19.2 不支持 SetOnInsert，用 BsonDocument 直接构建 $setOnInsert
+                    var filter = new MongoDB.Bson.BsonDocument("gameUuid", gameUuid);
+                    var update = new MongoDB.Bson.BsonDocument("$setOnInsert",
+                        new MongoDB.Bson.BsonDocument
+                        {
+                            { "players", playersArray },
+                            { "region", region },
+                            { "mode", mode },
+                            { "startedAt", startedAt },
+                            { "endedAt", MongoDB.Bson.BsonNull.Value }
+                        });
 
                     var result = _leagueCollection.UpdateOne(filter, update,
                         new MongoDB.Driver.UpdateOptions { IsUpsert = true });
@@ -494,13 +498,17 @@ namespace HDT_BGTracker
                     }
 
                     // 找到自己在 players 数组中的位置，更新 placement 和 points
-                    var filter = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.And(
-                        MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.Eq("gameUuid", _cachedGameUuid),
-                        MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.Eq("players.accountIdLo", accountIdLo)
-                    );
-                    var update = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Update
-                        .Set("players.$.placement", placement.Value)
-                        .Set("players.$.points", points);
+                    var filter = new MongoDB.Bson.BsonDocument
+                    {
+                        { "gameUuid", _cachedGameUuid },
+                        { "players.accountIdLo", accountIdLo }
+                    };
+                    var update = new MongoDB.Bson.BsonDocument("$set",
+                        new MongoDB.Bson.BsonDocument
+                        {
+                            { "players.$.placement", placement.Value },
+                            { "players.$.points", points }
+                        });
 
                     var result = _leagueCollection.UpdateOne(filter, update);
 
@@ -530,11 +538,13 @@ namespace HDT_BGTracker
         {
             try
             {
-                var filter = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.And(
-                    MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.Eq("gameUuid", gameUuid),
-                    MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.Eq("endedAt", MongoDB.Bson.BsonNull.Value)
-                );
+                var filter = new MongoDB.Bson.BsonDocument
+                {
+                    { "gameUuid", gameUuid },
+                    { "endedAt", MongoDB.Bson.BsonNull.Value }
+                };
 
+                // Find 在 2.19.2 需要 using MongoDB.Driver，改用等价写法
                 var doc = _leagueCollection.Find(filter).FirstOrDefault();
                 if (doc == null) return;
 
@@ -543,10 +553,10 @@ namespace HDT_BGTracker
 
                 if (allDone)
                 {
-                    var update = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Update
-                        .Set("endedAt", DateTime.UtcNow.ToString("o"));
+                    var update = new MongoDB.Bson.BsonDocument("$set",
+                        new MongoDB.Bson.BsonDocument("endedAt", DateTime.UtcNow.ToString("o")));
                     _leagueCollection.UpdateOne(
-                        MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.Eq("gameUuid", gameUuid),
+                        new MongoDB.Bson.BsonDocument("gameUuid", gameUuid),
                         update);
                     Log($"CheckAndFinalizeMatch: gameUuid={gameUuid} 对局已结束，endedAt 已写入");
                 }
