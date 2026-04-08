@@ -14,6 +14,26 @@ DB_NAME = "hearthstone"
 client = MongoClient(MONGO_URL)
 db = client[DB_NAME]
 
+# ── 英雄名 → cardId 映射 ──────────────────────────
+HERO_CARD_IDS = {
+    "阿莱克丝塔萨":   "TB_BaconShop_HERO_56",
+    "苔丝·格雷迈恩":  "TB_BaconShop_HERO_50",
+    "舞者达瑞尔":     "TB_BaconShop_HERO_36",
+    "诺兹多姆":       "TB_BaconShop_HERO_57",
+    "奥拉基尔":       "TB_BaconShop_HERO_76",
+    "亚煞极":         "TB_BaconShop_HERO_92",
+    "沙德沃克":       "TB_BaconShop_HERO_23",
+    "尤朵拉船长":     "TB_BaconShop_HERO_64",
+    "挂机的阿凯":     "TB_BaconShop_HERO_16",
+    "阮大师":         "BG20_HERO_202",
+    "永恒者托奇":     "TB_BaconShop_HERO_28",
+    "穆克拉":         "TB_BaconShop_HERO_38",
+    "伊瑟拉":         "TB_BaconShop_HERO_53",
+    "希尔瓦娜斯":     "BG23_HERO_306",
+    "塔姆辛·罗姆":    "BG20_HERO_282",
+    "疯狂菌子塔":     "TB_BaconShop_HERO_39_SKIN_F",
+}
+
 # ── 清空旧数据 ──────────────────────────────────────
 db.bg_ratings.drop()
 db.league_matches.drop()
@@ -81,11 +101,13 @@ for i in range(8):
     players = []
     for rank, p in enumerate(sampled, 1):
         points = 9 if rank == 1 else max(1, 9 - rank)
+        heroName = random.choice(HEROES)
         players.append({
             "accountIdLo": p["accountIdLo"],
             "battleTag": p["battleTag"],
             "displayName": p["battleTag"].split("#")[0],
-            "heroName": random.choice(HEROES),
+            "heroName": heroName,
+            "heroCardId": HERO_CARD_IDS.get(heroName, ""),
             "placement": rank,
             "points": points,
         })
@@ -106,11 +128,13 @@ for i in range(2):
 
     players = []
     for p in sampled:
+        heroName = random.choice(HEROES)
         players.append({
             "accountIdLo": p["accountIdLo"],
             "battleTag": p["battleTag"],
             "displayName": p["battleTag"].split("#")[0],
-            "heroName": random.choice(HEROES),
+            "heroName": heroName,
+            "heroCardId": HERO_CARD_IDS.get(heroName, ""),
             "placement": None,
             "points": None,
         })
