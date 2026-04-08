@@ -711,3 +711,19 @@ STEP 13 触发
 - [ ] 编译验证（需要 HDT_PATH 环境变量）
 - [ ] 实际游戏验证等待队列匹配逻辑
 - [ ] 验证 8 个玩家的插件都能正确触发（upsert 防重复）
+
+### 优化建议（待实施）
+
+#### 1. 去掉排行榜的 bg_ratings $lookup
+**问题**：当前 `totalGames = bg_ratings.leagueCount`，需要额外一次 $lookup 查 bg_ratings 集合。但 `leagueCount` 依赖插件写入，如果插件崩溃就少 +1。
+
+**建议**：直接用 `league_matches` 聚合的 `leagueGames`（玩家实际有 placement 的对局数）作为 `totalGames`，去掉 `bg_ratings` 的 $lookup。更可靠，且减少一次 MongoDB 查询。
+
+影响范围：`app.py` 中 `get_players()` 和 `get_player()` 两个聚合管道。
+
+#### 2. CheckAndFinalizeMatch 写入竞争（低优先级）
+**现状**：8 个玩家的插件游戏结束后各自执行 `CheckAndFinalizeMatch`，如果发现所有人都填了 placement 就写入 `endedAt`。8 个插件并行时可能 4-5 个同时发现 allDone=true，重复写入同一个 endedAt。
+
+**影响**：结果一致（$set 原子操作），只是多几次无意义的查询和写入。20 桌规模无感。
+
+**未来优化**（规模到几百桌时）：只让一个人负责写 endedAt，比如仅当自己的 accountIdLo 是 players 数组第一个时才执行 CheckAndFinalizeMatch。
