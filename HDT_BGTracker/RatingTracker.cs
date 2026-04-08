@@ -190,9 +190,17 @@ namespace HDT_BGTracker
                     string cachedAccountIdLo = _cachedAccountIdLo;
                     string cachedGameUuid = _cachedGameUuid;
 
-                    TryUploadRating();
                     if (_isLeagueGame)
+                    {
+                        // 联赛对局：只记排名 + leagueCount，不上报分数
+                        IncrementLeagueCount(cachedPlayerId);
                         UpdateLeaguePlacement(cachedAccountIdLo, cachedGameUuid);
+                    }
+                    else
+                    {
+                        // 普通天梯：上报分数
+                        TryUploadRating();
+                    }
 
                     _wasInBgGame = false;
                     _gameEndTime = DateTime.MinValue;
@@ -212,6 +220,43 @@ namespace HDT_BGTracker
             {
                 Log("OnUpdate 异常: " + ex.Message);
             }
+        }
+
+        /// <summary>
+        /// 联赛对局结束：leagueCount +1，不上报分数
+        /// </summary>
+        private void IncrementLeagueCount(string playerId)
+        {
+            if (_collection == null)
+            {
+                Log("IncrementLeagueCount: MongoDB 未连接，跳过");
+                return;
+            }
+
+            if (string.IsNullOrEmpty(playerId) || playerId == "unknown")
+            {
+                Log("IncrementLeagueCount: playerId 无效，跳过");
+                return;
+            }
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    var filter = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.Eq("playerId", playerId);
+                    var update = new MongoDB.Bson.BsonDocument("$inc",
+                        new MongoDB.Bson.BsonDocument("leagueCount", 1));
+
+                    // upsert: 如果 bg_ratings 里还没有这个玩家的文档，创建一个带 leagueCount=1 的
+                    var result = _collection.UpdateOne(filter, update, new MongoDB.Driver.UpdateOptions { IsUpsert = true });
+
+                    Log($"IncrementLeagueCount: playerId={playerId} leagueCount +1 (upserted={result.UpsertedId != null})");
+                }
+                catch (Exception ex)
+                {
+                    Log($"IncrementLeagueCount 异常: {ex.Message}");
+                }
+            });
         }
 
         private void TryUploadRating()

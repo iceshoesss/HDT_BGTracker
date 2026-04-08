@@ -4,3 +4,4 @@ obj/
 *.user
 *.suo
 __pycache__/
+migrate_league_count.py
