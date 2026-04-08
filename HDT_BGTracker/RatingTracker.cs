@@ -124,13 +124,29 @@ namespace HDT_BGTracker
                     catch { }
 
                     // 延迟 3 秒后再读取 PlayerId（游戏初始化需要时间）
-                    if (string.IsNullOrEmpty(_cachedPlayerId)
-                        && DateTime.Now - _bgGameStartTime >= IdReadDelay)
+                    if (DateTime.Now - _bgGameStartTime >= IdReadDelay)
                     {
-                        _cachedPlayerId = GetPlayerId();
-                        _cachedAccountIdLo = GetAccountIdLo();
-                        _cachedGameUuid = GetGameUuid();
-                        Log($"缓存: playerId={_cachedPlayerId}, accountIdLo={_cachedAccountIdLo}, gameUuid={_cachedGameUuid}");
+                        if (string.IsNullOrEmpty(_cachedPlayerId))
+                        {
+                            _cachedPlayerId = GetPlayerId();
+                            Log($"缓存: playerId={_cachedPlayerId}");
+                        }
+                        // PlayerId 获取后，再尝试获取 accountIdLo 和 gameUuid（LobbyInfo 可能比 PlayerId 更晚就绪）
+                        if (!string.IsNullOrEmpty(_cachedPlayerId) && _cachedPlayerId != "unknown")
+                        {
+                            if (string.IsNullOrEmpty(_cachedAccountIdLo))
+                            {
+                                _cachedAccountIdLo = GetAccountIdLo();
+                                if (!string.IsNullOrEmpty(_cachedAccountIdLo))
+                                    Log($"缓存: accountIdLo={_cachedAccountIdLo}");
+                            }
+                            if (string.IsNullOrEmpty(_cachedGameUuid))
+                            {
+                                _cachedGameUuid = GetGameUuid();
+                                if (!string.IsNullOrEmpty(_cachedGameUuid))
+                                    Log($"缓存: gameUuid={_cachedGameUuid}");
+                            }
+                        }
                     }
 
                     // PlayerId 获取后，输出 lobby 玩家名单（不带英雄，此时英雄还没选）
