@@ -462,3 +462,66 @@ git checkout -b claw_version origin/claw_version
 ```
 
 > 注意：zipball 下载的目录名带 commit hash 后缀（`iceshoesss-HDT_BGTracker-<hash>`），所以要 `mv` 重命名。`git fetch` 之前先清掉解压的非 git 文件，否则 checkout 会因未跟踪文件冲突而中止（`rm -rf * .gitignore && git checkout ...`）。
+
+## 📋 2026-04-08 (下) 开发日志：注册验证 + 登录系统 + UI 修复
+
+### 参与者
+- 用户 + OpenClaw (AI pair programmer)
+
+### 联赛注册验证系统
+
+#### 设计讨论
+- **核心问题**：用户注册时如何证明自己拥有某个 BattleTag？
+- **方案演进**：
+  1. 初版：基于 `accountIdLo` 生成验证码 → 被否决，因为 LobbyInfo 中 8 人都能看到彼此的 AccountId.Lo，存在盗用风险
+  2. 改为基于 `bg_ratings` 文档的 MongoDB `ObjectId` 生成 → 安全性最好，ObjectId 仅存在于服务端，游戏内不可见
+  3. 时序问题：`ObjectId` 是 MongoDB 插入时才生成的，插件上传前不知道 → 用户提出：上传完成后读回 `_id`，基于它生成验证码再存储
+
+#### 最终方案
+- **验证码生成**：`SHA256("bgtracker:" + ObjectId.ToString())` 前 8 位大写
+- **插件流程**：上传成功 → 检查 `bg_ratings` 是否有 `verificationCode` 字段 → 没有则读 `_id` 生成并写入 → 日志打印
+- **后端流程**：用户输入 BattleTag + 验证码 → 从 `bg_ratings` 读存储的 `verificationCode` → 比对一致 → 注册成功
+- **安全保证**：验证码基于服务端生成的 ObjectId，游戏内任何 API 均不可见
+
+#### 插件改动 (RatingTracker.cs)
+- 新增 `GenerateVerificationCode(ObjectId objectId)` — SHA256 哈希取前 8 位
+- 上传成功后新增验证码逻辑：读文档 → 检查 `verificationCode` → 无则基于 `_id` 生成 → `$set` 存储 → 日志打印
+
+#### 后端改动 (app.py)
+- `POST /api/register` — 输入 battleTag + verificationCode，从 `bg_ratings` 读存储值比对，一致则写入 `league_players`（verified=true）
+
+### Session 登录系统
+
+#### 设计讨论
+- **问题**：注册后用户如何登录？没有密码系统
+- **方案**：登录也用 BattleTag + 验证码（验证码是确定性的，永远不会变，日志里永远有）
+- **安全**：验证码作为"密码"使用，防止他人冒用已注册 BattleTag
+
+#### 实现
+- `POST /api/login` — BattleTag + 验证码 → 查 `bg_ratings` 比对 → 写 Flask session
+- `POST /api/logout` — 清除 session
+- `context_processor` 注入 `current_user` 到所有模板
+- 导航栏：未登录显示「注册/登录」链接，已登录显示 `BattleTag` + 退出按钮
+- 注册页改为注册/登录双模式切换
+- 注册成功自动登录
+- 报名队列从 session 读取用户名，未登录提示先登录并跳转
+
+### UI 修复
+
+#### Bug：报名队列不自动刷新
+- **现象**：第二个人报名后必须手动刷新页面才能看到
+- **修复**：添加 `setInterval(fetchQueue, 1000)` 每秒刷新
+
+#### Bug：正在进行列表自动浮动遮挡
+- **现象**：滚动页面时正在进行列表浮动遮挡报名列表
+- **修复**：移除 `sticky top-6` 定位
+
+### 提交历史
+| Commit | 说明 |
+|--------|------|
+| `cba2bd6` | feat: 联赛注册验证系统（插件验证码 + 后端注册 API） |
+| `3fd83e2` | feat: 注册页面模板 + /register 路由 |
+| `29c8978` | feat: Session 登录系统 + 导航栏用户状态 |
+| `438e5be` | fix: 报名队列每5秒自动刷新 |
+| `d400423` | fix: 报名队列刷新间隔改为1秒 |
+| `cce8aeb` | fix: 正在进行列表去掉 sticky 定位 |
