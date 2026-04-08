@@ -176,8 +176,13 @@ namespace HDT_BGTracker
                     if ((DateTime.Now - _gameEndTime).TotalSeconds < 2)
                         return;
 
+                    // 捕获缓存值，避免 Task.Run 并发时被主线程 cleanup 竞争覆盖
+                    string cachedPlayerId = _cachedPlayerId;
+                    string cachedAccountIdLo = _cachedAccountIdLo;
+                    string cachedGameUuid = _cachedGameUuid;
+
                     TryUploadRating();
-                    UpdateLeaguePlacement();
+                    UpdateLeaguePlacement(cachedAccountIdLo, cachedGameUuid);
 
                     _wasInBgGame = false;
                     _gameEndTime = DateTime.MinValue;
@@ -475,10 +480,10 @@ namespace HDT_BGTracker
         /// <summary>
         /// 游戏结束时，更新自己在 league_matches 中的 placement 和 points
         /// </summary>
-        private void UpdateLeaguePlacement()
+        private void UpdateLeaguePlacement(string accountIdLo, string gameUuid)
         {
             if (_leagueCollection == null) return;
-            if (string.IsNullOrEmpty(_cachedGameUuid)) return;
+            if (string.IsNullOrEmpty(gameUuid)) return;
 
             Task.Run(() =>
             {
@@ -506,7 +511,6 @@ namespace HDT_BGTracker
                     // 计算积分: 1st=9, 2nd=7, 3rd=6, ..., 8th=1
                     int points = placement.Value == 1 ? 9 : Math.Max(1, 9 - placement.Value);
 
-                    string accountIdLo = _cachedAccountIdLo ?? "";
                     if (string.IsNullOrEmpty(accountIdLo))
                     {
                         Log("UpdateLeaguePlacement: accountIdLo 为空，跳过更新");
@@ -516,7 +520,7 @@ namespace HDT_BGTracker
                     // 找到自己在 players 数组中的位置，更新 placement 和 points
                     var filter = new MongoDB.Bson.BsonDocument
                     {
-                        { "gameUuid", _cachedGameUuid },
+                        { "gameUuid", gameUuid },
                         { "players.accountIdLo", accountIdLo }
                     };
                     var update = new MongoDB.Bson.BsonDocument("$set",
@@ -530,14 +534,14 @@ namespace HDT_BGTracker
 
                     if (result.ModifiedCount > 0)
                     {
-                        Log($"UpdateLeaguePlacement: gameUuid={_cachedGameUuid} 排名={placement.Value} 积分={points}");
+                        Log($"UpdateLeaguePlacement: gameUuid={gameUuid} 排名={placement.Value} 积分={points}");
 
                         // 检查是否所有 8 人的 placement 都已填写，若是则补 endedAt
-                        CheckAndFinalizeMatch(_cachedGameUuid);
+                        CheckAndFinalizeMatch(gameUuid);
                     }
                     else
                     {
-                        Log($"UpdateLeaguePlacement: 未找到匹配文档 gameUuid={_cachedGameUuid} accountIdLo={accountIdLo}");
+                        Log($"UpdateLeaguePlacement: 未找到匹配文档 gameUuid={gameUuid} accountIdLo={accountIdLo}");
                     }
                 }
                 catch (Exception ex)
