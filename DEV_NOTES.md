@@ -71,6 +71,50 @@
 - 管道内引用计算值：`"$ratingChange"` 引用 Stage 1 的 `$set` 结果
 - MongoDB 驱动版本 2.19.2
 
+### MongoDB.Driver 2.19.2 API 兼容性 ⚠️
+
+**重要：项目锁定 MongoDB.Driver 2.19.2，以下 API 在此版本不可用，必须用替代写法。**
+
+| 新版 API (2.21+) | 2.19.2 替代写法 | 说明 |
+|---|---|---|
+| `Update.Set("field", val)` 链式调用 | `new BsonDocument("$set", new BsonDocument { {"field", val} })` | `UpdateDefinitionBuilder` 不支持链式 `.Set()` |
+| `Update.SetOnInsert("field", val)` | `new BsonDocument("$setOnInsert", new BsonDocument { ... })` | 2.19.2 没有 `SetOnInsert` |
+| `.Find(filter).FirstOrDefault()` | 需要 `using MongoDB.Driver;` | `Find` 是 `IMongoCollectionExtensions` 扩展方法 |
+| `Builders<>.Filter.Eq()` + `Builders<>.Update.Set()` 链式 | 直接用 `BsonDocument` 构建 filter 和 update | 避免混用两种风格 |
+
+**原则：新建代码统一用 `BsonDocument` 风格，不要用 `Builders<>` 的链式 API。**
+
+示例——正确的 upsert 写法：
+```csharp
+var filter = new BsonDocument("gameUuid", gameUuid);
+var update = new BsonDocument("$setOnInsert", new BsonDocument
+{
+    { "players", playersArray },
+    { "region", region },
+    { "mode", mode },
+    { "startedAt", startedAt },
+    { "endedAt", BsonNull.Value }
+});
+_collection.UpdateOne(filter, update, new UpdateOptions { IsUpsert = true });
+```
+
+示例——正确的数组内定位更新：
+```csharp
+var filter = new BsonDocument
+{
+    { "gameUuid", gameUuid },
+    { "players.accountIdLo", accountIdLo }
+};
+var update = new BsonDocument("$set", new BsonDocument
+{
+    { "players.$.placement", 3 },
+    { "players.$.points", 6 }
+});
+_collection.UpdateOne(filter, update);
+```
+
+**必须加 `using MongoDB.Driver;`**，否则 `Find()` 扩展方法不可见（`InsertOne`/`UpdateOne` 是接口实例方法，不受影响）。
+
 ### STEP Tag 与游戏阶段检测
 - `GameEntity` 上的 `STEP` tag（tag ID 198）标记当前游戏阶段
 - BG 模式下 step 流转（实测数据）：
