@@ -417,3 +417,36 @@ dotnet build -c Release
 - 仓库: `https://github.com/iceshoesss/HDT_BGTracker`
 - 分支: `claw_version`
 - 需要 Fine-grained PAT（Contents Read and write）才能 push
+
+## Clone 备选方案（GnuTLS 报错时）
+
+部分服务器/容器环境 git 使用 GnuTLS，clone GitHub 仓库可能报错：
+```
+fatal: GnuTLS recv error (-110): The TLS connection was non-properly terminated.
+```
+
+### 替代流程
+
+用 `curl` 下载 zipball → 解压 → 补齐 git 仓库：
+
+```bash
+# 1. 下载分支 zipball（替换 <TOKEN> 为你的 PAT）
+curl -L -o repo.zip \
+  -H "Authorization: token <TOKEN>" \
+  -H "Accept: application/vnd.github.v3+json" \
+  "https://api.github.com/repos/iceshoesss/HDT_BGTracker/zipball/claw_version"
+
+# 2. 解压并重命名
+unzip -q repo.zip
+mv iceshoesss-HDT_BGTracker-* HDT_BGTracker
+rm repo.zip
+
+# 3. 补回 git 仓库（用于后续 commit & push）
+cd HDT_BGTracker
+git init
+git remote add origin https://iceshoesss:<TOKEN>@github.com/iceshoesss/HDT_BGTracker.git
+git fetch origin claw_version
+git checkout -b claw_version origin/claw_version
+```
+
+> 注意：zipball 下载的目录名带 commit hash 后缀（`iceshoesss-HDT_BGTracker-<hash>`），所以要 `mv` 重命名。`git fetch` 之前先清掉解压的非 git 文件，否则 checkout 会因未跟踪文件冲突而中止（`rm -rf * .gitignore && git checkout ...`）。
