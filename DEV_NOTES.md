@@ -340,6 +340,69 @@ _collection.UpdateOne(filter, update);
 3. Phase 3：插件对接 — 上传到 `league_matches` + 写入/删除 `league_active_games`
 4. Phase 4：选手注册验证码流程、选手个人页、对局详情页
 
+## 📋 2026-04-08 (下) 开发日志：MongoDB 接入 + Bug 修复 + 报名队列
+
+### 参与者
+- 用户 + Claw (AI pair programmer)
+
+### Phase 2 完成：Flask 后端接入 MongoDB
+- `app.py` 连接 MongoDB `[YOUR_HOST]:27017`，数据库 `hearthstone`
+- 所有 API 和页面改为从 MongoDB 实时读取数据
+
+### Bug 修复
+
+#### Bug 1：排行榜无数据
+- **现象**：排行榜为空
+- **原因**：`get_players()` 查询 `league_players` 集合，但 C# 插件只写 `bg_ratings` 和 `league_matches`，从不写 `league_players`
+- **修复**：改用 MongoDB 聚合管道从 `league_matches` 计算排行榜，不依赖 `league_players`
+  - `$unwind` players 数组 → `$group` 按 battleTag → `$sum` 积分/场次/胜场
+  - 通过 `$lookup` 从 `bg_ratings` 获取 `gameCount`（BG 总场次）
+- **提交**：`0c13f82`
+
+#### Bug 2：对局数据与 MongoDB 有出入 + ⏱️ 00:00 不动
+- **现象**：时间显示异常，计时器不动
+- **原因**：C# 驱动存 `DateTime.UtcNow.ToString("o")` → MongoDB 存为 **BSON datetime** → PyMongo 读出来是 Python `datetime` 对象，不是字符串
+  - 模板 `{{ match.endedAt[:16] }}` 对 datetime 对象做字符串切片 → 结果不对
+  - `get_active_games()` 中 `g["startedAt"].replace("Z", "+00:00")` → datetime 对象没有 `.replace()` 方法 → 异常 → fallback 到 `time.time()` → 计时器永远 ≈ 0
+- **修复**：
+  - 新增 `to_epoch()` — 安全处理 datetime / BSON datetime / 字符串 → epoch 秒数
+  - 新增 `to_iso_str()` — 统一转 ISO 字符串
+  - 所有查询函数中 `endedAt` / `startedAt` 统一转字符串后再传给模板
+  - active games 查询兼容 `endedAt` 字段不存在的情况（`$or: [{endedAt: null}, {endedAt: {$exists: false}}]`）
+- **提交**：`0c13f82`（同上）
+
+#### Bug 3：胜率定义修正
+- **原定义**：`wins = placement == 1`（只有吃鸡算赢）
+- **修正**：`wins = placement <= 4`（前四都算胜利），新增 `chickens = placement == 1`（吃鸡）
+- 排行榜新增「吃鸡率」列，选手页同步更新
+- **提交**：`e3723ca`
+
+#### Bug 4：totalGames 数据源
+- **原做法**：从 `league_matches` 聚合计数
+- **修正**：通过 `$lookup` 从 `bg_ratings.gameCount` 获取（BG 总局数），同时保留 `leagueGames` 字段（联赛局数，用于胜率/场均排名计算）
+- **提交**：`4d69a8b`
+
+### 新功能：报名队列
+- 新增 `league_queue` 集合，存储报名名单
+- API：`GET /api/queue`、`POST /api/queue/join`、`POST /api/queue/leave`
+- 首页右侧「正在进行」下方新增报名队列面板
+- 显示已报名名单 + 报名/取消按钮（硬编码当前用户为「衣锦夜行」，待登录系统实现后替换）
+- **提交**：`04116ba`
+
+### 数据流总结（当前）
+```
+C# 插件 → MongoDB:
+  bg_ratings (玩家分数记录，含 gameCount)
+  league_matches (联赛对局，含 players 数组)
+
+Flask 后端 ← MongoDB:
+  排行榜 = league_matches 聚合 + bg_ratings $lookup (gameCount)
+  最近对局 = league_matches (endedAt != null)
+  正在进行 = league_matches (endedAt == null)
+  选手页 = league_matches 聚合 (单个 battleTag)
+  报名队列 = league_queue
+```
+
 ## 编译方法
 ```cmd
 cd HDT_BGTracker\HDT_BGTracker\HDT_BGTracker
