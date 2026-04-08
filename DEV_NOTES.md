@@ -429,6 +429,10 @@ dotnet build -c Release
 - 仓库: `https://github.com/iceshoesss/HDT_BGTracker`
 - 分支: `claw_version`
 - 需要 Fine-grained PAT（Contents Read and write）才能 push
+- **Push 需要 LD_PRELOAD**：服务器 git-remote-http 链接了 GnuTLS 版 libcurl，连 GitHub 不稳定，需用 OpenSSL 版覆盖：
+  ```bash
+  LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libcurl.so.4 git push origin claw_version
+  ```
 
 ## Clone 备选方案（GnuTLS 报错时）
 
