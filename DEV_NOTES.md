@@ -4,6 +4,18 @@
 炉石传说酒馆战棋分数记录插件，每局结束后自动记录分数并上传到 MongoDB。
 
 ## 当前状态
+
+### 联赛网站 (2026-04-08 更新)
+- ✅ 英雄头像显示（对局详情/个人历史/正在进行）
+  - C# `CreateLeagueMatch` 存储 `heroCardId` 字段
+  - 图片来源：`https://art.hearthstonejson.com/v1/256x/{heroCardId}.jpg`（256×256 正方形头像）
+  - CSS 裁剪：容器宽>高 + `object-top`，自动聚焦脸部，裁掉底部肩膀
+  - `tiles` 格式（256×59 横条）已弃用，效果太差
+- ✅ 修复进行中对局不显示
+  - 根因：`startedAt` 存为字符串，Python 用 `datetime` 比较，MongoDB BSON 类型排序 String < DateTime，比较永远返回 false
+  - 修复：`inject_counts` / `get_active_games` / `cleanup_stale_games` 三处统一用字符串格式比较
+
+### 插件核心
 - ✅ 分数获取正常
 - ✅ 玩家 ID 获取（`Player.Name`，游戏开始 3 秒后缓存）
 - ✅ 玩家 AccountId.Lo 获取（唯一标识，存为 string 避免大数问题）
