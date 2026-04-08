@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 using Hearthstone_Deck_Tracker.API;
 using HearthDb;
@@ -379,6 +381,41 @@ namespace HDT_BGTracker
                     _ratingUploaded = true;
                     string oppsStr = string.Join(", ", opponents.Select(o => o["name"].AsString + "#" + o["accountIdLo"].AsString));
                     Log($"已上传分数: {rating} ({mode}) 排名={placement?.ToString() ?? "无"} playerId={playerId} gameUuid={gameUuid} opponents=[{oppsStr}]");
+
+                    // 验证码：检查文档里是否已有，没有则基于 _id 生成并存储
+                    try
+                    {
+                        var docFilter = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.Eq("playerId", playerId);
+                        var existingDoc = _collection.Find(docFilter).FirstOrDefault();
+                        if (existingDoc != null)
+                        {
+                            string code = existingDoc.Contains("verificationCode")
+                                ? existingDoc["verificationCode"].AsString
+                                : null;
+
+                            if (string.IsNullOrEmpty(code))
+                            {
+                                // 首次：基于 _id 生成验证码并写入
+                                var docId = existingDoc["_id"].AsObjectId;
+                                code = GenerateVerificationCode(docId);
+                                var codeUpdate = new MongoDB.Bson.BsonDocument("$set",
+                                    new MongoDB.Bson.BsonDocument("verificationCode", code));
+                                _collection.UpdateOne(
+                                    MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.Eq("_id", docId),
+                                    codeUpdate);
+                                Log($"联赛验证码: {code} (首次生成，前往联赛网站注册时使用)");
+                            }
+                            else
+                            {
+                                // 已有验证码，每次上传都打印方便用户查看
+                                Log($"联赛验证码: {code} (前往联赛网站注册时使用)");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"验证码处理异常: {ex.Message}");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -879,6 +916,19 @@ namespace HDT_BGTracker
                     Log("MongoDB 连接测试失败: " + ex.Message);
                 }
             });
+        }
+
+        /// <summary>
+        /// 基于 MongoDB ObjectId 生成确定性验证码（SHA256 前 8 位大写）
+        /// ObjectId 仅存在于服务端，游戏内不可见，无法被盗用
+        /// </summary>
+        public static string GenerateVerificationCode(MongoDB.Bson.ObjectId objectId)
+        {
+            using (var sha = SHA256.Create())
+            {
+                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes("bgtracker:" + objectId.ToString()));
+                return BitConverter.ToString(hash).Replace("-", "").Substring(0, 8);
+            }
         }
 
         private static void Log(string msg)
