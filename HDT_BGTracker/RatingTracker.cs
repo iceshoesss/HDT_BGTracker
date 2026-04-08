@@ -18,6 +18,7 @@ namespace HDT_BGTracker
         private const string DbName = "hearthstone";
         private const string CollectionName = "bg_ratings";
         private const string LeagueCollectionName = "league_matches";
+        private const string WaitingQueueCollectionName = "league_waiting_queue";
 
         // ── 状态 ──────────────────────────────────────────
         private bool _enabled;
@@ -31,6 +32,7 @@ namespace HDT_BGTracker
         private bool _heroLogged; // 英雄名是否已输出
         private bool _lobbyLogged; // lobby 玩家名单是否已输出（不带英雄）
         private bool _leagueMatchCreated; // 联赛文档是否已创建
+        private bool _isLeagueGame; // 当前局是否是联赛
         private string _cachedGameUuid; // 当局游戏 UUID
         private int _lastStepValue = -1; // 上一次 STEP tag 的值，用于检测变化
         // private LobbyOverlay _overlay; // 浮动窗口已禁用
@@ -38,6 +40,7 @@ namespace HDT_BGTracker
         private MongoDB.Driver.MongoClient _mongoClient;
         private MongoDB.Driver.IMongoCollection<MongoDB.Bson.BsonDocument> _collection;
         private MongoDB.Driver.IMongoCollection<MongoDB.Bson.BsonDocument> _leagueCollection;
+        private MongoDB.Driver.IMongoCollection<MongoDB.Bson.BsonDocument> _waitingQueueCollection;
 
         // ── 日志 ──────────────────────────────────────────
         private static string LogDir =>
@@ -58,6 +61,7 @@ namespace HDT_BGTracker
                 var db = _mongoClient.GetDatabase(DbName);
                 _collection = db.GetCollection<MongoDB.Bson.BsonDocument>(CollectionName);
                 _leagueCollection = db.GetCollection<MongoDB.Bson.BsonDocument>(LeagueCollectionName);
+                _waitingQueueCollection = db.GetCollection<MongoDB.Bson.BsonDocument>(WaitingQueueCollectionName);
                 Log("插件已启动，MongoDB 已连接");
             }
             catch (Exception ex)
@@ -72,6 +76,7 @@ namespace HDT_BGTracker
             _mongoClient = null;
             _collection = null;
             _leagueCollection = null;
+            _waitingQueueCollection = null;
             // _overlay = null; // 浮动窗口已禁用
             Log("插件已停止");
         }
@@ -119,6 +124,8 @@ namespace HDT_BGTracker
                                 {
                                     LogLobbyPlayers(includeHeroes: true);
                                     _heroLogged = true;
+                                    // STEP 13 = 英雄选择完成，检查是否是联赛对局
+                                    CheckLeagueQueue();
                                 }
                             }
                         }
@@ -158,8 +165,8 @@ namespace HDT_BGTracker
                         _lobbyLogged = true;
                     }
 
-                    // STEP 13 + PlayerId 都就绪后，创建联赛对局文档
-                    if (_heroLogged && !_leagueMatchCreated
+                    // STEP 13 + PlayerId 都就绪后 + 确认为联赛对局，创建联赛对局文档
+                    if (_heroLogged && !_leagueMatchCreated && _isLeagueGame
                         && !string.IsNullOrEmpty(_cachedPlayerId) && _cachedPlayerId != "unknown")
                     {
                         CreateLeagueMatch();
@@ -184,7 +191,8 @@ namespace HDT_BGTracker
                     string cachedGameUuid = _cachedGameUuid;
 
                     TryUploadRating();
-                    UpdateLeaguePlacement(cachedAccountIdLo, cachedGameUuid);
+                    if (_isLeagueGame)
+                        UpdateLeaguePlacement(cachedAccountIdLo, cachedGameUuid);
 
                     _wasInBgGame = false;
                     _gameEndTime = DateTime.MinValue;
@@ -196,6 +204,7 @@ namespace HDT_BGTracker
                     _heroLogged = false;
                     _lobbyLogged = false;
                     _leagueMatchCreated = false;
+                    _isLeagueGame = false;
                     // _overlay?.Hide(); // 浮动窗口已禁用
                 }
             }
@@ -428,8 +437,189 @@ namespace HDT_BGTracker
         // ── 联赛对局 ────────────────────────────────────────
 
         /// <summary>
+        /// STEP 13 时检查等待队列：将 LobbyInfo 8 个玩家的 accountIdLo 与等待组比对
+        /// 完全匹配 → 标记联赛对局，删除等待组，创建 league_matches 文档
+        /// </summary>
+        private void CheckLeagueQueue()
+        {
+            if (_waitingQueueCollection == null || _leagueCollection == null)
+            {
+                Log("CheckLeagueQueue: MongoDB 未连接，跳过");
+                return;
+            }
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    var lobbyInfo = Core.Game?.MetaData?.BattlegroundsLobbyInfo;
+                    if (lobbyInfo?.Players == null || lobbyInfo.Players.Count == 0)
+                    {
+                        Log("CheckLeagueQueue: LobbyInfo 未就绪，跳过");
+                        return;
+                    }
+
+                    // 收集本局 8 个玩家的 accountIdLo
+                    var gameAccountIds = new HashSet<string>();
+                    foreach (var p in lobbyInfo.Players)
+                    {
+                        if (p.AccountId != null)
+                            gameAccountIds.Add(p.AccountId.Lo.ToString());
+                    }
+
+                    if (gameAccountIds.Count == 0)
+                    {
+                        Log("CheckLeagueQueue: 无有效 accountIdLo，跳过");
+                        return;
+                    }
+
+                    Log($"CheckLeagueQueue: 本局玩家 accountIdLo = [{string.Join(", ", gameAccountIds)}]");
+
+                    // 遍历等待组，找完全匹配
+                    var waitingGroups = _waitingQueueCollection.Find(new MongoDB.Bson.BsonDocument())
+                        .Sort(new MongoDB.Bson.BsonDocument("createdAt", 1))
+                        .ToList();
+
+                    MongoDB.Bson.BsonDocument matchedGroup = null;
+
+                    foreach (var group in waitingGroups)
+                    {
+                        var queueAccountIds = new HashSet<string>();
+                        var players = group["players"].AsBsonArray;
+
+                        foreach (var p in players)
+                        {
+                            string lo = p.Contains("accountIdLo") ? p["accountIdLo"].AsString : "";
+                            if (!string.IsNullOrEmpty(lo))
+                                queueAccountIds.Add(lo);
+                        }
+
+                        // 两边都是 8 人且完全一致
+                        if (gameAccountIds.Count == queueAccountIds.Count
+                            && gameAccountIds.SetEquals(queueAccountIds))
+                        {
+                            matchedGroup = group;
+                            Log($"CheckLeagueQueue: 匹配到等待组 _id={group["_id"]}");
+                            break;
+                        }
+                    }
+
+                    if (matchedGroup != null)
+                    {
+                        // 删除等待组
+                        _waitingQueueCollection.DeleteOne(
+                            new MongoDB.Bson.BsonDocument("_id", matchedGroup["_id"]));
+
+                        // 标记为联赛对局
+                        _isLeagueGame = true;
+                        Log("CheckLeagueQueue: ★ 联赛对局确认！等待组已删除，开始创建 league_matches");
+
+                        // 立即创建 league_matches 文档（不等 PlayerId）
+                        CreateLeagueMatchDirect(lobbyInfo);
+                    }
+                    else
+                    {
+                        _isLeagueGame = false;
+                        Log("CheckLeagueQueue: 未匹配到等待组，普通天梯局");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log($"CheckLeagueQueue 异常: {ex.Message}");
+                }
+            });
+        }
+
+        /// <summary>
+        /// 由 CheckLeagueQueue 调用，直接传入已有的 lobbyInfo 创建联赛文档
+        /// </summary>
+        private void CreateLeagueMatchDirect(object lobbyInfoObj)
+        {
+            if (_leagueCollection == null)
+            {
+                Log("CreateLeagueMatchDirect: MongoDB 未连接，跳过");
+                return;
+            }
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    var lobbyInfo = lobbyInfoObj as HearthMirror.Objects.BattlegroundsLobbyInfo;
+                    if (lobbyInfo == null)
+                    {
+                        Log("CreateLeagueMatchDirect: lobbyInfo 类型转换失败");
+                        return;
+                    }
+
+                    string gameUuid = lobbyInfo.GameUuid ?? _cachedGameUuid ?? "";
+                    if (string.IsNullOrEmpty(gameUuid))
+                    {
+                        Log("CreateLeagueMatchDirect: gameUuid 为空，跳过");
+                        return;
+                    }
+
+                    string region = GetRegion();
+                    string mode = Core.Game.IsBattlegroundsDuosMatch ? "duo" : "solo";
+                    string startedAt = _bgGameStartTime != DateTime.MinValue
+                        ? _bgGameStartTime.ToUniversalTime().ToString("o")
+                        : DateTime.UtcNow.ToString("o");
+
+                    var playersArray = new MongoDB.Bson.BsonArray();
+                    for (int i = 0; i < lobbyInfo.Players.Count; i++)
+                    {
+                        var p = lobbyInfo.Players[i];
+                        string heroName = GetHeroName(p.HeroCardId ?? "");
+
+                        var playerDoc = new MongoDB.Bson.BsonDocument
+                        {
+                            { "accountIdLo", p.AccountId?.Lo.ToString() ?? "" },
+                            { "battleTag", p.Name ?? "" },
+                            { "displayName", p.Name ?? "" },
+                            { "heroCardId", p.HeroCardId ?? "" },
+                            { "heroName", heroName },
+                            { "placement", MongoDB.Bson.BsonNull.Value },
+                            { "points", MongoDB.Bson.BsonNull.Value }
+                        };
+                        playersArray.Add(playerDoc);
+                    }
+
+                    var filter = new MongoDB.Bson.BsonDocument("gameUuid", gameUuid);
+                    var update = new MongoDB.Bson.BsonDocument("$setOnInsert",
+                        new MongoDB.Bson.BsonDocument
+                        {
+                            { "players", playersArray },
+                            { "region", region },
+                            { "mode", mode },
+                            { "startedAt", startedAt },
+                            { "endedAt", MongoDB.Bson.BsonNull.Value }
+                        });
+
+                    var result = _leagueCollection.UpdateOne(filter, update,
+                        new MongoDB.Driver.UpdateOptions { IsUpsert = true });
+
+                    if (result.UpsertedId != null)
+                    {
+                        _leagueMatchCreated = true;
+                        Log($"CreateLeagueMatchDirect: 已创建 gameUuid={gameUuid} 玩家数={playersArray.Count} 模式={mode}");
+                    }
+                    else
+                    {
+                        _leagueMatchCreated = true;
+                        Log($"CreateLeagueMatchDirect: 文档已存在 gameUuid={gameUuid}，跳过");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log($"CreateLeagueMatchDirect 异常: {ex.Message}");
+                }
+            });
+        }
+
+        /// <summary>
         /// STEP 13 时创建 league_matches 文档（8人完整信息，placement 为 null）
         /// 8 个玩家的插件都会触发，用 upsert + SetOnInsert 防重复
+        /// 保留原方法供兼容，新流程走 CheckLeagueQueue → CreateLeagueMatchDirect
         /// </summary>
         private void CreateLeagueMatch()
         {

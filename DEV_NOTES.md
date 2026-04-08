@@ -671,3 +671,43 @@ git checkout -b claw_version origin/claw_version
 
 ### 结论
 **现阶段不改造**。用户量上去后再换 SSE，改造量不大。
+
+## 📋 2026-04-09 开发日志：联赛对局验证流程
+
+### 参与者
+- 用户 + OpenClaw (AI pair programmer)
+
+### 设计目标
+在 STEP 13（英雄选择完成）时，将 LobbyInfo 8 个玩家的 accountIdLo 与 MongoDB `league_waiting_queue` 比对，确认是否为联赛对局。
+
+### 流程
+```
+STEP 13 触发
+  → LogLobbyPlayers (heroName)
+  → CheckLeagueQueue() [异步]
+      读取 LobbyInfo 8 人 accountIdLo
+      → 遍历 league_waiting_queue 中的等待组
+      → accountIdLo 完全匹配？
+        → 是 → _isLeagueGame = true → 删除等待组 → CreateLeagueMatchDirect() → 创建 league_matches
+        → 否 → _isLeagueGame = false → 走原有 bg_ratings 逻辑
+  → 游戏结束
+      → _isLeagueGame ? UpdateLeaguePlacement() : 跳过
+```
+
+### 无缝衔接
+- 等待组删除 → 网站「等待队列」面板消失
+- league_matches 文档创建（endedAt=null）→ 网站「正在进行」面板出现
+
+### 插件改动 (RatingTracker.cs)
+- 新增 `_isLeagueGame` 状态标志
+- 新增 `_waitingQueueCollection`（连接 `league_waiting_queue` 集合）
+- 新增 `CheckLeagueQueue()` — STEP 13 触发，比对 8 人 accountIdLo 与等待组
+- 新增 `CreateLeagueMatchDirect()` — 匹配成功后直接创建 league_matches（复用已有 lobbyInfo）
+- `CreateLeagueMatch()` 保留作为 fallback
+- `UpdateLeaguePlacement()` 加 `_isLeagueGame` 守卫
+- 游戏结束 cleanup 时重置 `_isLeagueGame = false`
+
+### 待测试
+- [ ] 编译验证（需要 HDT_PATH 环境变量）
+- [ ] 实际游戏验证等待队列匹配逻辑
+- [ ] 验证 8 个玩家的插件都能正确触发（upsert 防重复）
