@@ -438,6 +438,7 @@ namespace HDT_BGTracker
                             { "accountIdLo", p.AccountId?.Lo.ToString() ?? "" },
                             { "battleTag", p.Name ?? "" },
                             { "displayName", p.Name ?? "" },
+                            { "heroCardId", p.HeroCardId ?? "" },
                             { "heroName", heroName },
                             { "placement", MongoDB.Bson.BsonNull.Value },
                             { "points", MongoDB.Bson.BsonNull.Value }
