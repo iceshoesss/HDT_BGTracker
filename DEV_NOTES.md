@@ -639,3 +639,32 @@ git checkout -b claw_version origin/claw_version
 - [ ] 测试等待队列完整流程（2人→自动创建组→组显示→退出）
 - [ ] 测试完后将阈值改回 8 人
 - [ ] 等待组与插件对局匹配逻辑（Phase 3）
+
+## 📋 2026-04-09 备忘：轮询改造评估
+
+### 现状
+前端有 3 处轮询（`index.html`）：
+- 正在进行的对局 — 每 5 秒 fetch
+- 报名队列 — 每 1 秒 fetch
+- 等待队列 — 每 1 秒 fetch
+
+### 评估结论
+当前 20 桌规模，轮询完全够用，无性能瓶颈。1 秒轮询偏频繁，可优化为 3-5 秒。
+
+### 将来改造方案：SSE（Server-Sent Events）
+如果用户量上升需要替换轮询，推荐 SSE 而非 WebSocket：
+- **理由**：场景是"后端有数据变更时推给前端"，单向通信，不需要 WebSocket 的双向能力
+- **优势**：Flask 原生支持（`Response` + generator），无需额外依赖（不用 flask-socketio / eventlet）
+- **改造量**：前端用 `EventSource` 替换 `setInterval` + `fetch`，后端新增 SSE 端点监听 MongoDB change stream 或定时检查变更
+- **适用端点**：`/api/events/active-games`、`/api/events/queue`、`/api/events/waiting-queue`
+
+### 对比
+
+| 方案 | 复杂度 | 方向 | Flask 支持 | 额外依赖 |
+|------|--------|------|-----------|---------|
+| 轮询 | 最低 | 前端→后端 | 原生 | 无 |
+| SSE | 低 | 后端→前端（单向） | 原生 | 无 |
+| WebSocket | 高 | 双向 | 需 socketio | flask-socketio + eventlet |
+
+### 结论
+**现阶段不改造**。用户量上去后再换 SSE，改造量不大。
