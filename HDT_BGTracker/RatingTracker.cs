@@ -489,9 +489,13 @@ namespace HDT_BGTracker
 
                         foreach (var p in players)
                         {
-                            string lo = p.Contains("accountIdLo") ? p["accountIdLo"].AsString : "";
-                            if (!string.IsNullOrEmpty(lo))
-                                queueAccountIds.Add(lo);
+                            var pDoc = p.AsBsonDocument;
+                            if (pDoc.Contains("accountIdLo"))
+                            {
+                                string lo = pDoc["accountIdLo"].AsString;
+                                if (!string.IsNullOrEmpty(lo))
+                                    queueAccountIds.Add(lo);
+                            }
                         }
 
                         // 两边都是 8 人且完全一致
