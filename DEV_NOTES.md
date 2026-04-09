@@ -798,3 +798,79 @@ STEP 13 触发
 ### 待办
 - [ ] 问题对局页面添加入口链接
 - [ ] 手动补录功能：当事人填自己的排名 / 管理员统一填
+
+## 📋 2026-04-10 开发日志：时区修复 + 安全修复 + 性能优化 + 同步脚本
+
+### 参与者
+- 用户 + OpenClaw (AI pair programmer)
+
+### 时区修复：全站时间改为北京时间 (UTC+8)
+
+#### 背景
+网站所有时间显示均为 UTC 时间，中国用户需要自行换算。
+
+#### 实现
+- `app.py` 新增 `to_cst_str()` 函数：处理 datetime / BSON datetime / 字符串格式，统一 +8 小时，输出 `YYYY-MM-DD HH:MM` 格式
+- 注册为 Jinja filter `cst`，模板中用 `{{ time | cst }}` 替代手动字符串切片
+- 注册位置：`to_cst_str` 定义之后（避免 NameError）
+- 涉及页面：`match.html`、`match_edit.html`、`player.html`、`problems.html`
+- `index.html` 使用 epoch 时间戳 + JS 计时器，不受影响
+
+#### 提交
+| Commit | 说明 |
+|--------|------|
+| `b967b50` | fix: 对局详情时间从UTC改为北京时间(UTC+8) |
+| `afbef3e` | fix: jinja filter 注册移到 to_cst_str 定义之后 |
+| `314e818` | fix: 所有页面时间统一改为北京时间(UTC+8) |
+
+### 安全修复：报名队列 API 鉴权
+
+#### 漏洞
+`/api/queue/join` 和 `/api/queue/leave` 接受 POST body 中的 `name` 字段，后端未验证该 name 是否与 session 中的登录用户一致。任何人可通过 curl 冒充他人报名或踢人。
+
+#### 修复
+- 后端：从 `session.get("battleTag")` 读取用户身份，不信任请求 body
+- 前端：移除 body 中的 `name` 字段，后端通过 session 自动识别
+- 未登录用户返回 401
+
+#### 提交
+| Commit | 说明 |
+|--------|------|
+| `acd2c74` | fix: 报名队列API改用session鉴权，防止冒充他人报名/踢人 |
+
+### 性能优化：get_rival_stats 改用聚合管道
+
+#### 原方案
+`find()` 加载选手所有对局的完整文档到 Python 内存，双重循环比排名。500 局 ≈ 1MB 数据传输。
+
+#### 新方案
+MongoDB 聚合管道：`$match` → `$project` → `$unwind` → `$group`（取出自己的 placement + 对手列表）→ `$filter`（排除自己）→ `$unwind`（对手）→ `$match`（排除 null）→ `$addFields`（标记踩/被踩）→ `$group`（按对手统计次数）。
+
+只返回最终结果（十几行），数据传输量减少 90%+。
+
+#### 提交
+| Commit | 说明 |
+|--------|------|
+| `60379e1` | perf: get_rival_stats 改用聚合管道，数据传输量减少90%+ |
+
+### 同步脚本：skip-worktree 自动拉取
+
+#### 背景
+用户本地 app.py 用 `skip-worktree` 保护数据库地址，每次远程有改动需要手动解锁→stash→pull→pop→锁定，步骤繁琐。
+
+#### 实现
+- `sync.ps1`（PowerShell）和 `sync.sh`（Bash）自动化完整流程
+- 纯 ASCII 编码，避免 PowerShell 解析中文乱码
+- 流程：解锁 → stash → pull → pop → 重新锁定
+
+#### 提交
+| Commit | 说明 |
+|--------|------|
+| `088be41` | chore: 添加自动同步脚本 sync.sh / sync.ps1 |
+| `e7a6baf` | fix: sync.ps1 改用纯ASCII避免编码问题 |
+
+### 项目审查总结
+通读全项目后审查出 9 个问题，确认：
+- **已修复**：1 个实际漏洞（API 鉴权）、1 个性能优化（聚合管道）
+- **误判撤回**：2 个（队列判断逻辑、最近对局过滤条件，实际代码已正确处理）
+- **暂不需要改**：datetime.utcnow()（3.11 未弃用）、secret_key 硬编码、MongoDB 连接池（20 桌规模无影响）
