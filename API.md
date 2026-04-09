@@ -61,7 +61,7 @@ Base URL: `http://<服务器IP>:5000`
 GET /api/players/%E5%8D%97%E6%80%80%E5%8C%97%E7%91%BE%E4%B8%A8%E5%B0%91%E5%A4%B4%E8%84%91%235267
 ```
 
-**响应：** 同排行榜单条格式，选手不存在时返回 `404 "选手不存在"`。
+**响应：** 同排行榜单条格式，选手不存在时返回 `404 {"error": "选手不存在"}`。
 
 ---
 
@@ -123,9 +123,34 @@ https://art.hearthstonejson.com/v1/256x/{heroCardId}.jpg
 
 ### `GET /api/match/<gameUuid>`
 
-获取单场对局的完整信息。返回**网页 HTML**（非 JSON），是 Flask 模板渲染的页面。
+获取单场对局的完整信息。
 
-> ⚠️ 这个端点返回 HTML。如需纯 JSON，可参考 `/api/matches` 的格式自行从列表中过滤，或新增一个 JSON 版端点。
+**响应示例：**
+```json
+{
+  "_id": "6612abc...",
+  "gameUuid": "888fc109-8a0c-42d8-8b21-fcee26708e8f",
+  "region": "CN",
+  "mode": "solo",
+  "startedAt": "2026-04-08T20:15:00",
+  "endedAt": "2026-04-08T21:05:00",
+  "players": [
+    {
+      "accountIdLo": "1708070391",
+      "battleTag": "南怀北瑾丨少头脑#5267",
+      "displayName": "南怀北瑾丨少头脑",
+      "heroCardId": "TB_BaconShop_HERO_56",
+      "heroName": "阿莱克丝塔萨",
+      "placement": 1,
+      "points": 9
+    }
+  ]
+}
+```
+
+`players` 按排名升序排列（null 排最后）。对局不存在时返回 `404 {"error": "对局不存在"}`。
+
+> 网页版对局详情页地址为 `GET /match/<gameUuid>`（返回 HTML）。
 
 ---
 
