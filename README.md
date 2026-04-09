@@ -62,11 +62,28 @@ MongoDB 数据库: `hearthstone`，集合: `bg_ratings`
 
 ### 步骤
 
+cmd
 ```cmd
 cd HDT_BGTracker
-set HDT_PATH=C:\Users\你的用户名\Downloads\HDT-V2.4.2\HDT
+set HDT_PATH=YOUR_HDT_ADDRESS
 dotnet build -c Release
 ```
+
+powershell
+```powershell
+cd HDT_BGTracker
+$env:HDT_PATH = "YOUR_HDT_ADDRESS"
+dotnet build -c Release
+```
+
+linux
+
+```bash
+cd HDT_BGTracker
+export HDT_PATH=YOUR_HDT_ADDRESS
+dotnet build -c Release
+```
+
 
 编译成功后，`bin\Release\net472\` 下会生成所有需要的 DLL。
 
@@ -79,7 +96,7 @@ cd bin\Release\net472
 tar -a -cf HDT_BGTracker.zip HDT_BGTracker.dll MongoDB.Bson.dll MongoDB.Driver.dll MongoDB.Driver.Core.dll DnsClient.dll MongoDB.Libmongocrypt.dll SharpCompress.dll
 ```
 
-把这个 zip 直接丢进 HDT 的 Plugins 目录（Options → Tracker → Plugins → Plugins Folder），重启 HDT 即可。
+
 
 ## 使用
 
@@ -88,15 +105,3 @@ tar -a -cf HDT_BGTracker.zip HDT_BGTracker.dll MongoDB.Bson.dll MongoDB.Driver.d
 - 点击插件设置中的「测试连接」按钮可验证 MongoDB 连接
 - 日志在 `%AppData%\HearthstoneDeckTracker\BGTracker\tracker.log`
 
-## MongoDB 配置
-
-MongoDB 连接地址配置在 `RatingTracker.cs` 中的 `MongoUrl` 常量。该文件通过 `git update-index --skip-worktree` 忽略本地修改，不会被意外提交到 GitHub。
-
-如需修改连接地址，直接编辑本地 `RatingTracker.cs` 即可。
-
-如需临时恢复 Git 跟踪（比如要更新文件中的其他逻辑）：
-```bash
-git update-index --no-skip-worktree HDT_BGTracker/RatingTracker.cs
-# 改完 commit 后重新锁上
-git update-index --skip-worktree HDT_BGTracker/RatingTracker.cs
-```
