@@ -967,3 +967,91 @@ es.onmessage = (e) => {
 ```python
 _client = MongoClient(MONGO_URL, maxPoolSize=50, serverSelectionTimeoutMS=5000)
 ```
+
+## 📋 2026-04-10 开发日志：高流量架构改造 Phase 1 + Phase 2
+
+### 参与者
+- 用户 + OpenClaw (AI pair programmer)
+
+### Phase 1：基础设施优化
+
+#### gunicorn + gevent
+- 新增 `gunicorn.conf.py`：gevent worker × 4（后改 3），1000 并发连接，120s 超时
+- 新增 `requirements.txt`：flask, pymongo, gunicorn, gevent
+- **注意**：gunicorn 不支持 Windows（依赖 `fcntl`），仅 Linux 部署使用
+- 本地 Windows 开发用 `python app.py` 即可
+
+#### MongoDB 连接池
+- `MongoClient` 添加 `maxPoolSize=50, minPoolSize=5, serverSelectionTimeoutMS=5000`
+- 避免高并发下反复建连
+
+#### 排行榜缓存
+- `get_players()` 结果缓存 30 秒（`_leaderboard_cache`）
+- 聚合管道是最吃 CPU 的查询，30 秒缓存减少 95%+ 查询量
+- 排行榜数据一局游戏才变一次，30 秒完全够用
+
+#### 提交
+| Commit | 说明 |
+|--------|------|
+| `b8a3665` | feat: Phase 1 — gunicorn + 连接池 + 排行榜缓存 |
+
+### Phase 2：SSE 替换轮询
+
+#### 设计
+将前端 3 个 `setInterval + fetch` 轮询改为 SSE（Server-Sent Events）：
+- `/api/events/active-games` — 进行中对局
+- `/api/events/queue` — 报名队列
+- `/api/events/waiting-queue` — 等待队列
+
+#### 后端实现
+- 通用 `_sse_generate(fetch_fn, poll_interval, max_lifetime)` 生成器
+- 内部轮询 MongoDB，有变化（指纹比对）才 `yield` 数据
+- 每 30 秒发心跳注释行 `: heartbeat` 保持连接活跃
+- `max_lifetime=120` 秒后主动断开，客户端 EventSource 自动重连（防僵尸连接堆积）
+- gevent 兼容：有 gevent 用 `gevent.sleep`，没有用 `time.sleep`
+- 原 REST API 端点保留，POST 操作仍用 `fetch`
+
+#### 前端实现
+- 3 个 `EventSource` 替换 3 个 `setInterval(fetch, 5000)`
+- `visibilitychange` 事件：切 tab 时关闭 SSE，回来时自动重连
+- 报名/退出按钮加 500ms 防连点（`queueBusy` 标志）
+- 计时器 `setInterval(1000)` 保持不变（纯前端 `Date.now()` 计算）
+
+#### Bug 修复
+
+##### SSE 轮询间隔调整
+- 初始 2s → 尝试 0.5s（响应更快）→ 最终回退到 1s
+- 0.5s 在 NAS 上负担过重（3 端点 = 6 次查询/秒）
+
+##### 400 错误（已在报名队列中）
+- **现象**：点击报名后日志出现红色 400
+- **原因**：连点两下报名，第一下成功，第二下发现已在队列返回 400
+- **修复**：前端 `queueBusy` 标志 + 500ms 防连点
+
+##### SSE 连接堆积导致整体卡顿
+- **现象**：使用一段时间后所有操作变慢（Windows 和 NAS 都有）
+- **原因**：刷新/切 tab 后旧 SSE 连接未被正确清理，greenlet + MongoDB 连接堆积
+- **修复**：
+  1. `visibilitychange` 事件：切 tab 时 close 所有 SSE
+  2. 服务端 `max_lifetime=120s` 主动断开，客户端自动重连
+  3. 心跳注释行保持连接活跃
+
+#### 提交
+| Commit | 说明 |
+|--------|------|
+| `6ac8a59` | feat: Phase 2 — SSE 替换前端轮询 |
+| `713d791` | fix: SSE 轮询间隔从 2s 降到 0.5s |
+| `da7e9f9` | fix: SSE 连接管理 — 切 tab 自动断开重连 + 心跳保活 + 轮询 1s |
+| `5010bbc` | fix: SSE 连接 120 秒自动断开由客户端重连 |
+| `3aef94f` | fix: 报名/退出按钮防连点 |
+
+### 待验证
+- [ ] SSE 连接堆积问题是否彻底解决（长时间使用 + 反复刷新测试）
+- [ ] NAS 上 gunicorn 性能（i5-4200U，建议 workers=3）
+- [ ] 如 SSE 仍有问题，可考虑回退到轮询方案（间隔改为 3-5 秒）
+- [ ] Phase 3：排行榜等静态数据是否也需要 SSE（目前不需要，变化频率低）
+
+### NAS 部署注意事项
+- CPU: i5-4200U（2 核 4 线程），建议 `workers = 3`
+- MongoDB 也在 NAS 上，与 gunicorn 共享资源
+- `git push` 需要 `LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libcurl.so.4`（GnuTLS 兼容问题）
