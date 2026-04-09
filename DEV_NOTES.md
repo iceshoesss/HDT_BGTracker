@@ -727,3 +727,74 @@ STEP 13 触发
 **影响**：结果一致（$set 原子操作），只是多几次无意义的查询和写入。20 桌规模无感。
 
 **未来优化**（规模到几百桌时）：只让一个人负责写 endedAt，比如仅当自己的 accountIdLo 是 players 数组第一个时才执行 CheckAndFinalizeMatch。
+
+## 📋 2026-04-09 开发日志：超时/掉线对局处理 + 问题对局管理页 + UI 精修
+
+### 参与者
+- 用户 + OpenClaw (AI pair programmer)
+
+### 问题背景
+- 游戏超时（80 分钟）或玩家掉线时，`league_matches` 中 `players.placement` 和 `players.points` 为 null
+- `cleanup_stale_games()` 原来只写 `endedAt`，不区分正常结束和超时
+- 对局详情页 `match.html` 渲染 null placement 会出错
+- 「最近对局」列表会显示不完整的对局（旧数据中 `endedAt` 有值但 placement 全 null）
+
+### 插件/后端改动
+
+#### 超时对局标记 (`app.py`)
+- `cleanup_stale_games()`：超时对局新增 `status: "timeout"` 字段
+- **新增** `cleanup_partial_matches()`：处理部分掉线对局——有人上报了 placement 但其他人没填，导致永远不会 allDone。超时后标记 `status: "abandoned"` 并写入 `endedAt`
+- `get_active_games()` 每次查询时同时调用两个 cleanup 函数
+
+#### 最近对局过滤 (`app.py`)
+- `get_completed_matches()` 改为聚合管道，用 `$not: {$elemMatch: {placement: null}}` 精确过滤
+- 排除三类对局：有 `status` 字段的（新 cleanup 标记的）、旧数据中 placement 有 null 的、`endedAt` 为 null 的
+- **踩坑**：`{"players.placement": {"$ne": null}}` 对数组的语义是"至少一个 ≠ null"，不是"全部 ≠ null"。超时局里只要有人填了 placement 就会被漏进来。必须用 `$not + $elemMatch`
+
+#### 选手页/对战统计兼容
+- `get_player_matches()` 返回 `status` 字段
+- `get_rival_stats()` 跳过 `status` 为 timeout/abandoned 的对局
+
+### 前端改动
+
+#### 对局详情页 (`match.html`)
+- null placement 显示 `-`，null points 显示「无数据」
+- 超时/中断对局顶部显示黄色警告条：「此对局因超时自动结束，排名数据未被记录」
+
+#### 选手历史对局 (`player.html`)
+- null placement 显示 ⚠️ 图标
+- 超时/中断标签：`· 超时` / `· 中断`
+
+#### 问题对局管理页 (`/problems`) — **新增**
+- 聚合查询所有 timeout/abandoned/旧数据缺失的对局
+- 每局以 2×4 网格显示 8 个玩家，含英雄头像
+- 已填 placement 的玩家：正常白底卡片，显示排名+积分
+- 未填的玩家：红色边框卡片，显示「未记录」
+- 整张卡片可点击跳转对局详情
+- 暂无入口链接（需后续添加）
+
+#### 最近对局样式统一 (`index.html`)
+- 从文字列表改为 2×4 英雄头像网格，与问题对局风格一致
+- 去掉日期行，更简洁
+- 防御性 null 检查：跳过 placement 为 null 的玩家
+
+### UI 精修
+- 导航栏「注册/登录」→「登录」
+- 「X 名选手」→「X 名注册选手」（改为查 `league_players` 集合 verified=True 计数）
+- 登录页：去掉注册/登录切换，统一为「🔑 选手登录」，首次登录自动注册
+- placeholder 从「南怀北瑾丨少头脑#5267」改为「能干的猛兽#1234」
+- 所有页面去掉 solo/duo mode 标志（联赛无意义）
+
+### 提交历史
+| Commit | 说明 |
+|--------|------|
+| `9361ac7` | feat: 超时/掉线对局处理 — status 标记 + 前端容错 |
+| `2a6ee50` | fix: 最近对局用聚合管道精确排除不完整对局 |
+| `bd1f05d` | feat: 问题对局管理页面 /problems |
+| `74e6481` | style: 最近对局改用英雄头像网格布局 + 问题对局整卡可点击 |
+| `745bb70` | fix: 去掉 solo 标志、登录页简化、替换 placeholder |
+| `09ba088` | fix: 导航栏改登录、选手数改注册数、最近对局去日期 |
+
+### 待办
+- [ ] 问题对局页面添加入口链接
+- [ ] 手动补录功能：当事人填自己的排名 / 管理员统一填
