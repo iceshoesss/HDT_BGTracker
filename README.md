@@ -20,6 +20,33 @@ HDT_BGTracker/
 └── API.md                  # 网站 API 文档
 ```
 
+## 版本管理
+
+### 版本号规则
+
+采用 `v主版本.次版本.修订号`（如 `v0.1.0`）：
+
+- **修订号 +1** — 修 bug（`v0.1.0` → `v0.1.1`）
+- **次版本 +1** — 加新功能（`v0.1.0` → `v0.2.0`）
+- **主版本 +1** — 大改/重构/正式发布（`v0.x.x` → `v1.0.0`）
+
+### 修改版本号的位置
+
+两个地方必须同步修改：
+
+| 文件 | 位置 | 用途 |
+|------|------|------|
+| `HDT_BGTracker/HDT_BGTracker.csproj` | `<Version>1.0.0</Version>` | 程序集版本 |
+| `HDT_BGTracker/BGTrackerPlugin.cs` | `public Version Version => new Version(1, 0, 0);` | HDT 插件显示版本 |
+
+### Docker 镜像 tag
+
+构建时同时打版本号和 `latest`：
+
+```bash
+docker build -t league-web:v0.1.0 -t league-web:latest ./league
+```
+
 ## Docker 部署（联赛网站）
 
 ### 前置条件
