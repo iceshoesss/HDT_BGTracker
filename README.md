@@ -73,7 +73,7 @@ docker compose up -d
 |------|--------|------|
 | `MONGO_URL` | `mongodb://mongo:27017` | MongoDB 连接地址 |
 | `DB_NAME` | `hearthstone` | 数据库名 |
-| `FLASK_SECRET_KEY` | `bgtracker-flask-secret-2026-hearthstone` | Session 签名密钥，生产环境建议覆盖 |
+| `FLASK_SECRET_KEY` | 随机生成 | Session 签名密钥，生产环境建议固定设置 |
 
 ### 常用命令
 
