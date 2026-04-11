@@ -12,6 +12,8 @@ Write-Host "[2/5] Stashing local changes..." -ForegroundColor Cyan
 git stash
 
 Write-Host "[3/5] Pulling from remote..." -ForegroundColor Cyan
+# Windows 下文件可能被 IDE/dotnet 构建进程占用导致 unlink 失败
+try { Stop-Process -Name "MSBuild" -Force -ErrorAction SilentlyContinue } catch {}
 git pull origin claw_version
 
 Write-Host "[4/5] Restoring local changes..." -ForegroundColor Cyan
