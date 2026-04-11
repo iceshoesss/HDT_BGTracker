@@ -355,6 +355,53 @@ docker compose up -d
   - 保留字段：`playerId`、`accountIdLo`、`displayName`、`rating`、`lastRating`、`ratingChange`、`gameCount`、`mode`、`region`、`timestamp`、`verificationCode`
   - 涉及修改：`RatingTracker.cs`（C# 插件上传逻辑）、`app.py`（如有读取这些字段的地方）
   - 需同步更新 `API.md` 数据结构文档
+- [ ] **插件架构改造：直连 MongoDB → HTTP API（通过 CF Tunnel）**
+  - 背景：CF Tunnel 只能穿透 HTTP，无法暴露 MongoDB 端口；用户无公网 IP
+  - 现状：插件用 MongoDB.Driver 直连 Atlas，连接串硬编码在 C# 中（反编译可泄露）
+  - 目标：插件改为 HTTP POST 到 Flask API，Flask 负责写 MongoDB
+
+  #### 改造方案
+
+  **新增 Flask API 端点（`app.py`）：**
+
+  1. `POST /api/plugin/upload-rating`
+     - 合并原 UploadToMongo + IncrementLeagueCount 逻辑
+     - 请求体：`{ playerId, accountIdLo, rating, mode, placement, gameUuid, region }`
+     - 服务端：upsert bg_ratings（含 leagueCount $inc）、生成验证码
+     - 返回：`{ ok, verificationCode? }`
+
+  2. `POST /api/plugin/check-league`
+     - 合并原 CheckLeagueQueue 逻辑
+     - 请求体：`{ gameUuid, accountIdLoList: [...] }`
+     - 服务端：查 waiting_queue → 完全匹配 → 创建 league_matches 文档 → 删除等待组
+     - 返回：`{ isLeague: true/false }`
+
+  3. `POST /api/plugin/update-placement`
+     - 原 UpdateLeaguePlacement + CheckAndFinalizeMatch 逻辑
+     - 请求体：`{ gameUuid, accountIdLo, placement }`
+     - 服务端：更新 players.$.placement + points，检查是否 8 人都提交 → 写 endedAt
+     - 返回：`{ ok, finalized: true/false }`
+
+  **认证方案：**
+  - 插件首次上传时服务端返回一次性 token（基于 playerId + salt 生成）
+  - 后续请求 Header 携带 `Authorization: Bearer <token>`
+  - 或简单方案：直接用 playerId 做鉴权（反正 playerId 要匹配数据库记录）
+
+  **C# 插件改动（`RatingTracker.cs`）：**
+  - 移除：所有 `MongoClient`、`IMongoCollection`、`BsonDocument` 相关代码
+  - 移除：`MongoDB.Driver`、`MongoDB.Bson` 引用（减少 DLL 体积）
+  - 新增：`HttpClient` 单例，所有写操作改为 `PostAsync` / `PutAsync`
+  - 新增：`ApiBaseUrl` 配置项（默认 `https://你的域名`，支持用户修改）
+  - 新增：简单的 JSON 序列化（用 `System.Web.Script.Serialization` 或 `Newtonsoft.Json`）
+  - 日志、HearthDb 查询、STEP 检测等逻辑保持不变
+
+  **影响面：**
+  - 插件包体积减小（移除 MongoDB.Driver + 依赖 DLL）
+  - 安全性提升（不再暴露数据库连接串）
+  - 连接池问题自然消失（插件不再占 MongoDB 连接）
+  - Flask 成为唯一 MongoDB 客户端，连接池完全可控
+  - 需要修改 `sync.ps1` / `sync.sh`（打包文件列表变化）
+  - 需要修改 `README.md` 安装说明
 
 ### 中优先级
 - [ ] 验证 FinalPlacement 在单人/双人/掉线重连等场景的可靠性
