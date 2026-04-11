@@ -13,7 +13,7 @@ HDT_BGTracker/
 │   └── HDT_BGTracker.csproj
 ├── league/                 # Flask 联赛网站 + 插件 API
 │   ├── app.py              # 后端 API + 页面 + 插件端点
-│   ├── templates/          # Jinja2 模板
+│   ├── templates/          # Jinja2 模板（Tailwind CSS + ECharts CDN）
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── docker-compose.yml      # Docker 部署
