@@ -6,18 +6,20 @@
 
 ```
 HDT_BGTracker/
-├── HDT_BGTracker/          # C# HDT 插件
+├── HDT_BGTracker/          # C# HDT 插件（HTTP API 客户端）
 │   ├── BGTrackerPlugin.cs  # 插件入口
-│   ├── RatingTracker.cs    # 核心逻辑（分数上传、联赛匹配、验证码）
+│   ├── RatingTracker.cs    # 核心逻辑（HTTP 上传分数、联赛匹配）
 │   ├── LobbyOverlay.cs     # 游戏内浮动面板（已禁用）
 │   └── HDT_BGTracker.csproj
-├── league/                 # Flask 联赛网站
-│   ├── app.py              # 后端 API + 页面
+├── league/                 # Flask 联赛网站 + 插件 API
+│   ├── app.py              # 后端 API + 页面 + 插件端点
 │   ├── templates/          # Jinja2 模板
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── docker-compose.yml      # Docker 部署
-└── API.md                  # 网站 API 文档
+├── API.md                  # 网站 API 文档
+├── DEV_NOTES.md            # 开发文档（踩坑记录）
+└── sync.ps1 / sync.sh      # 同步脚本（保护本地配置）
 ```
 
 ## 版本管理
@@ -121,7 +123,16 @@ $env:HDT_PATH = "你的HDT安装路径"
 dotnet build -c Release
 ```
 
-编译成功后，`bin\Release\net472\` 下会生成所有需要的 DLL。
+编译成功后，`bin\Release\net472\` 下只有一个 `HDT_BGTracker.dll`。
+
+### 配置
+
+`RatingTracker.cs` 中的 `ApiBaseUrl` 需要改成实际 API 地址：
+
+```csharp
+private const string ApiBaseUrl = "http://localhost:5000";  // 本地测试
+// private const string ApiBaseUrl = "https://你的域名";     // 生产部署
+```
 
 ### 打包安装
 

@@ -10,19 +10,21 @@
 C# 插件 (HDT_BGTracker/)          Flask 网站 (league/)
 ┌─────────────────────┐           ┌─────────────────────┐
 │ HDT 插件生命周期     │           │ app.py              │
-│  ├ OnUpdate (~100ms) │           │  ├ 页面路由          │
-│  ├ 分数读取          │           │  ├ REST API          │
-│  ├ STEP 13 检测      │  写入     │  └ SSE 推送          │
-│  ├ 联赛匹配          │ ──────→  │                     │
-│  └ MongoDB 上传      │  MongoDB  │  ← 聚合管道读取      │
-└─────────────────────┘  ←──────  └─────────────────────┘
-        ↓                               ↓
-   MongoDB (hearthstone)          Docker 部署
-   ├ bg_ratings                   ├ league-web 镜像
-   ├ league_matches               └ mongo:7 容器
-   ├ league_queue
-   ├ league_waiting_queue
-   └ league_players
+│  ├ OnUpdate (~100ms) │  HTTP     │  ├ 页面路由          │
+│  ├ 分数读取          │  POST     │  ├ REST API          │
+│  ├ STEP 13 检测      │ ───────→ │  ├ 插件 API          │
+│  ├ 联赛匹配          │  JSON     │  └ SSE 推送          │
+│  └ HttpClient 上传   │           │     │               │
+└─────────────────────┘           │     ↓ 写入           │
+                                  │  MongoDB 聚合管道     │
+                                  └─────────────────────┘
+                                          ↓
+                                   MongoDB (hearthstone)
+                                   ├ bg_ratings
+                                   ├ league_matches
+                                   ├ league_queue
+                                   ├ league_waiting_queue
+                                   └ league_players
 ```
 
 ### 数据流
@@ -30,15 +32,27 @@ C# 插件 (HDT_BGTracker/)          Flask 网站 (league/)
 ```
 玩家打完一局 → 插件 OnUpdate 检测游戏结束
   → 读取 rating + placement + opponents
-  → 聚合管道原子写入 bg_ratings（ratingChanges + games 数组）
-  → 如果是联赛对局：UpdateLeaguePlacement 写入 league_matches
-  → 验证码：首次上传后基于 _id 生成，后续打印到日志
+  → HTTP POST /api/plugin/upload-rating → Flask 写入 bg_ratings
+  → STEP 13: POST /api/plugin/check-league → 匹配等待组 → 创建 league_matches
+  → 游戏结束: POST /api/plugin/update-placement → 更新排名 + 积分
+  → 验证码：服务端基于 ObjectId 生成，首次上传时返回
 
 网站请求 → Flask → MongoDB 聚合管道 → 返回 JSON/HTML
   → 排行榜 = league_matches $unwind + $group（30s 缓存）
   → 选手页 = league_matches 聚合（单个 battleTag）
   → SSE 端点 = 内部轮询 MongoDB，有变化才推送
 ```
+
+### 插件 API 端点
+
+| 端点 | 认证 | 时机 | 说明 |
+|------|------|------|------|
+| `POST /api/plugin/upload-rating` | 无 | 游戏结束 | 上传分数 + 签发 token |
+| `POST /api/plugin/check-league` | 无 | STEP 13 | 检查联赛匹配 |
+| `POST /api/plugin/update-placement` | Bearer token | 游戏结束 | 更新排名 |
+
+认证流程：`upload-rating` 首次返回 token → 后续 `update-placement` 携带 token。
+`check-league` 不需要认证（STEP 13 时 token 尚未签发）。
 
 ---
 
@@ -130,51 +144,59 @@ dotnet build -c Release
 - **解决方案**：纯 C# 代码创建 UI（`new TextBlock()`, `new Grid()`）
 - 需手动添加 `<Reference Include="System.Xaml">`
 
-### 3.3 MongoDB.Driver 2.19.2 兼容性 ⚠️
+### 3.3 ~~MongoDB.Driver 兼容性~~ ⛔ 已移除
 
-> 给 AI 的提示：项目锁定 2.19.2，不要尝试使用新版 API。
+> MongoDB 驱动已从 C# 插件移除，改为 HTTP API。以下仅作归档。
 
-| 新版 API (2.21+) | 2.19.2 替代写法 |
-|---|---|
-| `Update.Set("field", val)` 链式 | `new BsonDocument("$set", new BsonDocument {...})` |
-| `Update.SetOnInsert(...)` | `new BsonDocument("$setOnInsert", ...)` |
-| `Builders<>.Filter.Eq()` + `.Update.Set()` 链式 | 直接用 `BsonDocument` |
+<details>
+<summary>展开历史内容</summary>
 
-**原则：新建代码统一用 `BsonDocument` 风格。**
+项目曾锁定 MongoDB.Driver 2.19.2，使用 `BsonDocument` 风格操作。
+所有 MongoDB 操作已迁移至 Flask 服务端（`app.py` 中的 `/api/plugin/*` 端点）。
 
-必须加 `using MongoDB.Driver;`，否则 `Find()` 扩展方法不可见。
+</details>
 
-### 3.4 MongoDB 聚合管道模式
+### 3.4 HTTP API 客户端开发
 
-```csharp
-// ✅ 追加数组元素（$push 不能作为管道 stage）
-{ "$set", { "array", { "$concatArrays",
-    [{ "$ifNull", ["$array", []] }, [newItem]]
-} } }
+插件通过 `HttpClient` + `JavaScriptSerializer`（`System.Web.Extensions`）与 Flask 通信。
 
-// ✅ 引用管道内计算值
-// Stage 1: $set ratingChange = ...
-// Stage 3: { "games", { "$concatArrays", [..., { "ratingChange", "$ratingChange" }] } }
-
-// ✅ upsert
-var filter = new BsonDocument("gameUuid", gameUuid);
-var update = new BsonDocument("$setOnInsert", new BsonDocument {...});
-_collection.UpdateOne(filter, update, new UpdateOptions { IsUpsert = true });
-
-// ✅ 数组内定位更新
-var filter = new BsonDocument {
-    { "gameUuid", gameUuid }, { "players.accountIdLo", accountIdLo }
-};
-var update = new BsonDocument("$set", new BsonDocument {
-    { "players.$.placement", 3 }, { "players.$.points", 6 }
-});
+**csproj 必须添加的引用：**
+```xml
+<Reference Include="System.Net.Http"><Private>False</Private></Reference>
+<Reference Include="System.Web.Extensions"><Private>False</Private></Reference>
 ```
+
+**using：**
+```csharp
+using System.Net.Http;
+using System.Text;
+using System.Threading.Tasks;
+using System.Web.Script.Serialization;
+```
+
+**请求模式：**
+```csharp
+private static readonly JavaScriptSerializer _json = new JavaScriptSerializer();
+
+// POST JSON
+var content = new StringContent(_json.Serialize(data), Encoding.UTF8, "application/json");
+var response = _httpClient.PostAsync($"{ApiBaseUrl}/api/plugin/upload-rating", content).Result;
+string body = response.Content.ReadAsStringAsync().Result;
+var result = _json.Deserialize<Dictionary<string, object>>(body);
+```
+
+**注意事项：**
+- `HttpClient` 应为单例复用（不要每次请求 new）
+- 所有 HTTP 调用在 `Task.Run` 中执行（不阻塞 HDT 主线程）
+- token 过期（401）时清除本地 token 并重试
+- 插件请求必须带 `X-HDT-Plugin: v1` header（CF WAF 要求）
 
 ### 3.5 验证码生成
 
-- 基于 MongoDB `ObjectId`：`SHA256("bgtracker:" + objectId.ToString())` 前 8 位大写
-- ObjectId 仅存在于服务端，游戏内不可见，无法被盗用
-- 首次上传后读回 `_id` 生成，后续不再生成
+- **已迁移至服务端**，插件不再生成验证码
+- 服务端逻辑：基于 MongoDB `ObjectId`，`SHA256("bgtracker:" + objectId.ToString())` 前 8 位大写
+- 首次 `upload-rating` 时由 Flask 生成并返回，插件打印到日志
+- 后续上传时服务端返回已有验证码，不再重新生成
 
 ---
 
@@ -283,11 +305,13 @@ pipeline = [
 
 | 集合 | 写入方 | 说明 |
 |------|--------|------|
-| `bg_ratings` | C# 插件 | 玩家分数记录（含验证码） |
-| `league_matches` | C# 插件 | 联赛对局（8人完整数据） |
+| `bg_ratings` | Flask API（`/api/plugin/upload-rating`） | 玩家分数记录（含验证码） |
+| `league_matches` | Flask API（`/api/plugin/check-league` + `/api/plugin/update-placement`） | 联赛对局（8人完整数据） |
 | `league_queue` | Flask 网站 | 报名队列 |
-| `league_waiting_queue` | Flask 网站 | 等待组（满 N 人自动创建） |
+| `league_waiting_queue` | Flask 网站 + `/api/plugin/check-league` | 等待组（满 N 人自动创建） |
 | `league_players` | Flask 网站 | 已注册选手 |
+
+> C# 插件不再直接操作 MongoDB，所有写入通过 Flask API 中转。
 
 ### 积分规则
 
@@ -355,97 +379,13 @@ docker compose up -d
   - 保留字段：`playerId`、`accountIdLo`、`displayName`、`rating`、`lastRating`、`ratingChange`、`gameCount`、`mode`、`region`、`timestamp`、`verificationCode`
   - 涉及修改：`RatingTracker.cs`（C# 插件上传逻辑）、`app.py`（无需修改，无依赖）
   - 已同步更新 `README.md`、`API.md` 数据结构文档
-- [ ] **插件架构改造：直连 MongoDB → HTTP API（通过 CF Tunnel）**
-  - 背景：CF Tunnel 只能穿透 HTTP，无法暴露 MongoDB 端口；用户无公网 IP
-  - 现状：插件用 MongoDB.Driver 直连 Atlas，连接串硬编码在 C# 中（反编译可泄露）
-  - 目标：插件改为 HTTP POST 到 Flask API，Flask 负责写 MongoDB
-
-  #### 改造方案
-
-  **新增 Flask API 端点（`app.py`）：**
-
-  1. `POST /api/plugin/upload-rating`
-     - 合并原 UploadToMongo + IncrementLeagueCount 逻辑
-     - 请求体：`{ playerId, accountIdLo, rating, mode, placement, gameUuid, region }`
-     - 服务端：upsert bg_ratings（含 leagueCount $inc）、生成验证码
-     - 返回：`{ ok, verificationCode? }`
-
-  2. `POST /api/plugin/check-league`
-     - 合并原 CheckLeagueQueue 逻辑
-     - 请求体：`{ gameUuid, accountIdLoList: [...] }`
-     - 服务端：查 waiting_queue → 完全匹配 → 创建 league_matches 文档 → 删除等待组
-     - 返回：`{ isLeague: true/false }`
-
-  3. `POST /api/plugin/update-placement`
-     - 原 UpdateLeaguePlacement + CheckAndFinalizeMatch 逻辑
-     - 请求体：`{ gameUuid, accountIdLo, placement }`
-     - 服务端：更新 players.$.placement + points，检查是否 8 人都提交 → 写 endedAt
-     - 返回：`{ ok, finalized: true/false }`
-
-  **认证方案（多层防御）：**
-
-  插件端：
-  - 首次上传成功后，服务端返回 JWT token（签发给该 playerId）
-  - 后续请求 Header 携带 `Authorization: Bearer <token>`
-  - token 有效期 7 天，插件自动续期
-
-  服务端校验（每个 POST 端点必做）：
-  1. **身份校验**：JWT 解码后 playerId 必须和请求体一致 → 防止篡改他人数据
-  2. **数据合理性**：rating 变化幅度 ≤ ±200、placement 1-8、gameUuid 格式合法
-  3. **速率限制**：同一 playerId 每分钟最多 3 次上传，异常频率封禁
-  4. **联赛匹配验证**：update-placement 的 gameUuid 必须存在于 league_matches 且该玩家在 players 数组中
-  5. **幂等性**：同 gameUuid + playerId 的 placement 只接受首次提交，后续拒绝（防重复）
-
-  攻击面分析：
-  - 刷高分 → 只影响自己，排行榜一眼可见，手动封禁即可
-  - 篡改他人 → token 防护，做不到
-  - 批量灌数据 → 速率限制拦住
-  - 结论：防不住单用户改自己的分（任何客户端架构都做不到），但防得住影响他人的攻击
-
-  **公开 API 安全性（已确认安全）：**
-  - 现有 GET API（/api/players、/api/matches 等）本身是公开数据，无需认证
-  - bg_ratings 集合（含 verificationCode）没有 API 暴露，不会泄露
-  - 后续如加私密数据（用户登录、个人设置），需加认证中间件
-
-  **CF WAF 防护（零成本，CF 免费套餐支持）：**
-
-  利用浏览器安全模型：JS 无法发送服务端未 CORS 允许的自定义 Header。
-  在 CF 后台添加 WAF 规则：
-  ```
-  URI 路径以 /api/plugin/ 开头
-  AND
-  请求头 X-HDT-Plugin 不存在
-  → 拦截 (Block)
-  ```
-  插件每次请求加一行：`request.Headers.Add("X-HDT-Plugin", "v1");`
-  效果：浏览器请求在 CF 层就被拦截，根本到不了 Flask。
-
-  **两层防御组合效果：**
-  | 攻击方式 | CF WAF | JWT | 结果 |
-  |---------|--------|-----|------|
-  | 浏览器直接调 | ❌ 拦截 | — | 打不通 |
-  | curl + 自定义 header | ✅ 放行 | ❌ 无 token | 401 |
-  | curl + header + token | ✅ 放行 | ✅ 通过 | 只能改自己的 |
-
-  **关于篡改自己数据：** 客户端架构下无法杜绝（数据在用户机器上算，他就能改）。唯一真正解法是服务端交叉验证（从暴雪服务器拉取实际对局），但暴雪无公开 API。社区联赛的应对策略：排行榜透明 + 社区监督，分数异常手动处理。
-
-  **C# 插件改动（`RatingTracker.cs`）：**
-  - 移除：所有 `MongoClient`、`IMongoCollection`、`BsonDocument` 相关代码
-  - 移除：`MongoDB.Driver`、`MongoDB.Bson` 引用（减少 DLL 体积）
-  - 新增：`HttpClient` 单例，所有写操作改为 `PostAsync` / `PutAsync`
-  - 新增：`ApiBaseUrl` 配置项（默认 `https://你的域名`，支持用户修改）
-  - 新增：简单的 JSON 序列化（用 `System.Web.Script.Serialization` 或 `Newtonsoft.Json`）
-  - 日志、HearthDb 查询、STEP 检测等逻辑保持不变
-
-  **执行顺序：bg_ratings 精简 → 插件架构改造（HTTP API + 认证）→ 内测验证**
-
-  **影响面：**
-  - 插件包体积减小（移除 MongoDB.Driver + 依赖 DLL）
-  - 安全性提升（不再暴露数据库连接串）
-  - 连接池问题自然消失（插件不再占 MongoDB 连接）
-  - Flask 成为唯一 MongoDB 客户端，连接池完全可控
-  - 需要修改 `sync.ps1` / `sync.sh`（打包文件列表变化）
-  - 需要修改 `README.md` 安装说明
+- [x] **插件架构改造：直连 MongoDB → HTTP API（通过 CF Tunnel）** ✅ 已完成
+  - 背景：CF Tunnel 只能穿透 HTTP，无法暴露 MongoDB 端口
+  - C# 插件：`MongoDB.Driver` → `HttpClient` + `JavaScriptSerializer`
+  - Flask 端：3 个 `/api/plugin/*` 端点，由插件 HTTP 调用
+  - 认证：`upload-rating` 签发 token → `update-placement` 携带 token
+  - 插件体积：仅 1 个 DLL（移除 MongoDB 全套依赖）
+  - `ApiBaseUrl` 配置项支持本地/生产切换
 
 ### 中优先级
 - [ ] 验证 FinalPlacement 在单人/双人/掉线重连等场景的可靠性
