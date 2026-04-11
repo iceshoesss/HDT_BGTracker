@@ -37,6 +37,9 @@
     <Reference Include="System.Xaml">
       <Private>False</Private>
     </Reference>
+    <Reference Include="System.Net.Http">
+      <Private>False</Private>
+    </Reference>
   </ItemGroup>
 
   <!-- System.Web.Extensions 提供 JavaScriptSerializer（JSON 序列化） -->
