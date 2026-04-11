@@ -382,10 +382,30 @@ docker compose up -d
      - 服务端：更新 players.$.placement + points，检查是否 8 人都提交 → 写 endedAt
      - 返回：`{ ok, finalized: true/false }`
 
-  **认证方案：**
-  - 插件首次上传时服务端返回一次性 token（基于 playerId + salt 生成）
+  **认证方案（多层防御）：**
+
+  插件端：
+  - 首次上传成功后，服务端返回 JWT token（签发给该 playerId）
   - 后续请求 Header 携带 `Authorization: Bearer <token>`
-  - 或简单方案：直接用 playerId 做鉴权（反正 playerId 要匹配数据库记录）
+  - token 有效期 7 天，插件自动续期
+
+  服务端校验（每个 POST 端点必做）：
+  1. **身份校验**：JWT 解码后 playerId 必须和请求体一致 → 防止篡改他人数据
+  2. **数据合理性**：rating 变化幅度 ≤ ±200、placement 1-8、gameUuid 格式合法
+  3. **速率限制**：同一 playerId 每分钟最多 3 次上传，异常频率封禁
+  4. **联赛匹配验证**：update-placement 的 gameUuid 必须存在于 league_matches 且该玩家在 players 数组中
+  5. **幂等性**：同 gameUuid + playerId 的 placement 只接受首次提交，后续拒绝（防重复）
+
+  攻击面分析：
+  - 刷高分 → 只影响自己，排行榜一眼可见，手动封禁即可
+  - 篡改他人 → token 防护，做不到
+  - 批量灌数据 → 速率限制拦住
+  - 结论：防不住单用户改自己的分（任何客户端架构都做不到），但防得住影响他人的攻击
+
+  **公开 API 安全性（已确认安全）：**
+  - 现有 GET API（/api/players、/api/matches 等）本身是公开数据，无需认证
+  - bg_ratings 集合（含 verificationCode）没有 API 暴露，不会泄露
+  - 后续如加私密数据（用户登录、个人设置），需加认证中间件
 
   **C# 插件改动（`RatingTracker.cs`）：**
   - 移除：所有 `MongoClient`、`IMongoCollection`、`BsonDocument` 相关代码
@@ -394,6 +414,8 @@ docker compose up -d
   - 新增：`ApiBaseUrl` 配置项（默认 `https://你的域名`，支持用户修改）
   - 新增：简单的 JSON 序列化（用 `System.Web.Script.Serialization` 或 `Newtonsoft.Json`）
   - 日志、HearthDb 查询、STEP 检测等逻辑保持不变
+
+  **执行顺序：bg_ratings 精简 → 插件架构改造（HTTP API + 认证）→ 内测验证**
 
   **影响面：**
   - 插件包体积减小（移除 MongoDB.Driver + 依赖 DLL）
