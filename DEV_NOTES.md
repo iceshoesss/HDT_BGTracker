@@ -407,6 +407,28 @@ docker compose up -d
   - bg_ratings 集合（含 verificationCode）没有 API 暴露，不会泄露
   - 后续如加私密数据（用户登录、个人设置），需加认证中间件
 
+  **CF WAF 防护（零成本，CF 免费套餐支持）：**
+
+  利用浏览器安全模型：JS 无法发送服务端未 CORS 允许的自定义 Header。
+  在 CF 后台添加 WAF 规则：
+  ```
+  URI 路径以 /api/plugin/ 开头
+  AND
+  请求头 X-HDT-Plugin 不存在
+  → 拦截 (Block)
+  ```
+  插件每次请求加一行：`request.Headers.Add("X-HDT-Plugin", "v1");`
+  效果：浏览器请求在 CF 层就被拦截，根本到不了 Flask。
+
+  **两层防御组合效果：**
+  | 攻击方式 | CF WAF | JWT | 结果 |
+  |---------|--------|-----|------|
+  | 浏览器直接调 | ❌ 拦截 | — | 打不通 |
+  | curl + 自定义 header | ✅ 放行 | ❌ 无 token | 401 |
+  | curl + header + token | ✅ 放行 | ✅ 通过 | 只能改自己的 |
+
+  **关于篡改自己数据：** 客户端架构下无法杜绝（数据在用户机器上算，他就能改）。唯一真正解法是服务端交叉验证（从暴雪服务器拉取实际对局），但暴雪无公开 API。社区联赛的应对策略：排行榜透明 + 社区监督，分数异常手动处理。
+
   **C# 插件改动（`RatingTracker.cs`）：**
   - 移除：所有 `MongoClient`、`IMongoCollection`、`BsonDocument` 相关代码
   - 移除：`MongoDB.Driver`、`MongoDB.Bson` 引用（减少 DLL 体积）
