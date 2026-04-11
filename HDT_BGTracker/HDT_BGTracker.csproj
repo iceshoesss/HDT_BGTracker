@@ -39,9 +39,11 @@
     </Reference>
   </ItemGroup>
 
-  <!-- MongoDB 驱动 -->
+  <!-- System.Web.Extensions 提供 JavaScriptSerializer（JSON 序列化） -->
   <ItemGroup>
-    <PackageReference Include="MongoDB.Driver" Version="2.19.2" />
+    <Reference Include="System.Web.Extensions">
+      <Private>False</Private>
+    </Reference>
   </ItemGroup>
 
 </Project>

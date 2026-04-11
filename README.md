@@ -1,6 +1,6 @@
 # HDT_BGTracker
 
-炉石传说酒馆战棋分数记录插件，在每局结束后自动记录分数并上传到 MongoDB。配套联赛网站用于排行榜、对局记录和报名。
+炉石传说酒馆战棋分数记录插件，在每局结束后自动记录分数并上传到联赛网站。配套联赛网站用于排行榜、对局记录和报名。
 
 ## 项目结构
 
@@ -127,14 +127,14 @@ dotnet build -c Release
 
 ```powershell
 cd bin\Release\net472
-tar -a -cf HDT_BGTracker.zip HDT_BGTracker.dll MongoDB.Bson.dll MongoDB.Driver.dll MongoDB.Driver.Core.dll DnsClient.dll MongoDB.Libmongocrypt.dll SharpCompress.dll
+tar -a -cf HDT_BGTracker.zip HDT_BGTracker.dll
 ```
 
 ### 使用
 
 - 插件启用后自动运行，无需手动操作
 - 每局酒馆战棋结束后（返回主菜单时），自动读取分数并上传
-- 点击插件设置中的「测试连接」按钮可验证 MongoDB 连接
+- 点击插件设置中的「测试连接」按钮可验证 API 连接
 - 日志在 `%AppData%\HearthstoneDeckTracker\BGTracker\tracker.log`
 
 ## 数据结构
