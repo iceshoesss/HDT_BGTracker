@@ -14,7 +14,7 @@ namespace HDT_BGTracker
     public class RatingTracker
     {
         // ── 配置 ──────────────────────────────────────────
-        private const string ApiBaseUrl = "https://你的域名";  // 生产环境改成实际域名
+        private const string ApiBaseUrl = "https://da.iceshoes.dpdns.org/";  // 生产环境改成实际域名
         private const string PluginHeaderName = "X-HDT-Plugin";
         private const string PluginHeaderValue = "v1";
 
@@ -455,8 +455,11 @@ namespace HDT_BGTracker
                             }
                             else
                             {
-                                _isLeagueGame = false;
-                                Log("CheckLeagueQueue: 未匹配到等待组，普通天梯局");
+                                // [TESTING] 暂时跳过联赛判断，所有对局都当联赛处理
+                                // _isLeagueGame = false;
+                                // Log("CheckLeagueQueue: 未匹配到等待组，普通天梯局");
+                                _isLeagueGame = true;
+                                Log("CheckLeagueQueue: [TESTING] 跳过等待组匹配，强制标记为联赛对局");
                             }
                         }
                         catch { }
