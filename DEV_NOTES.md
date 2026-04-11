@@ -349,6 +349,12 @@ docker compose up -d
 - [x] 编译验证 HearthDb 引用是否可用（`Cards.All` 查英雄名）
 - [x] SSE 连接 120 秒自动断开 + 客户端重连，防僵尸连接堆积
 - [ ] 问题对局页面添加入口链接
+- [ ] **bg_ratings 精简：移除 `games`、`ratingChanges`、`placements` 数组**
+  - 联赛所有数据（排名、英雄、时间戳）已完整存储在 `league_matches` 中，`bg_ratings` 的历史数组纯属冗余
+  - 移除后单条从 ~14.5KB 降到 ~1.5KB，节省 90%
+  - 保留字段：`playerId`、`accountIdLo`、`displayName`、`rating`、`lastRating`、`ratingChange`、`gameCount`、`mode`、`region`、`timestamp`、`verificationCode`
+  - 涉及修改：`RatingTracker.cs`（C# 插件上传逻辑）、`app.py`（如有读取这些字段的地方）
+  - 需同步更新 `API.md` 数据结构文档
 
 ### 中优先级
 - [ ] 验证 FinalPlacement 在单人/双人/掉线重连等场景的可靠性
