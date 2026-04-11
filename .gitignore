@@ -6,3 +6,4 @@ obj/
 __pycache__/
 migrate_league_count.py
 replacements.txt
+1.py
