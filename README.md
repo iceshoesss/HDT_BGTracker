@@ -148,13 +148,11 @@ MongoDB 数据库: `hearthstone`，集合: `bg_ratings`
   "rating": 6500,
   "lastRating": 6477,
   "ratingChange": 23,
-  "ratingChanges": [23, -15, 40, -30],
-  "placements": [4, 1, 3, 6],
   "gameCount": 42,
   "mode": "solo",
   "timestamp": "2026-04-07T09:15:00.0000000Z",
   "region": "CN",
-  "games": [...]
+  "verificationCode": "A1B2C3D4"
 }
 ```
 

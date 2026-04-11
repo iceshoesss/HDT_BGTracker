@@ -299,12 +299,9 @@ namespace HDT_BGTracker
                         Log($"排名读取异常: {ex.Message}");
                     }
 
-                    // 收集对手信息
-                    var opponents = GetOpponentInfo();
                     string gameUuid = _cachedGameUuid ?? "";
-                    string endTime = DateTime.UtcNow.ToString("o");
 
-                    UploadToMongo(rating.Value, mode, placement, gameUuid, endTime, opponents);
+                    UploadToMongo(rating.Value, mode, gameUuid);
                 }
                 else
                 {
@@ -319,8 +316,7 @@ namespace HDT_BGTracker
             }
         }
 
-        private void UploadToMongo(int rating, string mode, int? placement, string gameUuid, string endTime,
-            List<MongoDB.Bson.BsonDocument> opponents)
+        private void UploadToMongo(int rating, string mode, string gameUuid)
         {
             if (_collection == null)
             {
@@ -341,27 +337,12 @@ namespace HDT_BGTracker
                 {
                     var filter = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Filter.Eq("playerId", playerId);
 
-                    // 构建新游戏记录
-                    var gameRecord = new MongoDB.Bson.BsonDocument
-                    {
-                        { "gameUuid", gameUuid },
-                        { "isLeague", false },
-                        { "placement", placement.HasValue ? (MongoDB.Bson.BsonValue)new MongoDB.Bson.BsonInt32(placement.Value) : MongoDB.Bson.BsonNull.Value },
-                        { "opponents", new MongoDB.Bson.BsonArray(opponents) },
-                        { "endTime", endTime },
-                        { "ratingChange", MongoDB.Bson.BsonNull.Value } // 先占位，管道阶段2计算
-                    };
-
-                    // 聚合管道更新：原子操作完成
-                    //   1. lastRating = rating（当前分存为上局分）
-                    //   2. rating = 新分数
-                    //   3. ratingChange = 新分数 - 上局分
-                    //   4. accountIdLo（如果获取到）
-                    //   5. $concatArrays 追加分差到 ratingChanges 数组
-                    //   6. 追加游戏记录到 games 数组
+                    // 聚合管道更新：
+                    //   1. lastRating = 旧 rating → rating = 新分数 → ratingChange = 差值
+                    //   2. accountIdLo（仅首次设置）
+                    //   3. gameCount +1
                     var stages = new MongoDB.Bson.BsonDocument[]
                     {
-                        // Stage 1: 设置基本字段 + 计算 ratingChange
                         new MongoDB.Bson.BsonDocument("$set", new MongoDB.Bson.BsonDocument
                         {
                             { "lastRating", "$rating" },
@@ -376,7 +357,6 @@ namespace HDT_BGTracker
                                 { rating, new MongoDB.Bson.BsonDocument("$ifNull",
                                     new MongoDB.Bson.BsonArray { "$rating", rating }) }) }
                         }),
-                        // Stage 2: accountIdLo（仅首次设置）
                         new MongoDB.Bson.BsonDocument("$set", new MongoDB.Bson.BsonDocument
                         {
                             { "accountIdLo", !string.IsNullOrEmpty(accountIdLo)
@@ -385,56 +365,13 @@ namespace HDT_BGTracker
                                     new MongoDB.Bson.BsonArray {
                                         new MongoDB.Bson.BsonDocument("$toString", "$accountIdLo"),
                                         MongoDB.Bson.BsonNull.Value }) },
-                        }),
-                        // Stage 3: 追加 ratingChanges 和 placements
-                        new MongoDB.Bson.BsonDocument("$set", new MongoDB.Bson.BsonDocument
-                        {
-                            { "ratingChanges", new MongoDB.Bson.BsonDocument("$concatArrays",
-                                new MongoDB.Bson.BsonArray
-                                {
-                                    new MongoDB.Bson.BsonDocument("$ifNull",
-                                        new MongoDB.Bson.BsonArray { "$ratingChanges", new MongoDB.Bson.BsonArray() }),
-                                    new MongoDB.Bson.BsonArray { "$ratingChange" }
-                                }) },
-                            { "placements", placement.HasValue
-                                ? (MongoDB.Bson.BsonValue)new MongoDB.Bson.BsonDocument("$concatArrays",
-                                    new MongoDB.Bson.BsonArray
-                                    {
-                                        new MongoDB.Bson.BsonDocument("$ifNull",
-                                            new MongoDB.Bson.BsonArray { "$placements", new MongoDB.Bson.BsonArray() }),
-                                        new MongoDB.Bson.BsonArray { placement.Value }
-                                    })
-                                : new MongoDB.Bson.BsonDocument("$ifNull",
-                                    new MongoDB.Bson.BsonArray { "$placements", new MongoDB.Bson.BsonArray() }) },
-                            // 追加游戏记录，把管道中计算的 ratingChange 填入 gameRecord
-                            { "games", new MongoDB.Bson.BsonDocument("$concatArrays",
-                                new MongoDB.Bson.BsonArray
-                                {
-                                    new MongoDB.Bson.BsonDocument("$ifNull",
-                                        new MongoDB.Bson.BsonArray { "$games", new MongoDB.Bson.BsonArray() }),
-                                    new MongoDB.Bson.BsonArray
-                                    {
-                                        new MongoDB.Bson.BsonDocument
-                                        {
-                                            { "gameUuid", gameUuid },
-                                            { "isLeague", false },
-                                            { "placement", placement.HasValue
-                                                ? (MongoDB.Bson.BsonValue)new MongoDB.Bson.BsonInt32(placement.Value)
-                                                : MongoDB.Bson.BsonNull.Value },
-                                            { "opponents", new MongoDB.Bson.BsonArray(opponents) },
-                                            { "endTime", endTime },
-                                            { "ratingChange", "$ratingChange" } // 引用 Stage 1 计算的值
-                                        }
-                                    }
-                                }) },
                         })
                     };
                     var update = MongoDB.Driver.Builders<MongoDB.Bson.BsonDocument>.Update.Pipeline(stages);
 
                     _collection.UpdateOne(filter, update, new MongoDB.Driver.UpdateOptions { IsUpsert = true });
                     _ratingUploaded = true;
-                    string oppsStr = string.Join(", ", opponents.Select(o => o["name"].AsString + "#" + o["accountIdLo"].AsString));
-                    Log($"已上传分数: {rating} ({mode}) 排名={placement?.ToString() ?? "无"} playerId={playerId} gameUuid={gameUuid} opponents=[{oppsStr}]");
+                    Log($"已上传分数: {rating} ({mode}) playerId={playerId} gameUuid={gameUuid}");
 
                     // 验证码：检查文档里是否已有，没有则基于 _id 生成并存储
                     try
@@ -961,41 +898,6 @@ namespace HDT_BGTracker
             return "";
         }
 
-        /// <summary>
-        /// 收集对手信息（排除自己）
-        /// </summary>
-        private List<MongoDB.Bson.BsonDocument> GetOpponentInfo()
-        {
-            var opponents = new List<MongoDB.Bson.BsonDocument>();
-            try
-            {
-                var lobbyInfo = Core.Game?.MetaData?.BattlegroundsLobbyInfo;
-                if (lobbyInfo?.Players == null) return opponents;
-
-                // 获取自己的名字前缀（不含 #tag）
-                string myNameNoTag = _cachedPlayerId ?? "";
-                int hashIdx = myNameNoTag.IndexOf('#');
-                if (hashIdx > 0) myNameNoTag = myNameNoTag.Substring(0, hashIdx);
-
-                foreach (var p in lobbyInfo.Players)
-                {
-                    if (p.Name == myNameNoTag) continue; // 跳过自己
-
-                    var doc = new MongoDB.Bson.BsonDocument
-                    {
-                        { "name", p.Name ?? "" },
-                        { "accountIdLo", p.AccountId != null ? p.AccountId.Lo.ToString() : "" }
-                    };
-                    opponents.Add(doc);
-                }
-                Log($"对手数: {opponents.Count}");
-            }
-            catch (Exception ex)
-            {
-                Log($"GetOpponentInfo 异常: {ex.Message}");
-            }
-            return opponents;
-        }
 
         private void LogLobbyPlayers(bool includeHeroes = false)
         {
