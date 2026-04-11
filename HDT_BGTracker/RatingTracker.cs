@@ -17,8 +17,6 @@ namespace HDT_BGTracker
         private const string ApiBaseUrl = "https://你的域名";  // 生产环境改成实际域名
         private const string PluginHeaderName = "X-HDT-Plugin";
         private const string PluginHeaderValue = "v1";
-        private static string TokenFile =>
-            Path.Combine(LogDir, ".plugin_token");
 
         // ── 状态 ──────────────────────────────────────────
         private bool _enabled;
@@ -38,7 +36,6 @@ namespace HDT_BGTracker
 
         // ── HTTP + JSON ───────────────────────────────────
         private HttpClient _httpClient;
-        private string _authToken;
         private static readonly JavaScriptSerializer _json = new JavaScriptSerializer { MaxJsonLength = 1024 * 1024 };
 
         // ── 日志 ──────────────────────────────────────────
@@ -60,14 +57,6 @@ namespace HDT_BGTracker
                 // 初始化 HttpClient
                 _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
                 _httpClient.DefaultRequestHeaders.Add(PluginHeaderName, PluginHeaderValue);
-
-                // 加载本地保存的 token
-                if (File.Exists(TokenFile))
-                {
-                    _authToken = File.ReadAllText(TokenFile).Trim();
-                    if (!string.IsNullOrEmpty(_authToken))
-                        Log("已加载本地 token");
-                }
 
                 Log("插件已启动（HTTP API 模式）");
             }
@@ -214,8 +203,7 @@ namespace HDT_BGTracker
         // ── HTTP 通用方法 ─────────────────────────────────
 
         /// <summary>
-        /// POST JSON，自动带 auth token + X-HDT-Plugin header。
-        /// 如果服务器返回 401，清除本地 token 并重试一次（获取新 token）。
+        /// POST JSON，自动带 X-HDT-Plugin header。
         /// 返回 (success, responseBody)。
         /// </summary>
         private (bool ok, string body) PostJson(string endpoint, string jsonBody)
@@ -223,15 +211,6 @@ namespace HDT_BGTracker
             try
             {
                 var result = PostJsonOnce(endpoint, jsonBody);
-                if (result.statusCode == 401 && !string.IsNullOrEmpty(_authToken))
-                {
-                    // token 过期，清除并重试
-                    Log("token 已过期，重新获取");
-                    _authToken = null;
-                    if (File.Exists(TokenFile))
-                        try { File.Delete(TokenFile); } catch { }
-                    result = PostJsonOnce(endpoint, jsonBody);
-                }
                 return result.ok ? (true, result.body) : (false, result.body);
             }
             catch (Exception ex)
@@ -248,8 +227,6 @@ namespace HDT_BGTracker
             {
                 Content = content
             };
-            if (!string.IsNullOrEmpty(_authToken))
-                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _authToken);
 
             var response = _httpClient.SendAsync(request).Result;
             string body = response.Content.ReadAsStringAsync().Result;
@@ -259,22 +236,6 @@ namespace HDT_BGTracker
 
             Log($"POST {endpoint} 失败: {(int)response.StatusCode} {body}");
             return (false, (int)response.StatusCode, body);
-        }
-
-        /// <summary>
-        /// 保存 token 到本地文件
-        /// </summary>
-        private void SaveToken(string token)
-        {
-            _authToken = token;
-            try
-            {
-                File.WriteAllText(TokenFile, token);
-            }
-            catch (Exception ex)
-            {
-                Log($"保存 token 失败: {ex.Message}");
-            }
         }
 
         // ── 业务逻辑 ──────────────────────────────────────
@@ -306,15 +267,6 @@ namespace HDT_BGTracker
                     if (ok)
                     {
                         Log($"IncrementLeagueCount: playerId={playerId} 已处理");
-
-                        // 保存 token（首次上传时 server 返回）
-                        try
-                        {
-                            var dict = _json.Deserialize<Dictionary<string, object>>(body);
-                            if (dict != null && dict.ContainsKey("token"))
-                                SaveToken(dict["token"].ToString());
-                        }
-                        catch { }
                     }
                 }
                 catch (Exception ex)
@@ -413,13 +365,8 @@ namespace HDT_BGTracker
                         try
                         {
                             var dict = _json.Deserialize<Dictionary<string, object>>(body);
-                            if (dict != null)
-                            {
-                                if (dict.ContainsKey("verificationCode"))
-                                    Log($"联赛验证码: {dict["verificationCode"]} (前往联赛网站注册时使用)");
-                                if (dict.ContainsKey("token"))
-                                    SaveToken(dict["token"].ToString());
-                            }
+                            if (dict != null && dict.ContainsKey("verificationCode"))
+                                Log($"联赛验证码: {dict["verificationCode"]} (前往联赛网站注册时使用)");
                         }
                         catch { }
                     }
@@ -822,8 +769,7 @@ namespace HDT_BGTracker
             });
         }
 
-        // 验证码现在由服务端生成，客户端不再需要
-        // public static string GenerateVerificationCode(...) { ... }
+        // 验证码由服务端生成
 
         private static void Log(string msg)
         {
