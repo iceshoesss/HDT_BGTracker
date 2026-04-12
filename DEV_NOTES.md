@@ -98,9 +98,30 @@ C# 插件 (HDT_BGTracker/)          Flask 网站 (league/)
 ### 2.4 STEP Tag 检测
 
 - `GameEntity` 上的 `STEP` tag（tag ID 198）标记游戏阶段
-- BG 模式 step 流转：`INVALID(0) → BEGIN_MULLIGAN(4) → MAIN_CLEANUP(13) → MAIN_START(9) → ...`
-- **STEP 13 (MAIN_CLEANUP)** ≈ 第一轮战斗结束，替代了原来的 63s 固定延迟
 - 读取：`gameEntity.GetTag(GameTag.STEP)` 返回 int
+
+**BG 模式 step 流转（实测）：**
+
+| STEP | 名称 | 说明 |
+|------|------|------|
+| 4 | BEGIN_MULLIGAN | 筹选开始 |
+| 9 | MAIN_START | 主回合开始 |
+| 10 | MAIN_ACTION | 战斗阶段 |
+| 13 | MAIN_CLEANUP | 第一轮战斗结束，此时英雄已选定 |
+
+**STEP 完整字典（0-17）：**
+```
+0=INVALID, 1=BEGIN_FIRST, 2=BEGIN_SHUFFLE, 3=BEGIN_DRAW, 4=BEGIN_MULLIGAN,
+5=MAIN_BEGIN, 6=MAIN_READY, 7=MAIN_RESOURCE, 8=MAIN_DRAW, 9=MAIN_START,
+10=MAIN_ACTION, 11=MAIN_COMBAT, 12=MAIN_NEXT, 13=MAIN_CLEANUP,
+14=MAIN_START_TRIGGERS, 15=MAIN_GAMEOVER, 16=?, 17=?
+```
+
+**游戏结束检测（2026-04-12 实测）：**
+- 投降时：最后一个 STEP 变化是 **10 (MAIN_ACTION)**，之后无新 step
+- 未测试：自然淘汰（打到最后一个人）时的 step 行为
+- **结论：BG 中游戏结束不触发新的 STEP 变化**，`IsInMenu` 目前是唯一可靠的游戏结束信号
+- 备选方案：在 STEP 10 期间轮询 `FinalPlacement`，一旦非 null 即游戏结束
 
 ### 2.5 HeroDb → 英雄名
 
@@ -409,6 +430,7 @@ docker compose up -d
   - 移除：游戏结束时的 2 秒等待 + `IsInMenu` 判断
   - 移除：STEP 13 调用 `CheckLeagueQueue`，改为 3 秒缓存后立即调用
   - 当前任务：增加 STEP 变化日志，观察游戏结束时的 step 值，确定替代 `IsInMenu` 的检测点
+  - 2026-04-12 实测：投降时最后 STEP 是 10 (MAIN_ACTION)，BG 不触发新 step；需再测自然淘汰场景
 - [ ] 问题对局页面添加入口链接
 - [x] 编译验证 HearthDb 引用是否可用（`Cards.All` 查英雄名）
 - [x] SSE 连接 120 秒自动断开 + 客户端重连，防僵尸连接堆积
