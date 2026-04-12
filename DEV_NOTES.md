@@ -393,9 +393,25 @@ docker compose up -d
 ## 7. 待办
 
 ### 高优先级
+- [ ] **插件流程精简：去除上传分数，纯联赛插件** 🔧 测试中
+  - 背景：插件最初目的是上传分数，现核心用途是联赛记录，分数上传已无必要
+  - 新流程：
+    ```
+    游戏开始 → 等 3 秒缓存 playerId/accountIdLo/gameUuid
+      → CheckLeagueQueue() → POST /api/plugin/check-league（同时可返回验证码）
+        → 服务端返回 isLeague: true/false
+      → 游戏结束（通过 STEP 值判断，不依赖回到菜单）
+        → 联赛局: UpdateLeaguePlacement() → POST /api/plugin/update-placement
+        → 非联赛局: 什么都不做
+      → 重置状态
+    ```
+  - 移除：`TryUploadRating()`、`UploadRating()`、`IncrementLeagueCount()`
+  - 移除：游戏结束时的 2 秒等待 + `IsInMenu` 判断
+  - 移除：STEP 13 调用 `CheckLeagueQueue`，改为 3 秒缓存后立即调用
+  - 当前任务：增加 STEP 变化日志，观察游戏结束时的 step 值，确定替代 `IsInMenu` 的检测点
+- [ ] 问题对局页面添加入口链接
 - [x] 编译验证 HearthDb 引用是否可用（`Cards.All` 查英雄名）
 - [x] SSE 连接 120 秒自动断开 + 客户端重连，防僵尸连接堆积
-- [ ] 问题对局页面添加入口链接
 - [x] **bg_ratings 精简：移除 `games`、`ratingChanges`、`placements` 数组** ✅ 已完成
   - 联赛所有数据（排名、英雄、时间戳）已完整存储在 `league_matches` 中，`bg_ratings` 的历史数组纯属冗余
   - 移除后单条从 ~14.5KB 降到 ~1.5KB，节省 90%
