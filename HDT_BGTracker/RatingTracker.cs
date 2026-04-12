@@ -267,6 +267,13 @@ namespace HDT_BGTracker
                     if (ok)
                     {
                         Log($"IncrementLeagueCount: playerId={playerId} 已处理");
+                        try
+                        {
+                            var dict = _json.Deserialize<Dictionary<string, object>>(body);
+                            if (dict != null && dict.ContainsKey("verificationCode"))
+                                Log($"联赛验证码: {dict["verificationCode"]} (前往联赛网站注册时使用)");
+                        }
+                        catch { }
                     }
                 }
                 catch (Exception ex)
