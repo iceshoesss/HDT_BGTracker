@@ -1121,9 +1121,9 @@ def api_plugin_check_league():
     whitelisted = False
     if len(display_names) == 8:
         wl_count = db.league_whitelist.count_documents({"name": {"$in": display_names}})
-        if wl_count == 8:
+        if wl_count >= 5:
             whitelisted = True
-            print(f"[check-league] 白名单匹配成功: {display_names}")
+            print(f"[check-league] 白名单匹配成功: {wl_count}/8 人在白名单中")
 
     if whitelisted:
         # 白名单匹配：直接创建联赛对局
