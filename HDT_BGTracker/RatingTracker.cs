@@ -14,7 +14,7 @@ namespace HDT_BGTracker
     public class RatingTracker
     {
         // ── 配置 ──────────────────────────────────────────
-        private const string ApiBaseUrl = "https://da.iceshoes.dpdns.org/";  // 生产环境改成实际域名
+        private const string ApiBaseUrl = "https://da.iceshoes.dpdns.org/";
         private const string PluginHeaderName = "X-HDT-Plugin";
         private const string PluginHeaderValue = "v1";
 
@@ -22,14 +22,12 @@ namespace HDT_BGTracker
         private bool _enabled;
         private bool _wasInBgGame;
         private DateTime _gameEndTime = DateTime.MinValue;
-        private bool _ratingUploaded;
         private string _cachedPlayerId;
         private string _cachedAccountIdLo;
         private DateTime _bgGameStartTime = DateTime.MinValue;
         private static readonly TimeSpan IdReadDelay = TimeSpan.FromSeconds(3);
         private bool _heroLogged;
         private bool _lobbyLogged;
-        private bool _leagueMatchCreated;
         private bool _isLeagueGame;
         private string _cachedGameUuid;
         private int _lastStepValue = -1;
@@ -54,11 +52,10 @@ namespace HDT_BGTracker
                 Directory.CreateDirectory(LogDir);
                 CleanOldLogs();
 
-                // 初始化 HttpClient
                 _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
                 _httpClient.DefaultRequestHeaders.Add(PluginHeaderName, PluginHeaderValue);
 
-                Log("插件已启动（HTTP API 模式）");
+                Log("插件已启动（纯联赛模式）");
             }
             catch (Exception ex)
             {
@@ -89,12 +86,11 @@ namespace HDT_BGTracker
                 if (inBgGame)
                 {
                     _wasInBgGame = true;
-                    _ratingUploaded = false;
 
                     if (_bgGameStartTime == DateTime.MinValue)
                         _bgGameStartTime = DateTime.Now;
 
-                    // STEP 检测
+                    // STEP 检测：STEP 13 (MAIN_CLEANUP) = 第一轮战斗结束
                     try
                     {
                         var gameEntity = Core.Game?.Entities?.Values
@@ -104,7 +100,6 @@ namespace HDT_BGTracker
                             int currentStep = gameEntity.GetTag(HearthDb.Enums.GameTag.STEP);
                             if (currentStep != _lastStepValue)
                             {
-                                Log($"STEP 变化: {_lastStepValue} → {currentStep}");
                                 _lastStepValue = currentStep;
                                 if (currentStep == 13 && !_heroLogged)
                                 {
@@ -148,43 +143,25 @@ namespace HDT_BGTracker
                         LogLobbyPlayers(includeHeroes: false);
                         _lobbyLogged = true;
                     }
-
-                    // 创建联赛对局文档
-                    if (_heroLogged && !_leagueMatchCreated && _isLeagueGame
-                        && !string.IsNullOrEmpty(_cachedPlayerId) && _cachedPlayerId != "unknown")
-                    {
-                        // HTTP 模式下联赛文档由 check-league 端点创建，这里只需标记
-                        _leagueMatchCreated = true;
-                    }
                 }
-                else if (_wasInBgGame && Core.Game.IsInMenu && !_ratingUploaded)
+                else if (_wasInBgGame && Core.Game.IsInMenu)
                 {
                     if (_gameEndTime == DateTime.MinValue)
                     {
                         _gameEndTime = DateTime.Now;
-                        Log($"回到菜单，等待 2 秒后读取 placement...");
                         return;
                     }
 
                     if ((DateTime.Now - _gameEndTime).TotalSeconds < 2)
                         return;
 
-                    Log($"游戏结束处理：最后 STEP = {_lastStepValue}，开始读取 placement");
-
-                    string cachedPlayerId = _cachedPlayerId;
-                    string cachedAccountIdLo = _cachedAccountIdLo;
-                    string cachedGameUuid = _cachedGameUuid;
-
+                    // 游戏结束处理
                     if (_isLeagueGame)
                     {
-                        IncrementLeagueCount(cachedPlayerId);
-                        UpdateLeaguePlacement(cachedAccountIdLo, cachedGameUuid);
-                    }
-                    else
-                    {
-                        TryUploadRating();
+                        UpdateLeaguePlacement(_cachedAccountIdLo, _cachedGameUuid);
                     }
 
+                    // 重置状态
                     _wasInBgGame = false;
                     _gameEndTime = DateTime.MinValue;
                     _cachedPlayerId = null;
@@ -194,7 +171,6 @@ namespace HDT_BGTracker
                     _bgGameStartTime = DateTime.MinValue;
                     _heroLogged = false;
                     _lobbyLogged = false;
-                    _leagueMatchCreated = false;
                     _isLeagueGame = false;
                 }
             }
@@ -206,10 +182,6 @@ namespace HDT_BGTracker
 
         // ── HTTP 通用方法 ─────────────────────────────────
 
-        /// <summary>
-        /// POST JSON，自动带 X-HDT-Plugin header。
-        /// 返回 (success, responseBody)。
-        /// </summary>
         private (bool ok, string body) PostJson(string endpoint, string jsonBody)
         {
             try
@@ -242,157 +214,10 @@ namespace HDT_BGTracker
             return (false, (int)response.StatusCode, body);
         }
 
-        // ── 业务逻辑 ──────────────────────────────────────
-
-        /// <summary>
-        /// 联赛对局结束：通过 upload-rating 让 server 端 leagueCount +1
-        /// </summary>
-        private void IncrementLeagueCount(string playerId)
-        {
-            if (_httpClient == null) return;
-            if (string.IsNullOrEmpty(playerId) || playerId == "unknown") return;
-
-            Task.Run(() =>
-            {
-                try
-                {
-                    string region = GetRegion();
-                    string json = _json.Serialize(new Dictionary<string, object>
-                    {
-                        ["playerId"] = playerId,
-                        ["accountIdLo"] = _cachedAccountIdLo ?? "",
-                        ["rating"] = Core.Game.CurrentBattlegroundsRating ?? 0,
-                        ["mode"] = Core.Game.IsBattlegroundsDuosMatch ? "duo" : "solo",
-                        ["gameUuid"] = _cachedGameUuid ?? "",
-                        ["region"] = region,
-                    });
-
-                    var (ok, body) = PostJson("/api/plugin/upload-rating", json);
-                    if (ok)
-                    {
-                        Log($"IncrementLeagueCount: playerId={playerId} 已处理");
-                        try
-                        {
-                            var dict = _json.Deserialize<Dictionary<string, object>>(body);
-                            if (dict != null && dict.ContainsKey("verificationCode"))
-                                Log($"联赛验证码: {dict["verificationCode"]} (前往联赛网站注册时使用)");
-                        }
-                        catch { }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log($"IncrementLeagueCount 异常: {ex.Message}");
-                }
-            });
-        }
-
-        private void TryUploadRating()
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(_cachedPlayerId) || _cachedPlayerId == "unknown")
-                {
-                    _cachedPlayerId = GetPlayerId();
-                    if (string.IsNullOrEmpty(_cachedPlayerId) || _cachedPlayerId == "unknown")
-                    {
-                        _cachedPlayerId = "unknown";
-                        Log("警告: 无法获取 PlayerId，使用 'unknown'");
-                    }
-                }
-
-                // 用反射刷新分数缓存
-                var gameType = Core.Game.GetType();
-                var cacheMethod = gameType.GetMethod("CacheBattlegroundsRatingInfo",
-                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-                cacheMethod?.Invoke(Core.Game, null);
-
-                var rating = Core.Game.CurrentBattlegroundsRating;
-                if (rating.HasValue)
-                {
-                    string mode = Core.Game.IsBattlegroundsDuosMatch ? "duo" : "solo";
-
-                    int? placement = null;
-                    try
-                    {
-                        var stats = Core.Game.CurrentGameStats;
-                        var details = stats?.BattlegroundsDetails;
-                        placement = details?.FinalPlacement;
-                        Log($"排名读取: FinalPlacement = {placement?.ToString() ?? "null"}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Log($"排名读取异常: {ex.Message}");
-                    }
-
-                    string gameUuid = _cachedGameUuid ?? "";
-                    UploadRating(rating.Value, mode, gameUuid);
-                }
-                else
-                {
-                    Log("无法读取分数（CurrentBattlegroundsRating 为 null）");
-                    _ratingUploaded = true;
-                }
-            }
-            catch (Exception ex)
-            {
-                Log("读取分数异常: " + ex.Message);
-            }
-        }
-
-        private void UploadRating(int rating, string mode, string gameUuid)
-        {
-            if (_httpClient == null)
-            {
-                Log("HttpClient 未初始化，跳过上传");
-                _ratingUploaded = true;
-                return;
-            }
-
-            string playerId = string.IsNullOrEmpty(_cachedPlayerId) ? "unknown" : _cachedPlayerId;
-            string accountIdLo = _cachedAccountIdLo;
-            string region = GetRegion();
-
-            Task.Run(() =>
-            {
-                try
-                {
-                    string json = _json.Serialize(new Dictionary<string, object>
-                    {
-                        ["playerId"] = playerId,
-                        ["accountIdLo"] = accountIdLo ?? "",
-                        ["rating"] = rating,
-                        ["mode"] = mode,
-                        ["gameUuid"] = gameUuid,
-                        ["region"] = region,
-                    });
-
-                    var (ok, body) = PostJson("/api/plugin/upload-rating", json);
-                    if (ok)
-                    {
-                        _ratingUploaded = true;
-                        Log($"已上传分数: {rating} ({mode}) playerId={playerId} gameUuid={gameUuid}");
-
-                        try
-                        {
-                            var dict = _json.Deserialize<Dictionary<string, object>>(body);
-                            if (dict != null && dict.ContainsKey("verificationCode"))
-                                Log($"联赛验证码: {dict["verificationCode"]} (前往联赛网站注册时使用)");
-                        }
-                        catch { }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log("上传失败: " + ex.Message);
-                }
-            });
-        }
-
         // ── 联赛对局 ────────────────────────────────────────
 
         /// <summary>
-        /// STEP 13 时检查等待队列
+        /// STEP 13 时检查等待队列，同时返回验证码
         /// </summary>
         private void CheckLeagueQueue()
         {
@@ -469,6 +294,10 @@ namespace HDT_BGTracker
                                 _isLeagueGame = false;
                                 Log("CheckLeagueQueue: 未匹配到等待组，普通天梯局");
                             }
+
+                            // 验证码（首次上传时服务端生成）
+                            if (dict != null && dict.ContainsKey("verificationCode"))
+                                Log($"验证码: {dict["verificationCode"]} (前往联赛网站注册时使用)");
                         }
                         catch { }
                     }
@@ -528,7 +357,7 @@ namespace HDT_BGTracker
                         {
                             var dict = _json.Deserialize<Dictionary<string, object>>(body);
                             if (dict != null && dict.ContainsKey("finalized") && (bool)dict["finalized"])
-                                Log($"UpdateLeagueMatch: 对局已全部提交，endedAt 已写入");
+                                Log($"对局已全部提交，endedAt 已写入");
                         }
                         catch { }
                     }
@@ -694,42 +523,6 @@ namespace HDT_BGTracker
             return heroCardId;
         }
 
-        public static void TestHearthDb()
-        {
-            try
-            {
-                Log("=== HearthDb 验证开始 ===");
-                Log($"Cards.All 总数: {Cards.All.Count}");
-
-                string[] testHeroes = {
-                    "TB_BaconShop_HERO_56",
-                    "TB_BaconShop_HERO_50",
-                    "BG20_HERO_202",
-                    "BG31_HERO_802",
-                };
-
-                foreach (var heroId in testHeroes)
-                {
-                    if (Cards.All.TryGetValue(heroId, out var card))
-                    {
-                        string enName = card.Name ?? "?";
-                        string zhName = card.GetLocName(HearthDb.Enums.Locale.zhCN) ?? "?";
-                        Log($"  {heroId} → EN: {enName}, CN: {zhName}");
-                    }
-                    else
-                    {
-                        Log($"  {heroId} → NOT FOUND");
-                    }
-                }
-
-                Log("=== HearthDb 验证完成 ===");
-            }
-            catch (Exception ex)
-            {
-                Log($"HearthDb 验证失败: {ex.Message}");
-            }
-        }
-
         private string GetRegion()
         {
             try
@@ -757,17 +550,7 @@ namespace HDT_BGTracker
             {
                 try
                 {
-                    string json = _json.Serialize(new Dictionary<string, object>
-                    {
-                        ["playerId"] = "__test__",
-                        ["accountIdLo"] = "",
-                        ["rating"] = -1,
-                        ["mode"] = "test",
-                        ["gameUuid"] = "",
-                        ["region"] = "TEST",
-                    });
-
-                    var (ok, body) = PostJson("/api/plugin/upload-rating", json);
+                    var (ok, body) = PostJson("/api/plugin/check-league", "{}");
                     if (ok)
                         Log("API 连接测试成功 ✓");
                     else
@@ -779,8 +562,6 @@ namespace HDT_BGTracker
                 }
             });
         }
-
-        // 验证码由服务端生成
 
         private static void Log(string msg)
         {

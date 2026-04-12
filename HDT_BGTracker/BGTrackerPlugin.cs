@@ -44,7 +44,6 @@ namespace HDT_BGTracker
         public void OnButtonPress()
         {
             _tracker?.TestConnection();
-            RatingTracker.TestHearthDb();
         }
 
         private void CreateMenuItem()
