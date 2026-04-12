@@ -8,8 +8,8 @@ namespace HDT_BGTracker
     public class BGTrackerPlugin : IPlugin
     {
         public string Name => "BG Rating Tracker";
-        public string Description => "酒馆战棋结束后自动记录分数并上传到联赛网站";
-        public string Author => "BGTracker";
+        public string Description => "酒馆战棋联赛自动记录插件，https://da.iceshoes.dpdns.org/";
+        public string Author => "iceshoesss";
         public Version Version => new Version(1, 0, 0);
         public string ButtonText => "测试连接";
 
