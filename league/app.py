@@ -1016,8 +1016,8 @@ def api_plugin_upload_rating():
 
     无需认证。
 
-    请求体: { playerId, accountIdLo, rating, mode, gameUuid, region }
-    返回:   { ok, verificationCode? }
+    请求体: { playerId, accountIdLo, rating, mode, gameUuid, region, displayName? }
+    返回:   { ok, skip?, verificationCode? }
     """
     data = request.get_json() or {}
     player_id = data.get("playerId", "").strip()
@@ -1025,6 +1025,14 @@ def api_plugin_upload_rating():
     rating = data.get("rating")
     mode = data.get("mode", "solo")
     region = data.get("region", "CN")
+    display_name = data.get("displayName", "").strip()
+
+    # ── 白名单检查 ──
+    if display_name and display_name != "__test__":
+        db = get_db()
+        if not db.league_whitelist.find_one({"name": display_name}):
+            print(f"[upload-rating] 非白名单玩家，跳过: {display_name}")
+            return jsonify({"skip": True})
 
     # ── 基础校验 ──
     if not player_id or player_id == "unknown":

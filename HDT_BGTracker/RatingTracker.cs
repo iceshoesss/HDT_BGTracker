@@ -353,6 +353,9 @@ namespace HDT_BGTracker
             {
                 try
                 {
+                    // displayName = playerId 去掉 #tag 部分
+                    string displayName = playerId.Contains("#") ? playerId.Substring(0, playerId.IndexOf('#')) : playerId;
+
                     string json = _json.Serialize(new Dictionary<string, object>
                     {
                         ["playerId"] = playerId,
@@ -361,11 +364,25 @@ namespace HDT_BGTracker
                         ["mode"] = mode,
                         ["gameUuid"] = gameUuid,
                         ["region"] = region,
+                        ["displayName"] = displayName,
                     });
 
                     var (ok, body) = PostJson("/api/plugin/upload-rating", json);
                     if (ok)
                     {
+                        try
+                        {
+                            var dict = _json.Deserialize<Dictionary<string, object>>(body);
+                            if (dict != null && dict.ContainsKey("skip"))
+                            {
+                                _isLeagueGame = false;
+                                _ratingUploaded = true;
+                                Log($"非白名单玩家，跳过: {displayName}");
+                                return;
+                            }
+                        }
+                        catch { }
+
                         _ratingUploaded = true;
                         Log($"已上传分数: {rating} ({mode}) playerId={playerId} gameUuid={gameUuid}");
 
