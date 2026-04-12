@@ -289,11 +289,13 @@ namespace HDT_BGTracker
                                 _isLeagueGame = true;
                                 Log("CheckLeagueQueue: ★ 联赛对局确认！");
                             }
+                            // >>> BEGIN TEST_MODE
                             else
                             {
                                 _isLeagueGame = false;
                                 Log("CheckLeagueQueue: 未匹配到等待组，普通天梯局");
                             }
+                            // <<< END TEST_MODE
 
                             // 验证码（首次上传时服务端生成）
                             if (dict != null && dict.ContainsKey("verificationCode"))
