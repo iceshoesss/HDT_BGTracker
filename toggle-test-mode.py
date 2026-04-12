@@ -100,7 +100,7 @@ FLASK_TEST = '''\
     if matched_group is None:
         # [TESTING] 暂时跳过等待组匹配，直接用插件上报的玩家数据创建联赛对局
         detailed_players = data.get("players", {})
-        account_ids_raw = data.get("accountIdLo", [])
+        account_ids_raw = data.get("accountIdLoList", [])
         account_ids = sorted(account_ids_raw) if isinstance(account_ids_raw, list) else []
         players = []
         for lo in account_ids:

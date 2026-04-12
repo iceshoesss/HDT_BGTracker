@@ -292,8 +292,9 @@ namespace HDT_BGTracker
                             // >>> BEGIN TEST_MODE
                             else
                             {
-                                _isLeagueGame = false;
-                                Log("CheckLeagueQueue: 未匹配到等待组，普通天梯局");
+                                // [TESTING] 暂时跳过联赛判断，所有对局都当联赛处理
+                                _isLeagueGame = true;
+                                Log("CheckLeagueQueue: [TESTING] 跳过等待组匹配，强制标记为联赛对局");
                             }
                             // <<< END TEST_MODE
 
