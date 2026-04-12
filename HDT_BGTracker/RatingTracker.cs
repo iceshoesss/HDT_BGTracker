@@ -118,21 +118,16 @@ namespace HDT_BGTracker
                         if (string.IsNullOrEmpty(_cachedPlayerId))
                         {
                             _cachedPlayerId = GetPlayerId();
-                            Log($"缓存: playerId={_cachedPlayerId}");
                         }
                         if (!string.IsNullOrEmpty(_cachedPlayerId) && _cachedPlayerId != "unknown")
                         {
                             if (string.IsNullOrEmpty(_cachedAccountIdLo))
                             {
                                 _cachedAccountIdLo = GetAccountIdLo();
-                                if (!string.IsNullOrEmpty(_cachedAccountIdLo))
-                                    Log($"缓存: accountIdLo={_cachedAccountIdLo}");
                             }
                             if (string.IsNullOrEmpty(_cachedGameUuid))
                             {
                                 _cachedGameUuid = GetGameUuid();
-                                if (!string.IsNullOrEmpty(_cachedGameUuid))
-                                    Log($"缓存: gameUuid={_cachedGameUuid}");
                             }
                         }
                     }
@@ -434,9 +429,7 @@ namespace HDT_BGTracker
                     {
                         if (p.Name == myNameNoTag && p.AccountId != null)
                         {
-                            string lo = p.AccountId.Lo.ToString();
-                            Log($"GetAccountIdLo: 自己 = {p.Name}, Lo = {lo}");
-                            return lo;
+                            return p.AccountId.Lo.ToString();
                         }
                     }
                 }
@@ -477,30 +470,8 @@ namespace HDT_BGTracker
                 var players = lobbyInfo.Players;
                 if (players == null || players.Count == 0) return;
 
-                string gameUuid = lobbyInfo.GameUuid ?? "";
-                string phase = includeHeroes ? "英雄选择后" : "游戏开始";
-                Log($"=== Lobby {phase} (GameUuid: {gameUuid}) ===");
-
-                string logText = "";
-                for (int i = 0; i < players.Count; i++)
-                {
-                    var p = players[i];
-                    string name = p.Name;
-                    string acctLo = p.AccountId?.Lo.ToString() ?? "?";
-
-                    if (includeHeroes)
-                    {
-                        string heroId = p.HeroCardId ?? "";
-                        string heroName = GetHeroName(heroId);
-                        logText += $"\n  [{i}] {name} (Lo={acctLo}) 英雄={heroName}";
-                    }
-                    else
-                    {
-                        logText += $"\n  [{i}] {name} (Lo={acctLo})";
-                    }
-                }
-                Log(logText);
-                Log($"共 {players.Count} 个玩家");
+                if (!includeHeroes)
+                    Log($"共 {players.Count} 个玩家");
             }
             catch (Exception ex)
             {
