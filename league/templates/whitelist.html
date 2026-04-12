@@ -3,13 +3,13 @@
 {% block content %}
 <div class="max-w-3xl mx-auto px-4 py-8">
     <h1 class="text-2xl font-bold text-hearth-gold mb-6">📋 白名单管理</h1>
-    <p class="text-hearth-dim mb-6">白名单中的玩家对局会自动记为联赛对局，无需排队报名。</p>
+    <p class="text-hearth-dim mb-6">白名单中的玩家对局会自动记为联赛对局。</p>
 
     <!-- 添加 -->
     <div class="flex gap-3 mb-8">
-        <input id="tag-input" type="text" placeholder="BattleTag（如 名字#1234）"
+        <input id="name-input" type="text" placeholder="玩家名（如 机械之忍）"
                class="flex-1 bg-hearth-card border border-hearth-border rounded-lg px-4 py-2 text-white placeholder-hearth-dim focus:outline-none focus:border-hearth-gold">
-        <button onclick="addTag()" class="bg-hearth-gold text-hearth-bg font-bold px-6 py-2 rounded-lg hover:bg-yellow-400 transition">
+        <button onclick="addName()" class="bg-hearth-gold text-hearth-bg font-bold px-6 py-2 rounded-lg hover:bg-yellow-400 transition">
             添加
         </button>
     </div>
@@ -19,18 +19,18 @@
         <table class="w-full text-left">
             <thead>
                 <tr class="border-b border-hearth-border text-hearth-dim text-sm">
-                    <th class="px-4 py-3">BattleTag</th>
+                    <th class="px-4 py-3">玩家名</th>
                     <th class="px-4 py-3">添加时间</th>
                     <th class="px-4 py-3 w-20">操作</th>
                 </tr>
             </thead>
             <tbody id="wl-body">
                 {% for e in entries %}
-                <tr class="border-b border-hearth-border hover:bg-hearth-bg/50" data-tag="{{ e.battleTag }}">
-                    <td class="px-4 py-3 text-white">{{ e.battleTag }}</td>
+                <tr class="border-b border-hearth-border hover:bg-hearth-bg/50" data-name="{{ e.name }}">
+                    <td class="px-4 py-3 text-white">{{ e.name }}</td>
                     <td class="px-4 py-3 text-hearth-dim text-sm">{{ e.addedAt | cst }}</td>
                     <td class="px-4 py-3">
-                        <button onclick="removeTag('{{ e.battleTag }}')" class="text-red-400 hover:text-red-300 text-sm">删除</button>
+                        <button onclick="removeName('{{ e.name }}')" class="text-red-400 hover:text-red-300 text-sm">删除</button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -45,30 +45,28 @@
 </div>
 
 <script>
-async function addTag() {
-    const input = document.getElementById('tag-input');
-    const tag = input.value.trim();
-    if (!tag) return;
-    if (!tag.includes('#')) { alert('BattleTag 需要包含 #（如 名字#1234）'); return; }
+async function addName() {
+    const input = document.getElementById('name-input');
+    const name = input.value.trim();
+    if (!name) return;
 
     const res = await fetch('/api/whitelist', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({battleTag: tag})
+        body: JSON.stringify({name: name})
     });
     const data = await res.json();
     if (!res.ok) { alert(data.error); return; }
 
     input.value = '';
-    // 简单刷新
     location.reload();
 }
 
-async function removeTag(tag) {
-    if (!confirm('确定删除 ' + tag + ' ？')) return;
-    const res = await fetch('/api/whitelist/' + encodeURIComponent(tag), {method: 'DELETE'});
+async function removeName(name) {
+    if (!confirm('确定删除 ' + name + ' ？')) return;
+    const res = await fetch('/api/whitelist/' + encodeURIComponent(name), {method: 'DELETE'});
     if (res.ok) {
-        const row = document.querySelector(`tr[data-tag="${tag}"]`);
+        const row = document.querySelector(`tr[data-name="${name}"]`);
         if (row) row.remove();
     }
 }

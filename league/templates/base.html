@@ -49,14 +49,7 @@
             <div class="flex items-center gap-4 text-sm">
                 <span data-nav-active-count class="active-pulse text-green-400">● {{ active_game_count }} 场对局进行中</span>
                 <span class="text-hearth-dim">|</span>
-                <span class="text-hearth-dim">{{ total_player_count }} 名注册选手</span>
-                <span class="text-hearth-dim">|</span>
-                {% if current_user %}
-                <a href="/player/{{ current_user.battleTag|urlencode }}" class="text-hearth-gold font-medium hover:text-hearth-accent transition">{{ current_user.battleTag }}</a>
-                <button onclick="logout()" class="text-hearth-dim hover:text-red-400 transition text-xs">退出</button>
-                {% else %}
-                <a href="/register" class="text-hearth-gold hover:text-hearth-accent transition">登录</a>
-                {% endif %}
+                <span class="text-hearth-dim">共 {{ total_player_count }} 名玩家</span>
                 <span class="text-hearth-dim">|</span>
                 <a href="/whitelist" class="text-hearth-dim hover:text-hearth-gold transition text-xs">白名单</a>
             </div>
@@ -66,11 +59,5 @@
         {% block content %}{% endblock %}
     </main>
     {% block scripts %}{% endblock %}
-    <script>
-    async function logout() {
-        await fetch('/api/logout', { method: 'POST' });
-        window.location.reload();
-    }
-    </script>
 </body>
 </html>

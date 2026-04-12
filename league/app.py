@@ -144,7 +144,7 @@ def inject_counts():
                 {"startedAt": {"$gte": cutoff_str}}
             ]
         })
-        player_count = db.league_players.count_documents({"verified": True})
+        player_count = len(db.league_matches.distinct("players.displayName"))
     except Exception as e:
         print(f"[inject_counts] 数据库查询失败: {e}")
         active_count = 0
@@ -671,46 +671,45 @@ def api_whitelist_list():
 @app.route("/api/whitelist", methods=["POST"])
 def api_whitelist_add():
     data = request.get_json() or {}
-    battle_tag = data.get("battleTag", "").strip()
-    if not battle_tag or "#" not in battle_tag:
-        return jsonify({"error": "battleTag 格式无效，需要包含 #（如 名字#1234）"}), 400
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "玩家名不能为空"}), 400
 
     db = get_db()
-    existing = db.league_whitelist.find_one({"battleTag": battle_tag})
+    existing = db.league_whitelist.find_one({"name": name})
     if existing:
         return jsonify({"error": "已在白名单中"}), 400
 
     db.league_whitelist.insert_one({
-        "battleTag": battle_tag,
+        "name": name,
         "addedAt": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S"),
     })
-    _leaderboard_cache["data"] = None  # 清缓存
-    return jsonify({"ok": True, "battleTag": battle_tag})
+    return jsonify({"ok": True, "name": name})
 
 
-@app.route("/api/whitelist/<path:battle_tag>", methods=["DELETE"])
-def api_whitelist_remove(battle_tag):
+@app.route("/api/whitelist/<path:name>", methods=["DELETE"])
+def api_whitelist_remove(name):
     from urllib.parse import unquote
-    battle_tag = unquote(battle_tag)
+    name = unquote(name)
     db = get_db()
-    result = db.league_whitelist.delete_one({"battleTag": battle_tag})
+    result = db.league_whitelist.delete_one({"name": name})
     if result.deleted_count == 0:
         return jsonify({"error": "不在白名单中"}), 404
-    return jsonify({"ok": True, "battleTag": battle_tag})
+    return jsonify({"ok": True, "name": name})
 
 
 @app.route("/api/whitelist/check", methods=["POST"])
 def api_whitelist_check():
-    """批量检查 battleTag 列表是否都在白名单中"""
+    """批量检查玩家名列表是否都在白名单中"""
     data = request.get_json() or {}
-    tags = data.get("battleTags", [])
-    if not tags:
-        return jsonify({"error": "battleTags 为空"}), 400
+    names = data.get("names", [])
+    if not names:
+        return jsonify({"error": "names 为空"}), 400
     db = get_db()
     found = set()
-    for doc in db.league_whitelist.find({"battleTag": {"$in": tags}}):
-        found.add(doc["battleTag"])
-    missing = [t for t in tags if t not in found]
+    for doc in db.league_whitelist.find({"name": {"$in": names}}):
+        found.add(doc["name"])
+    missing = [n for n in names if n not in found]
     return jsonify({"allWhitelisted": len(missing) == 0, "missing": missing})
 
 
@@ -1110,21 +1109,21 @@ def api_plugin_check_league():
 
     db = get_db()
 
-    # ── 白名单匹配（优先于等待组匹配）──
+    # ── 白名单匹配 ──
     detailed_players = data.get("players", {})  # {accountIdLo: {heroCardId, heroName, battleTag, displayName}}
-    battle_tags = []
+    display_names = []
     for lo in account_ids:
         detail = detailed_players.get(lo, {})
-        tag = detail.get("battleTag", "")
-        if tag:
-            battle_tags.append(tag)
+        dn = detail.get("displayName", "")
+        if dn:
+            display_names.append(dn)
 
     whitelisted = False
-    if len(battle_tags) == 8:
-        wl_count = db.league_whitelist.count_documents({"battleTag": {"$in": battle_tags}})
+    if len(display_names) == 8:
+        wl_count = db.league_whitelist.count_documents({"name": {"$in": display_names}})
         if wl_count == 8:
             whitelisted = True
-            print(f"[check-league] 白名单匹配成功: {battle_tags}")
+            print(f"[check-league] 白名单匹配成功: {display_names}")
 
     if whitelisted:
         # 白名单匹配：直接创建联赛对局

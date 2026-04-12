@@ -196,7 +196,7 @@ updateTimers();
 setInterval(updateTimers, 1000);
 
 // ── SSE 实时推送 ────────────────────────────────────
-const MY_NAME = {% if current_user %}{{ current_user.battleTag | tojson }}{% else %}null{% endif %};
+
 
 // --- 进行中对局 SSE ---
 let activeEs = null;
