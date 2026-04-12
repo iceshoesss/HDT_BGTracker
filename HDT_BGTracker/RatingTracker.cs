@@ -104,13 +104,16 @@ namespace HDT_BGTracker
                             int currentStep = gameEntity.GetTag(HearthDb.Enums.GameTag.STEP);
                             if (currentStep != _lastStepValue)
                             {
-                                Log($"STEP 变化: {_lastStepValue} → {currentStep}");
                                 _lastStepValue = currentStep;
                                 if (currentStep == 13 && !_heroLogged)
                                 {
                                     LogLobbyPlayers(includeHeroes: true);
                                     _heroLogged = true;
                                     CheckLeagueQueue();
+                                }
+                                if (currentStep == 15)
+                                {
+                                    Log("=== 游戏结束 (STEP 15 MAIN_GAMEOVER) ===");
                                 }
                             }
                         }
@@ -162,14 +165,11 @@ namespace HDT_BGTracker
                     if (_gameEndTime == DateTime.MinValue)
                     {
                         _gameEndTime = DateTime.Now;
-                        Log($"回到菜单，等待 2 秒后读取 placement...");
                         return;
                     }
 
                     if ((DateTime.Now - _gameEndTime).TotalSeconds < 2)
                         return;
-
-                    Log($"游戏结束处理：最后 STEP = {_lastStepValue}，开始读取 placement");
 
                     string cachedPlayerId = _cachedPlayerId;
                     string cachedAccountIdLo = _cachedAccountIdLo;
