@@ -22,7 +22,7 @@ namespace HDT_BGTracker
         private bool _enabled;
         private bool _wasInBgGame;
         private DateTime _gameEndTime = DateTime.MinValue;
-        private bool _ratingUploaded;
+        private bool _gameEndProcessed;
         private string _cachedPlayerId;
         private string _cachedAccountIdLo;
         private DateTime _bgGameStartTime = DateTime.MinValue;
@@ -89,7 +89,7 @@ namespace HDT_BGTracker
                 if (inBgGame)
                 {
                     _wasInBgGame = true;
-                    _ratingUploaded = false;
+                    _gameEndProcessed = false;
 
                     if (_bgGameStartTime == DateTime.MinValue)
                         _bgGameStartTime = DateTime.Now;
@@ -156,7 +156,7 @@ namespace HDT_BGTracker
                         _leagueMatchCreated = true;
                     }
                 }
-                else if (_wasInBgGame && Core.Game.IsInMenu && !_ratingUploaded)
+                else if (_wasInBgGame && Core.Game.IsInMenu && !_gameEndProcessed)
                 {
                     if (_gameEndTime == DateTime.MinValue)
                     {
@@ -173,13 +173,10 @@ namespace HDT_BGTracker
 
                     if (_isLeagueGame)
                     {
-                        IncrementLeagueCount(cachedPlayerId);
                         UpdateLeaguePlacement(cachedAccountIdLo, cachedGameUuid);
                     }
-                    else
-                    {
-                        TryUploadRating();
-                    }
+
+                    _gameEndProcessed = true;
 
                     _wasInBgGame = false;
                     _gameEndTime = DateTime.MinValue;
@@ -239,168 +236,6 @@ namespace HDT_BGTracker
         }
 
         // ── 业务逻辑 ──────────────────────────────────────
-
-        /// <summary>
-        /// 联赛对局结束：通过 upload-rating 让 server 端 leagueCount +1
-        /// </summary>
-        private void IncrementLeagueCount(string playerId)
-        {
-            if (_httpClient == null) return;
-            if (string.IsNullOrEmpty(playerId) || playerId == "unknown") return;
-
-            Task.Run(() =>
-            {
-                try
-                {
-                    string region = GetRegion();
-                    string json = _json.Serialize(new Dictionary<string, object>
-                    {
-                        ["playerId"] = playerId,
-                        ["accountIdLo"] = _cachedAccountIdLo ?? "",
-                        ["rating"] = Core.Game.CurrentBattlegroundsRating ?? 0,
-                        ["mode"] = Core.Game.IsBattlegroundsDuosMatch ? "duo" : "solo",
-                        ["gameUuid"] = _cachedGameUuid ?? "",
-                        ["region"] = region,
-                    });
-
-                    var (ok, body) = PostJson("/api/plugin/upload-rating", json);
-                    if (ok)
-                    {
-                        Log($"IncrementLeagueCount: playerId={playerId} 已处理");
-                        try
-                        {
-                            var dict = _json.Deserialize<Dictionary<string, object>>(body);
-                            if (dict != null && dict.ContainsKey("verificationCode"))
-                                Log($"联赛验证码: {dict["verificationCode"]} (前往联赛网站注册时使用)");
-                        }
-                        catch { }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log($"IncrementLeagueCount 异常: {ex.Message}");
-                }
-            });
-        }
-
-        private void TryUploadRating()
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(_cachedPlayerId) || _cachedPlayerId == "unknown")
-                {
-                    _cachedPlayerId = GetPlayerId();
-                    if (string.IsNullOrEmpty(_cachedPlayerId) || _cachedPlayerId == "unknown")
-                    {
-                        _cachedPlayerId = "unknown";
-                        Log("警告: 无法获取 PlayerId，使用 'unknown'");
-                    }
-                }
-
-                // 用反射刷新分数缓存
-                var gameType = Core.Game.GetType();
-                var cacheMethod = gameType.GetMethod("CacheBattlegroundsRatingInfo",
-                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-                cacheMethod?.Invoke(Core.Game, null);
-
-                var rating = Core.Game.CurrentBattlegroundsRating;
-                if (rating.HasValue)
-                {
-                    string mode = Core.Game.IsBattlegroundsDuosMatch ? "duo" : "solo";
-
-                    int? placement = null;
-                    try
-                    {
-                        var stats = Core.Game.CurrentGameStats;
-                        var details = stats?.BattlegroundsDetails;
-                        placement = details?.FinalPlacement;
-                        Log($"排名读取: FinalPlacement = {placement?.ToString() ?? "null"}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Log($"排名读取异常: {ex.Message}");
-                    }
-
-                    string gameUuid = _cachedGameUuid ?? "";
-                    UploadRating(rating.Value, mode, gameUuid);
-                }
-                else
-                {
-                    Log("无法读取分数（CurrentBattlegroundsRating 为 null）");
-                    _ratingUploaded = true;
-                }
-            }
-            catch (Exception ex)
-            {
-                Log("读取分数异常: " + ex.Message);
-            }
-        }
-
-        private void UploadRating(int rating, string mode, string gameUuid)
-        {
-            if (_httpClient == null)
-            {
-                Log("HttpClient 未初始化，跳过上传");
-                _ratingUploaded = true;
-                return;
-            }
-
-            string playerId = string.IsNullOrEmpty(_cachedPlayerId) ? "unknown" : _cachedPlayerId;
-            string accountIdLo = _cachedAccountIdLo;
-            string region = GetRegion();
-
-            Task.Run(() =>
-            {
-                try
-                {
-                    // displayName = playerId 去掉 #tag 部分
-                    string displayName = playerId.Contains("#") ? playerId.Substring(0, playerId.IndexOf('#')) : playerId;
-
-                    string json = _json.Serialize(new Dictionary<string, object>
-                    {
-                        ["playerId"] = playerId,
-                        ["accountIdLo"] = accountIdLo ?? "",
-                        ["rating"] = rating,
-                        ["mode"] = mode,
-                        ["gameUuid"] = gameUuid,
-                        ["region"] = region,
-                        ["displayName"] = displayName,
-                    });
-
-                    var (ok, body) = PostJson("/api/plugin/upload-rating", json);
-                    if (ok)
-                    {
-                        try
-                        {
-                            var dict = _json.Deserialize<Dictionary<string, object>>(body);
-                            if (dict != null && dict.ContainsKey("skip"))
-                            {
-                                _isLeagueGame = false;
-                                _ratingUploaded = true;
-                                Log($"非白名单玩家，跳过: {displayName}");
-                                return;
-                            }
-                        }
-                        catch { }
-
-                        _ratingUploaded = true;
-                        Log($"已上传分数: {rating} ({mode}) playerId={playerId} gameUuid={gameUuid}");
-
-                        try
-                        {
-                            var dict = _json.Deserialize<Dictionary<string, object>>(body);
-                            if (dict != null && dict.ContainsKey("verificationCode"))
-                                Log($"联赛验证码: {dict["verificationCode"]} (前往联赛网站注册时使用)");
-                        }
-                        catch { }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log("上传失败: " + ex.Message);
-                }
-            });
-        }
 
         // ── 联赛对局 ────────────────────────────────────────
 
