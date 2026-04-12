@@ -428,3 +428,8 @@ docker compose up -d
   - 每页最多显示 4 个对局，带分页按钮
   - 分页样式与排行榜、玩家页一致
   - SSE 推送时保留当前页码
+- [ ] **公网生产部署：Nginx + HTTPS**（待有公网 IP + 域名时启用）
+  - 已准备 `docker-compose.prod.yml`（Flask + Nginx + Certbot 三件套）
+  - 已准备 `nginx.conf`（反向代理 + SSL 终止 + SSE 长连接支持）
+  - CF Tunnel 延迟较高，公网部署后切直连
+  - 上线步骤：域名解析 → nginx.conf 替换 YOUR_DOMAIN → certbot 签证 → docker compose up
