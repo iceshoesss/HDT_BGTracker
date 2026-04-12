@@ -87,14 +87,6 @@ docker compose down            # 停止
 docker compose restart web     # 重启
 ```
 
-### 导入测试数据
-
-```bash
-cd league/mock-data
-docker compose exec -T mongo mongoimport --db hearthstone --collection league_players --jsonArray < league_players.json
-docker compose exec -T mongo mongoimport --db hearthstone --collection league_matches --jsonArray < league_matches.json
-```
-
 ### 使用外部 MongoDB
 
 删掉 `docker-compose.yml` 中的 `mongo` service 和 `depends_on`，改为：

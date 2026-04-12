@@ -86,30 +86,6 @@
 
 ---
 
-## Mock 数据
-
-位于 `league/mock-data/` 目录：
-
-- `league_players.json` — 12 名选手，不同积分/场次/胜率
-- `league_matches.json` — 3 场对局记录，8人完整数据
-- `league_active_games.json` — 2 场进行中的对局
-- `import.sh` — 一键导入脚本（清空旧数据 + 导入 + 建索引）
-
-### 导入方法
-
-```bash
-cd league/mock-data
-bash import.sh
-```
-
-前提：MongoDB 已运行，`mongosh` 和 `mongoimport` 可用。如需指定连接地址：
-
-```bash
-mongosh="mongodb://localhost:27017/hearthstone"
-mongoimport --uri "$mongosh" --collection league_players --file league_players.json --jsonArray
-# ... 其余同理
-```
-
 ---
 
 ## 网站功能
@@ -246,10 +222,9 @@ mongoimport --uri "$mongosh" --collection league_players --file league_players.j
 3. 保持原有 `bg_ratings` 写入不变
 
 ### Phase 2 — Flask 网站接入真实数据
-1. `league/app.py` 从 mock 数据改为读 MongoDB
-2. 排行榜从 `league_players` 查询
-3. 对局列表从 `league_matches` 查询
-4. 实时对局轮询 `league_active_games`
+1. 排行榜从 `league_players` 查询
+2. 对局列表从 `league_matches` 查询
+3. 实时对局轮询 `league_active_games`
 
 ### Phase 3 — 注册与验证
 1. 注册流程（battleTag → 生成验证码）
