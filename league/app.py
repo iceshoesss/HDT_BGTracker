@@ -648,6 +648,72 @@ def problems_page():
     return render_template("problems.html", matches=matches)
 
 
+@app.route("/whitelist")
+def whitelist_page():
+    db = get_db()
+    entries = list(db.league_whitelist.find().sort("addedAt", -1))
+    for e in entries:
+        e["_id"] = str(e["_id"])
+    return render_template("whitelist.html", entries=entries)
+
+
+# ── 白名单 API ────────────────────────────────────────
+
+@app.route("/api/whitelist", methods=["GET"])
+def api_whitelist_list():
+    db = get_db()
+    entries = list(db.league_whitelist.find().sort("addedAt", -1))
+    for e in entries:
+        e["_id"] = str(e["_id"])
+    return jsonify(entries)
+
+
+@app.route("/api/whitelist", methods=["POST"])
+def api_whitelist_add():
+    data = request.get_json() or {}
+    battle_tag = data.get("battleTag", "").strip()
+    if not battle_tag or "#" not in battle_tag:
+        return jsonify({"error": "battleTag 格式无效，需要包含 #（如 名字#1234）"}), 400
+
+    db = get_db()
+    existing = db.league_whitelist.find_one({"battleTag": battle_tag})
+    if existing:
+        return jsonify({"error": "已在白名单中"}), 400
+
+    db.league_whitelist.insert_one({
+        "battleTag": battle_tag,
+        "addedAt": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S"),
+    })
+    _leaderboard_cache["data"] = None  # 清缓存
+    return jsonify({"ok": True, "battleTag": battle_tag})
+
+
+@app.route("/api/whitelist/<path:battle_tag>", methods=["DELETE"])
+def api_whitelist_remove(battle_tag):
+    from urllib.parse import unquote
+    battle_tag = unquote(battle_tag)
+    db = get_db()
+    result = db.league_whitelist.delete_one({"battleTag": battle_tag})
+    if result.deleted_count == 0:
+        return jsonify({"error": "不在白名单中"}), 404
+    return jsonify({"ok": True, "battleTag": battle_tag})
+
+
+@app.route("/api/whitelist/check", methods=["POST"])
+def api_whitelist_check():
+    """批量检查 battleTag 列表是否都在白名单中"""
+    data = request.get_json() or {}
+    tags = data.get("battleTags", [])
+    if not tags:
+        return jsonify({"error": "battleTags 为空"}), 400
+    db = get_db()
+    found = set()
+    for doc in db.league_whitelist.find({"battleTag": {"$in": tags}}):
+        found.add(doc["battleTag"])
+    missing = [t for t in tags if t not in found]
+    return jsonify({"allWhitelisted": len(missing) == 0, "missing": missing})
+
+
 # ── API 路由 ──────────────────────────────────────────
 
 @app.route("/api/players")
@@ -1178,6 +1244,56 @@ def api_plugin_check_league():
 
     db = get_db()
 
+    # ── 白名单匹配（优先于等待组匹配）──
+    detailed_players = data.get("players", {})  # {accountIdLo: {heroCardId, heroName, battleTag, displayName}}
+    battle_tags = []
+    for lo in account_ids:
+        detail = detailed_players.get(lo, {})
+        tag = detail.get("battleTag", "")
+        if tag:
+            battle_tags.append(tag)
+
+    whitelisted = False
+    if len(battle_tags) == 8:
+        wl_count = db.league_whitelist.count_documents({"battleTag": {"$in": battle_tags}})
+        if wl_count == 8:
+            whitelisted = True
+            print(f"[check-league] 白名单匹配成功: {battle_tags}")
+
+    if whitelisted:
+        # 白名单匹配：直接创建联赛对局
+        players = []
+        for lo in account_ids:
+            detail = detailed_players.get(lo, {})
+            players.append({
+                "accountIdLo": lo,
+                "battleTag": detail.get("battleTag", ""),
+                "displayName": detail.get("displayName", ""),
+                "heroCardId": detail.get("heroCardId", ""),
+                "heroName": detail.get("heroName", ""),
+                "placement": None,
+                "points": None,
+            })
+
+        mode = data.get("mode", "solo")
+        region = data.get("region", "CN")
+        started_at = data.get("startedAt", datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S"))
+
+        db.league_matches.update_one(
+            {"gameUuid": game_uuid},
+            {"$setOnInsert": {
+                "players": players,
+                "region": region,
+                "mode": mode,
+                "startedAt": started_at,
+                "endedAt": None,
+            }},
+            upsert=True,
+        )
+
+        return jsonify({"isLeague": True})
+
+    # ── 等待组匹配（原有逻辑）──
     # 遍历等待组，找完全匹配
     waiting_groups = list(db.league_waiting_queue.find().sort("createdAt", 1))
     matched_group = None
