@@ -33,6 +33,25 @@ namespace HDT_BGTracker
         private bool _isLeagueGame;
         private string _cachedGameUuid;
         private int _lastStepValue = -1;
+        private static readonly Dictionary<int, string> StepNames = new Dictionary<int, string>
+        {
+            { 0, "INVALID" },
+            { 1, "BEGIN_FIRST" },
+            { 2, "BEGIN_SHUFFLE" },
+            { 3, "BEGIN_DRAW" },
+            { 4, "BEGIN_MULLIGAN" },
+            { 5, "MAIN_BEGIN" },
+            { 6, "MAIN_READY" },
+            { 7, "MAIN_RESOURCE" },
+            { 8, "MAIN_DRAW" },
+            { 9, "MAIN_START" },
+            { 10, "MAIN_ACTION" },
+            { 11, "MAIN_COMBAT" },
+            { 12, "MAIN_NEXT" },
+            { 13, "MAIN_CLEANUP" },
+            { 14, "MAIN_START_TRIGGERS" },
+            { 15, "MAIN_GAMEOVER" },
+        };
 
         // ── HTTP + JSON ───────────────────────────────────
         private HttpClient _httpClient;
@@ -104,16 +123,17 @@ namespace HDT_BGTracker
                             int currentStep = gameEntity.GetTag(HearthDb.Enums.GameTag.STEP);
                             if (currentStep != _lastStepValue)
                             {
+                                double elapsed = (DateTime.Now - _bgGameStartTime).TotalSeconds;
+                                StepNames.TryGetValue(currentStep, out string stepName);
+                                stepName = stepName ?? $"UNKNOWN({currentStep})";
+                                Log($"STEP: {stepName} = {currentStep} ({elapsed:F1}s)");
                                 _lastStepValue = currentStep;
+
                                 if (currentStep == 13 && !_heroLogged)
                                 {
                                     LogLobbyPlayers(includeHeroes: true);
                                     _heroLogged = true;
                                     CheckLeagueQueue();
-                                }
-                                if (currentStep == 15)
-                                {
-                                    Log("=== 游戏结束 (STEP 15 MAIN_GAMEOVER) ===");
                                 }
                             }
                         }
