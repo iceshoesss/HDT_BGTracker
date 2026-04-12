@@ -4,10 +4,10 @@
     <TargetFramework>net472</TargetFramework>
     <OutputType>Library</OutputType>
     <RootNamespace>HDT_BGTracker</RootNamespace>
-    <AssemblyName>HDT_BGTracker</AssemblyName>
+    <AssemblyName>GroupBGTracker</AssemblyName>
     <LangVersion>8.0</LangVersion>
     <Version>1.0.0</Version>
-    <Description>酒馆战棋分数记录插件</Description>
+    <Description>小群战棋对战数据记录插件</Description>
   </PropertyGroup>
 
   <!-- HDT 引用：编译时从本地 HDT 目录引用，不复制到输出 -->
