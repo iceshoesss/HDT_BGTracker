@@ -8,7 +8,7 @@
 HDT_BGTracker/
 ├── HDT_BGTracker/          # C# HDT 插件（HTTP API 客户端）
 │   ├── BGTrackerPlugin.cs  # 插件入口
-│   ├── RatingTracker.cs    # 核心逻辑（HTTP 上传分数、联赛匹配）
+│   ├── RatingTracker.cs    # 核心逻辑（联赛匹配 + 排名上传）
 │   ├── LobbyOverlay.cs     # 游戏内浮动面板（已禁用）
 │   └── HDT_BGTracker.csproj
 ├── league/                 # Flask 联赛网站 + 插件 API
@@ -138,7 +138,7 @@ tar -a -cf HDT_BGTracker.zip HDT_BGTracker.dll
 ### 使用
 
 - 插件启用后自动运行，无需手动操作
-- 每局酒馆战棋结束后（返回主菜单时），自动读取分数并上传
+- 联赛对局自动识别并记录排名，非联赛对局不处理
 - 点击插件设置中的「测试连接」按钮可验证 API 连接
 - 日志在 `%AppData%\HearthstoneDeckTracker\BGTracker\tracker.log`
 

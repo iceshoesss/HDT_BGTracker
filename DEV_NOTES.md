@@ -422,57 +422,46 @@ docker compose up -d
 ## 7. 待办
 
 ### 高优先级
-- [ ] **插件流程精简：去除上传分数，纯联赛插件** 🔧 测试中
+- [x] **插件流程精简：去除上传分数，纯联赛插件** ✅ 已完成
   - 背景：插件最初目的是上传分数，现核心用途是联赛记录，分数上传已无必要
   - 新流程：
     ```
     游戏开始 → 等 3 秒缓存 playerId/accountIdLo/gameUuid
       → CheckLeagueQueue() → POST /api/plugin/check-league（同时可返回验证码）
         → 服务端返回 isLeague: true/false
-      → 游戏结束（通过 STEP 值判断，不依赖回到菜单）
+      → 游戏结束（回到菜单 IsInMenu）
         → 联赛局: UpdateLeaguePlacement() → POST /api/plugin/update-placement
         → 非联赛局: 什么都不做
       → 重置状态
     ```
   - 移除：`TryUploadRating()`、`UploadRating()`、`IncrementLeagueCount()`
-  - 移除：游戏结束时的 2 秒等待 + `IsInMenu` 判断
-  - 移除：STEP 13 调用 `CheckLeagueQueue`，改为 3 秒缓存后立即调用
-  - 当前任务：增加 STEP 变化日志，观察游戏结束时的 step 值，确定替代 `IsInMenu` 的检测点
   - 2026-04-12 实测：BG 游戏无结束 step，STEP 10 只是战斗阶段；游戏结束依赖 HDT 的 `IsInMenu`（由日志 mode 变化驱动）
-- [ ] 问题对局页面添加入口链接
 - [x] 编译验证 HearthDb 引用是否可用（`Cards.All` 查英雄名）
 - [x] SSE 连接 120 秒自动断开 + 客户端重连，防僵尸连接堆积
 - [x] **bg_ratings 精简：移除 `games`、`ratingChanges`、`placements` 数组** ✅ 已完成
   - 联赛所有数据（排名、英雄、时间戳）已完整存储在 `league_matches` 中，`bg_ratings` 的历史数组纯属冗余
   - 移除后单条从 ~14.5KB 降到 ~1.5KB，节省 90%
-  - 保留字段：`playerId`、`accountIdLo`、`displayName`、`rating`、`lastRating`、`ratingChange`、`gameCount`、`mode`、`region`、`timestamp`、`verificationCode`
-  - 涉及修改：`RatingTracker.cs`（C# 插件上传逻辑）、`app.py`（无需修改，无依赖）
+  - 保留字段：`playerId`、`accountIdLo`、`rating`、`lastRating`、`ratingChange`、`gameCount`、`mode`、`region`、`timestamp`、`verificationCode`
   - 已同步更新 `README.md`、`API.md` 数据结构文档
 - [x] **插件架构改造：直连 MongoDB → HTTP API（通过 CF Tunnel）** ✅ 已完成
   - 背景：CF Tunnel 只能穿透 HTTP，无法暴露 MongoDB 端口
   - C# 插件：`MongoDB.Driver` → `HttpClient` + `JavaScriptSerializer`
   - Flask 端：3 个 `/api/plugin/*` 端点，由插件 HTTP 调用
-  - 认证：`upload-rating` 签发 token → `update-placement` 携带 token
   - 插件体积：仅 1 个 DLL（移除 MongoDB 全套依赖）
   - `ApiBaseUrl` 配置项支持本地/生产切换
 
 ### 中优先级
-- [ ] 验证 FinalPlacement 在单人/双人/掉线重连等场景的可靠性
 - [ ] CheckAndFinalizeMatch 写入竞争优化（8 人并行写 endedAt）
 - [ ] 赛季功能（`seasonId` 字段隔离不同届联赛）
 
 ### 低优先级
-- [ ] 静态资源上 CDN（Tailwind CSS）
-- [ ] 如流量到数千人：考虑迁移到 Quart（Flask async 版）
 - [x] **玩家页对局分析模块：折线图 + 饼图** ✅ 已完成
   - 使用 ECharts 5.x（CDN 加载，无后端依赖）
   - 左侧折线图：近 20 局排名走势，按排名着色（8 色梯度）
   - 右侧环形饼图：排名分布占比
-  - 颜色统一：金→绿→浅绿→蓝绿→橙→浅红→红→深红（对应第 1-8 名）
   - 数据来自前端 `matches_json`，纯客户端计算，零额外请求
 - [x] **正在进行对局分页** ✅ 已完成
   - 每页最多显示 4 个对局，带分页按钮
-  - 分页样式与排行榜、玩家页一致
   - SSE 推送时保留当前页码
 - [ ] **公网生产部署：Nginx + HTTPS**（待有公网 IP + 域名时启用）
   - 已准备 `docker-compose.prod.yml`（Flask + Nginx + Certbot 三件套）
