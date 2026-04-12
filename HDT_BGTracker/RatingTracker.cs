@@ -388,7 +388,7 @@ namespace HDT_BGTracker
         // ── 联赛对局 ────────────────────────────────────────
 
         /// <summary>
-        /// STEP 13 时检查等待队列
+        /// STEP 13 时检查白名单匹配
         /// </summary>
         private void CheckLeagueQueue()
         {
@@ -463,7 +463,7 @@ namespace HDT_BGTracker
                             else
                             {
                                 _isLeagueGame = false;
-                                Log("CheckLeagueQueue: 未匹配到等待组，普通天梯局");
+                                Log("CheckLeagueQueue: 未匹配到白名单，普通天梯局");
                             }
                         }
                         catch { }

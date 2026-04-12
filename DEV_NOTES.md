@@ -415,6 +415,9 @@ docker compose up -d
 - [ ] CheckAndFinalizeMatch 写入竞争优化（8 人并行写 endedAt）
 - [ ] 赛季功能（`seasonId` 字段隔离不同届联赛）
 
+### 已完成
+- [x] **白名单版本移除报名队列和等待队列** — 只保留白名单匹配，移除 `league_queue` / `league_waiting_queue` 相关 API、SSE 和前端 UI
+
 ### 低优先级
 - [ ] 静态资源上 CDN（Tailwind CSS）
 - [ ] 如流量到数千人：考虑迁移到 Quart（Flask async 版）

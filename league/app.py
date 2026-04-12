@@ -799,118 +799,6 @@ def api_update_placement(game_uuid):
     return jsonify({"ok": True, "updated": updated})
 
 
-# ── 报名队列 API ──────────────────────────────────────
-
-@app.route("/api/queue")
-def api_queue():
-    """获取报名队列"""
-    db = get_db()
-    queue = list(db.league_queue.find().sort("joinedAt", 1))
-    for q in queue:
-        q["_id"] = str(q["_id"])
-        q["joinedAt"] = to_iso_str(q.get("joinedAt"))
-    return jsonify(queue)
-
-
-@app.route("/api/waiting-queue")
-def api_waiting_queue():
-    """获取等待队列（每满N人创建一个独立组）"""
-    db = get_db()
-    groups = list(db.league_waiting_queue.find().sort("createdAt", 1))
-    for g in groups:
-        g["_id"] = str(g["_id"])
-        g["createdAt"] = to_iso_str(g.get("createdAt"))
-    return jsonify(groups)
-
-
-@app.route("/api/queue/join", methods=["POST"])
-def api_queue_join():
-    """加入报名队列，优先补入未满的等待组"""
-    name = session.get("battleTag") or session.get("displayName", "")
-    if not name:
-        return jsonify({"error": "请先登录"}), 401
-
-    db = get_db()
-
-    # 不能重复报名或已在等待组中
-    if db.league_queue.find_one({"name": name}):
-        return jsonify({"error": "已在报名队列中"}), 400
-    if db.league_waiting_queue.find_one({"players.name": name}):
-        return jsonify({"error": "已在等待队列中"}), 400
-
-    # 优先补入未满的等待组
-    incomplete_group = None
-    for g in db.league_waiting_queue.find().sort("createdAt", 1):
-        if len(g.get("players", [])) < 8:
-            incomplete_group = g
-            break
-
-    # 查找 accountIdLo
-    player_info = db.league_players.find_one({"battleTag": name})
-    account_id_lo = str(player_info.get("accountIdLo", "")) if player_info else ""
-
-    player_entry = {"name": name, "accountIdLo": account_id_lo}
-
-    if incomplete_group:
-        db.league_waiting_queue.update_one(
-            {"_id": incomplete_group["_id"]},
-            {"$push": {"players": player_entry}}
-        )
-        return jsonify({"ok": True, "name": name, "moved": True})
-
-    # 没有未满的组，加入报名队列
-    db.league_queue.update_one(
-        {"name": name},
-        {"$setOnInsert": {"name": name, "joinedAt": datetime.now(UTC).isoformat() + "Z"}},
-        upsert=True,
-    )
-
-    # 检查是否满N人
-    signup_count = db.league_queue.count_documents({})
-    if signup_count >= 8:
-        signup = list(db.league_queue.find().sort("joinedAt", 1).limit(8))
-        players = []
-        names = []
-        for p in signup:
-            p_name = p["name"]
-            names.append(p_name)
-            p_info = db.league_players.find_one({"battleTag": p_name})
-            p_lo = str(p_info.get("accountIdLo", "")) if p_info else ""
-            players.append({"name": p_name, "accountIdLo": p_lo})
-        db.league_waiting_queue.insert_one({
-            "players": players,
-            "createdAt": datetime.now(UTC).isoformat() + "Z",
-        })
-        db.league_queue.delete_many({"name": {"$in": names}})
-        return jsonify({"ok": True, "name": name, "moved": True})
-
-    return jsonify({"ok": True, "name": name, "moved": False})
-
-
-@app.route("/api/queue/leave", methods=["POST"])
-def api_queue_leave():
-    """退出报名队列或等待队列"""
-    name = session.get("battleTag") or session.get("displayName", "")
-    if not name:
-        return jsonify({"error": "请先登录"}), 401
-
-    db = get_db()
-    # 从报名队列移除
-    db.league_queue.delete_one({"name": name})
-    # 从等待组中移除（如果组内没人了则删除整个组）
-    group = db.league_waiting_queue.find_one({"players.name": name})
-    if group:
-        remaining = [p for p in group["players"] if p["name"] != name]
-        if remaining:
-            db.league_waiting_queue.update_one(
-                {"_id": group["_id"]},
-                {"$set": {"players": remaining}}
-            )
-        else:
-            db.league_waiting_queue.delete_one({"_id": group["_id"]})
-    return jsonify({"ok": True, "name": name})
-
-
 # ── 注册验证 API ──────────────────────────────────────
 
 @app.route("/api/register", methods=["POST"])
@@ -1094,28 +982,6 @@ def sse_active_games():
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-@app.route("/api/events/queue")
-def sse_queue():
-    """SSE: 报名队列变化推送"""
-    def fetch():
-        db = get_db()
-        queue = list(db.league_queue.find().sort("joinedAt", 1))
-        return [{"name": q["name"]} for q in queue]
-    return Response(_sse_generate(fetch), mimetype="text/event-stream",
-                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-
-
-@app.route("/api/events/waiting-queue")
-def sse_waiting_queue():
-    """SSE: 等待队列变化推送"""
-    def fetch():
-        db = get_db()
-        groups = list(db.league_waiting_queue.find().sort("createdAt", 1))
-        return [{"players": g.get("players", [])} for g in groups]
-    return Response(_sse_generate(fetch), mimetype="text/event-stream",
-                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-
-
 @app.route("/api/events/matches")
 def sse_matches():
     """SSE: 最近对局变化推送（有新对局结束时触发）"""
@@ -1293,68 +1159,7 @@ def api_plugin_check_league():
 
         return jsonify({"isLeague": True})
 
-    # ── 等待组匹配（原有逻辑）──
-    # 遍历等待组，找完全匹配
-    waiting_groups = list(db.league_waiting_queue.find().sort("createdAt", 1))
-    matched_group = None
-
-    for group in waiting_groups:
-        queue_ids = set()
-        has_all_ids = True
-        for p in group.get("players", []):
-            lo = str(p.get("accountIdLo", ""))
-            if lo:
-                queue_ids.add(lo)
-            else:
-                has_all_ids = False
-                break
-
-        # 只匹配有完整 accountIdLo 的组（新数据）
-        if has_all_ids and len(account_ids) == len(queue_ids) and account_ids == queue_ids:
-            matched_group = group
-            break
-
-    if matched_group is None:
-        return jsonify({"isLeague": False})
-
-    # 删除等待组
-    db.league_waiting_queue.delete_one({"_id": matched_group["_id"]})
-
-    # 构建 players 数组（优先用请求体中的详细信息，fallback 到等待组数据）
-    detailed_players = data.get("players", {})  # {accountIdLo: {heroCardId, heroName, battleTag, displayName}}
-
-    players = []
-    for p in matched_group.get("players", []):
-        lo = str(p.get("accountIdLo", ""))
-        detail = detailed_players.get(lo, {})
-        players.append({
-            "accountIdLo": lo,
-            "battleTag": detail.get("battleTag", p.get("name", "")),
-            "displayName": detail.get("displayName", p.get("name", "")),
-            "heroCardId": detail.get("heroCardId", ""),
-            "heroName": detail.get("heroName", ""),
-            "placement": None,
-            "points": None,
-        })
-
-    # 创建 league_matches 文档（upsert 防重复）
-    mode = data.get("mode", "solo")
-    region = data.get("region", "CN")
-    started_at = data.get("startedAt", datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S"))
-
-    db.league_matches.update_one(
-        {"gameUuid": game_uuid},
-        {"$setOnInsert": {
-            "players": players,
-            "region": region,
-            "mode": mode,
-            "startedAt": started_at,
-            "endedAt": None,
-        }},
-        upsert=True,
-    )
-
-    return jsonify({"isLeague": True})
+    return jsonify({"isLeague": False})
 
 
 @app.route("/api/plugin/update-placement", methods=["POST"])

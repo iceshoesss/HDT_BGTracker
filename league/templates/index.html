@@ -73,8 +73,8 @@
         </div>
     </div>
 
-    <!-- 右侧：正在进行 + 报名/等待队列 -->
-    <div class="w-full lg:w-auto flex-shrink-0 flex gap-3 items-start">
+    <!-- 右侧：正在进行 -->
+    <div class="w-full lg:w-auto flex-shrink-0">
         <!-- 正在进行 -->
         <div class="w-72 bg-hearth-card rounded-xl gold-border overflow-hidden">
             <div class="px-5 py-4 border-b border-hearth-border flex items-center gap-2">
@@ -83,28 +83,6 @@
             </div>
             <div id="active-games-list" class="divide-y divide-hearth-border"></div>
             <div id="active-games-pager" class="px-5 py-3 flex items-center justify-center gap-1"></div>
-        </div>
-
-        <!-- 报名 + 等待队列 -->
-        <div class="w-72 space-y-3" id="queue-column">
-        <!-- 报名队列 -->
-        <div class="bg-hearth-card rounded-xl gold-border overflow-hidden">
-            <div class="px-5 py-4 border-b border-hearth-border flex items-center justify-between">
-                <h2 class="text-lg font-bold text-hearth-gold">📋 报名队列</h2>
-                <span class="text-xs text-hearth-dim" id="queue-count">0 人</span>
-            </div>
-            <div id="queue-list" class="divide-y divide-hearth-border">
-                <div class="px-5 py-6 text-center text-sm text-hearth-dim">加载中...</div>
-            </div>
-            <div class="px-5 py-4 border-t border-hearth-border">
-                <button id="queue-btn" onclick="toggleQueue()" class="w-full py-2.5 rounded-lg font-bold text-sm transition bg-hearth-gold/20 text-hearth-gold hover:bg-hearth-gold/30">
-                    ✋ 报名参加
-                </button>
-            </div>
-        </div>
-
-        <!-- 等待队列（动态渲染，每组一个框） -->
-        <div id="waiting-queue-container"></div>
         </div>
     </div>
 </div>
@@ -219,8 +197,6 @@ setInterval(updateTimers, 1000);
 
 // ── SSE 实时推送 ────────────────────────────────────
 const MY_NAME = {% if current_user %}{{ current_user.battleTag | tojson }}{% else %}null{% endif %};
-let queueData = [];
-let waitingData = [];
 
 // --- 进行中对局 SSE ---
 let activeEs = null;
@@ -241,45 +217,6 @@ function connectActiveGames() {
     };
 }
 connectActiveGames();
-
-// --- 报名队列 SSE ---
-let queueEs = null;
-function connectQueue() {
-    if (queueEs) queueEs.close();
-    queueEs = new EventSource('/api/events/queue');
-    queueEs.onmessage = function(e) {
-        try {
-            queueData = JSON.parse(e.data);
-            renderQueue();
-        } catch (err) {
-            console.error('SSE queue parse error:', err);
-        }
-    };
-    queueEs.onerror = function() {
-        console.warn('SSE queue disconnected, will auto-reconnect');
-    };
-}
-connectQueue();
-
-// --- 等待队列 SSE ---
-let waitingEs = null;
-function connectWaitingQueue() {
-    if (waitingEs) waitingEs.close();
-    waitingEs = new EventSource('/api/events/waiting-queue');
-    waitingEs.onmessage = function(e) {
-        try {
-            waitingData = JSON.parse(e.data);
-            renderWaitingQueue();
-            renderQueue();
-        } catch (err) {
-            console.error('SSE waiting-queue parse error:', err);
-        }
-    };
-    waitingEs.onerror = function() {
-        console.warn('SSE waiting-queue disconnected, will auto-reconnect');
-    };
-}
-connectWaitingQueue();
 
 // --- 最近对局 SSE ---
 let matchesEs = null;
@@ -304,13 +241,9 @@ connectMatches();
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
         activeEs?.close();
-        queueEs?.close();
-        waitingEs?.close();
         matchesEs?.close();
     } else {
         connectActiveGames();
-        connectQueue();
-        connectWaitingQueue();
         connectMatches();
     }
 });// 正在进行 - 分页
@@ -410,114 +343,5 @@ function renderMatches(matches) {
     }).join('');
 }
 
-// --- 报名队列 SSE (已在上面 connectQueue 中定义) ---
-
-// --- 等待队列 SSE (已在上面 connectWaitingQueue 中定义) ---
-
-function renderQueue() {
-    const list = document.getElementById('queue-list');
-    const count = document.getElementById('queue-count');
-    const btn = document.getElementById('queue-btn');
-
-    count.textContent = `${queueData.length} 人`;
-
-    if (queueData.length === 0) {
-        list.innerHTML = '<div class="px-5 py-6 text-center text-sm text-hearth-dim">暂无报名</div>';
-    } else {
-        list.innerHTML = queueData.map((q, i) => `
-            <div class="flex items-center gap-3 px-5 py-2.5 text-sm">
-                <span class="text-hearth-dim font-mono w-5 text-right">${i + 1}</span>
-                <span>${q.name}</span>
-            </div>
-        `).join('');
-    }
-
-    if (!MY_NAME) {
-        btn.textContent = '请先登录';
-        btn.className = 'w-full py-2.5 rounded-lg font-bold text-sm transition bg-hearth-border text-hearth-dim cursor-not-allowed';
-        return;
-    }
-
-    // 如果在等待队列里，报名按钮变灰
-    const inWaiting = waitingData.some(g => (g.players || []).some(p => p.name === MY_NAME));
-    if (inWaiting) {
-        btn.textContent = '已在等待队列';
-        btn.className = 'w-full py-2.5 rounded-lg font-bold text-sm transition bg-hearth-border text-hearth-dim cursor-not-allowed';
-        return;
-    }
-
-    const inQueue = queueData.some(q => q.name === MY_NAME);
-    if (inQueue) {
-        btn.textContent = '❌ 取消报名';
-        btn.className = 'w-full py-2.5 rounded-lg font-bold text-sm transition bg-red-500/20 text-red-400 hover:bg-red-500/30';
-    } else {
-        btn.textContent = '✋ 报名参加';
-        btn.className = 'w-full py-2.5 rounded-lg font-bold text-sm transition bg-hearth-gold/20 text-hearth-gold hover:bg-hearth-gold/30';
-    }
-}
-
-function renderWaitingQueue() {
-    const container = document.getElementById('waiting-queue-container');
-
-    if (waitingData.length === 0) {
-        container.innerHTML = '';
-        return;
-    }
-
-    container.innerHTML = waitingData.map((g, gi) => {
-        const players = (g.players || []).map(p => `
-            <div class="flex items-center gap-2 px-5 py-2.5 text-sm">
-                <span>${p.name}</span>
-            </div>
-        `).join('');
-
-        const inThisGroup = MY_NAME && (g.players || []).some(p => p.name === MY_NAME);
-        const leaveBtn = inThisGroup ? `
-            <div class="px-5 py-3 border-t border-hearth-border">
-                <button onclick="leaveWaitingQueue()" class="w-full py-2 rounded-lg font-bold text-xs transition bg-red-500/20 text-red-400 hover:bg-red-500/30">
-                    ❌ 退出等待
-                </button>
-            </div>` : '';
-
-        return `<div class="bg-hearth-card rounded-xl gold-border overflow-hidden">
-            <div class="px-5 py-3 border-b border-hearth-border flex items-center justify-between">
-                <h2 class="text-sm font-bold text-hearth-gold">⏳ 等待组 #${gi + 1}</h2>
-                <span class="text-xs text-hearth-dim">${(g.players || []).length}/8 人</span>
-            </div>
-            <div class="divide-y divide-hearth-border">${players}</div>
-            ${leaveBtn}
-        </div>`;
-    }).join('');
-}
-
-let queueBusy = false;
-
-async function toggleQueue() {
-    if (!MY_NAME) { window.location.href = '/register'; return; }
-    if (queueBusy) return;
-    if (waitingData.some(g => (g.players || []).some(p => p.name === MY_NAME))) return;
-    const inQueue = queueData.some(q => q.name === MY_NAME);
-    const endpoint = inQueue ? '/api/queue/leave' : '/api/queue/join';
-    queueBusy = true;
-    try {
-        await fetch(endpoint, { method: 'POST' });
-    } catch (e) {
-        alert('操作失败，请重试');
-    }
-    // 防连点：500ms 后才允许再次操作（等 SSE 推回来更新状态）
-    setTimeout(() => { queueBusy = false; }, 500);
-}
-
-async function leaveWaitingQueue() {
-    if (!MY_NAME) return;
-    if (queueBusy) return;
-    queueBusy = true;
-    try {
-        await fetch('/api/queue/leave', { method: 'POST' });
-    } catch (e) {
-        alert('操作失败，请重试');
-    }
-    setTimeout(() => { queueBusy = false; }, 500);
-}
 </script>
 {% endblock %}
