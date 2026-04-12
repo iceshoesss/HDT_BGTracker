@@ -118,10 +118,18 @@ C# 插件 (HDT_BGTracker/)          Flask 网站 (league/)
 ```
 
 **游戏结束检测（2026-04-12 实测）：**
-- 投降时：最后一个 STEP 变化是 **10 (MAIN_ACTION)**，之后无新 step
-- 未测试：自然淘汰（打到最后一个人）时的 step 行为
-- **结论：BG 中游戏结束不触发新的 STEP 变化**，`IsInMenu` 目前是唯一可靠的游戏结束信号
-- 备选方案：在 STEP 10 期间轮询 `FinalPlacement`，一旦非 null 即游戏结束
+- BG 中游戏每轮循环：`9(MAIN_START) → 10(MAIN_ACTION) → 13(MAIN_CLEANUP) → 9 → ...`
+- STEP 10 不是游戏结束，只是**战斗阶段**，每轮都会出现
+- 投降或自然淘汰：**无新 STEP 变化**，游戏直接切回菜单
+- **结论：STEP 检测无法判断 BG 游戏结束**
+
+**游戏结束信号来源（HDT 源码分析）：**
+- `IsInMenu = true` 由 HDT 日志解析器驱动，非游戏 API
+- 触发路径：HDT 监控 `LoadingScreen.log` → 检测 mode 从 `GAMEPLAY` 变为其他 → `HandleInMenu()` → `IsInMenu = true`
+- 自然淘汰时：`State = COMPLETE` tag 先触发 `HandleGameEnd(true)`，`FinalPlacement` 此时已可读
+- 投降时：mode 切回菜单 → `HandleInMenu()` → `IsInMenu = true`
+- **当前方案：保持 `IsInMenu` 检测，这是最简单可靠的方式**
+- 备选方案：轮询 `FinalPlacement`，非 null 即游戏结束（自然淘汰时 `HandleGameEnd(true)` 已填好值）
 
 ### 2.5 HeroDb → 英雄名
 
@@ -430,7 +438,7 @@ docker compose up -d
   - 移除：游戏结束时的 2 秒等待 + `IsInMenu` 判断
   - 移除：STEP 13 调用 `CheckLeagueQueue`，改为 3 秒缓存后立即调用
   - 当前任务：增加 STEP 变化日志，观察游戏结束时的 step 值，确定替代 `IsInMenu` 的检测点
-  - 2026-04-12 实测：投降时最后 STEP 是 10 (MAIN_ACTION)，BG 不触发新 step；需再测自然淘汰场景
+  - 2026-04-12 实测：BG 游戏无结束 step，STEP 10 只是战斗阶段；游戏结束依赖 HDT 的 `IsInMenu`（由日志 mode 变化驱动）
 - [ ] 问题对局页面添加入口链接
 - [x] 编译验证 HearthDb 引用是否可用（`Cards.All` 查英雄名）
 - [x] SSE 连接 120 秒自动断开 + 客户端重连，防僵尸连接堆积
