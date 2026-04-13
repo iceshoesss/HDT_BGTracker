@@ -357,9 +357,14 @@ pipeline = [
 - **队列超时机制**：
   - `@app.before_request` 刷新 `league_players.lastSeen` + `league_queue.lastSeen`
   - 报名队列 10 分钟无活动自动踢出（`QUEUE_TIMEOUT_MINUTES`）
-  - 等待队列 20 分钟自动解散，活跃玩家回报名队列（`WAITING_QUEUE_TIMEOUT_MINUTES`）
+  - 等待队列 20 分钟自动解散，不再回到报名队列（`WAITING_QUEUE_TIMEOUT_MINUTES`）
   - 登出时自动退出所有队列
   - 清理时机：周期性（60s）+ 队列操作时 + check-league 时
+- **代码质量**：
+  - 验证码逻辑抽成 `_ensure_verification_code()`，消除 3 处重复代码
+  - `print()` 全部替换为 `logging` 模块（info/warning/error）
+  - 移除 `league_players` 中未使用的统计字段（totalGames/totalPoints/wins/chickens/avgPlacement）
+  - `toggle-test-mode.py` 同步更新
 
 ### v0.5.1 (2026-04-13)
 - 版本号 0.5.1，编译输出 DLL 改用下划线分隔（`HDT_BGTracker_0.5.1.dll`）
