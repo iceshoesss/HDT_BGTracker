@@ -10,7 +10,7 @@ namespace HDT_BGTracker
         public string Name => "BG Rating Tracker";
         public string Description => "酒馆战棋联赛自动记录插件，https://da.iceshoes.dpdns.org/";
         public string Author => "iceshoesss";
-        public Version Version => new Version(1, 0, 0);
+        public Version Version => typeof(BGTrackerPlugin).Assembly.GetName().Version;
         public string ButtonText => "测试连接";
 
         public MenuItem MenuItem { get; private set; }

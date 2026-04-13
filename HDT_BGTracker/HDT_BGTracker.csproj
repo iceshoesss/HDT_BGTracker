@@ -6,9 +6,18 @@
     <RootNamespace>HDT_BGTracker</RootNamespace>
     <AssemblyName>HDT_BGTracker</AssemblyName>
     <LangVersion>8.0</LangVersion>
-    <Version>1.0.0</Version>
+    <Version>0.5.0</Version>
     <Description>酒馆战棋分数记录插件</Description>
   </PropertyGroup>
+
+  <!-- 编译后将输出 DLL 重命名为带版本号 -->
+  <Target Name="VersionedOutput" AfterTargets="Build">
+    <PropertyGroup>
+      <VersionedDll>$(OutputPath)$(AssemblyName)-$(Version).dll</VersionedDll>
+    </PropertyGroup>
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFiles="$(VersionedDll)" />
+    <Message Importance="high" Text="版本化输出: $(VersionedDll)" />
+  </Target>
 
   <!-- HDT 引用：编译时从本地 HDT 目录引用，不复制到输出 -->
   <ItemGroup>
