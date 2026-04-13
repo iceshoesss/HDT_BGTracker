@@ -264,6 +264,7 @@ namespace HDT_BGTracker
                     string json = _json.Serialize(new Dictionary<string, object>
                     {
                         ["playerId"] = _cachedPlayerId ?? "",
+                        ["accountIdLo"] = _cachedAccountIdLo ?? "",
                         ["gameUuid"] = gameUuid,
                         ["accountIdLoList"] = accountIdList,
                         ["players"] = playerDetails,
