@@ -6,14 +6,14 @@
     <RootNamespace>HDT_BGTracker</RootNamespace>
     <AssemblyName>HDT_BGTracker</AssemblyName>
     <LangVersion>8.0</LangVersion>
-    <Version>0.5.0</Version>
+    <Version>0.5.1</Version>
     <Description>酒馆战棋分数记录插件</Description>
   </PropertyGroup>
 
   <!-- 编译后将输出 DLL 重命名为带版本号 -->
   <Target Name="VersionedOutput" AfterTargets="Build">
     <PropertyGroup>
-      <VersionedDll>$(OutputPath)$(AssemblyName)-$(Version).dll</VersionedDll>
+      <VersionedDll>$(OutputPath)$(AssemblyName)_$(Version).dll</VersionedDll>
     </PropertyGroup>
     <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFiles="$(VersionedDll)" />
     <Message Importance="high" Text="版本化输出: $(VersionedDll)" />
