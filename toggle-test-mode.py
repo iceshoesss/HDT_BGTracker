@@ -67,6 +67,7 @@ FLASK_NORMAL = '''\
         )
         if vc:
             resp["verificationCode"] = vc
+        cleanup_stale_queues()
         return jsonify(resp)
     # <<< END TEST_MODE'''
 
@@ -133,6 +134,7 @@ FLASK_TEST = '''\
         )
         if vc:
             resp["verificationCode"] = vc
+        cleanup_stale_queues()
         return jsonify(resp)
     # <<< END TEST_MODE'''
 
