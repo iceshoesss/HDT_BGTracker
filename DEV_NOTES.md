@@ -266,31 +266,39 @@ def to_epoch(dt_val):
         return int(dt_val.timestamp())
     # 字符串 fallback ...
 
-# 安全转 ISO 字符串
+# 安全转 ISO 字符串（统一带 Z 后缀，方便前端 new Date() 正确解析为 UTC）
 def to_iso_str(dt_val):
     if isinstance(dt_val, (datetime, bson_datetime.datetime)):
-        return dt_val.strftime("%Y-%m-%dT%H:%M:%S")
-    return str(dt_val)
+        return dt_val.strftime("%Y-%m-%dT%H:%M:%SZ")
+    s = str(dt_val)
+    if s and not s.endswith("Z") and "+" not in s and s.count("-") <= 2:
+        s += "Z"
+    return s
 
-# 转北京时间
+# 转北京时间（Jinja filter，后端直接输出 CST）
 def to_cst_str(dt_val):
-    # +8 hours ...
+    # +8 hours，处理 BSON datetime 和带 Z 的字符串
     return cst.strftime("%Y-%m-%d %H:%M")
 
 app.jinja_env.filters['cst'] = to_cst_str
 ```
 
+**重要**：`to_iso_str()` 自 v0.5.3 起统一返回带 `Z` 的 UTC 时间。前端 `new Date(str)` 会正确解析为 UTC，再手动 +8h 转北京时间。所有 MongoDB 字符串比较（如 `startedAt` cutoff）也必须同步加 `Z`。
+
 ### 4.4 active games 时间比较
 
-`startedAt` 存为字符串格式，Python 查询必须用字符串比较（不是 datetime 对象）：
+`startedAt` 存为字符串格式（带 `Z` 后缀），Python 查询必须用字符串比较（不是 datetime 对象）：
 
 ```python
-# ✅ 正确
-cutoff_str = (datetime.utcnow() - timedelta(minutes=80)).strftime("%Y-%m-%dT%H:%M:%S")
+# ✅ 正确 — cutoff 字符串必须带 Z 后缀匹配 startedAt 格式
+cutoff_str = (datetime.now(UTC) - timedelta(minutes=80)).strftime("%Y-%m-%dT%H:%M:%SZ")
 query = {"startedAt": {"$gte": cutoff_str}}
 
+# ❌ 错误 — cutoff 不带 Z，而 startedAt 带 Z，字符串比较会出错
+cutoff_str = (datetime.now(UTC) - timedelta(minutes=80)).strftime("%Y-%m-%dT%H:%M:%S")
+
 # ❌ 错误 — MongoDB BSON datetime 和 String 排序不同
-cutoff_dt = datetime.utcnow() - timedelta(minutes=80)
+cutoff_dt = datetime.now(UTC) - timedelta(minutes=80)
 query = {"startedAt": {"$gte": cutoff_dt}}  # 永远 false
 ```
 
@@ -352,6 +360,17 @@ pipeline = [
 ---
 
 ## 5. 更新记录
+
+### v0.5.3 (2026-04-14)
+- **登录状态持久化修复**：
+  - 显式配置 `SESSION_COOKIE_SAMESITE = "Lax"` + `SESSION_COOKIE_HTTPONLY = True`
+  - 修复登录后点击其他页面（选手页、问题对局页等）丢失登录状态的问题
+  - `SESSION_COOKIE_SECURE` 暂为 `False`（HTTP 可用），上线 HTTPS 后改为 `True`
+- **时间显示修正**：
+  - `to_iso_str()` 统一返回带 `Z` 后缀的 UTC 时间字符串
+  - 所有 MongoDB 字符串比较用的 cutoff 时间同步加 `Z`（保证 `startedAt` 查询正确）
+  - player.html `toCst()` 重写：改用 `getUTC*` 方法 +8h 转北京时间，修复双重时区偏移
+  - 兼容新旧格式（带/不带 Z 后缀）的时间字符串
 
 ### v0.5.2 (2026-04-13)
 - **队列超时机制**：
