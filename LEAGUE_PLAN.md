@@ -219,7 +219,7 @@
 ### Phase 1 — 插件完善对局数据上报（当前）
 1. 上传数据补充 `heroName`、`startedAt`、完整 8 人 accountIdLo
 2. 新增 `raw_games` 集合写入（完整对局数据，供联赛匹配用）
-3. 保持原有 `bg_ratings` 写入不变
+3. 保持原有 `player_records` 写入不变
 
 ### Phase 2 — Flask 网站接入真实数据
 1. 排行榜从 `league_players` 查询

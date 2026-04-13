@@ -20,7 +20,7 @@ C# 插件 (HDT_BGTracker/)          Flask 网站 (league/)
                                   └─────────────────────┘
                                           ↓
                                    MongoDB (hearthstone)
-                                   ├ bg_ratings
+                                   ├ player_records
                                    ├ league_matches
                                    ├ league_queue
                                    ├ league_waiting_queue
@@ -32,7 +32,7 @@ C# 插件 (HDT_BGTracker/)          Flask 网站 (league/)
 ```
 玩家打完一局 → 插件 OnUpdate 检测游戏结束
   → 读取 rating + placement + opponents
-  → HTTP POST /api/plugin/upload-rating → Flask 写入 bg_ratings
+  → HTTP POST /api/plugin/upload-rating → Flask 写入 player_records
   → STEP 13: POST /api/plugin/check-league → 匹配等待组 → 创建 league_matches
   → 游戏结束: POST /api/plugin/update-placement → 更新排名 + 积分
   → 验证码：服务端基于 ObjectId 生成，首次上传时返回
@@ -440,7 +440,7 @@ pipeline = [
 
 | 集合 | 写入方 | 说明 |
 |------|--------|------|
-| `bg_ratings` | Flask API（`/api/plugin/upload-rating`） | 玩家分数记录（含验证码） |
+| `player_records` | Flask API（`/api/plugin/upload-rating`） | 玩家分数记录（含验证码） |
 | `league_matches` | Flask API（`/api/plugin/check-league` + `/api/plugin/update-placement`） | 联赛对局（8人完整数据） |
 | `league_queue` | Flask 网站 | 报名队列（含 `lastSeen` 超时踢出） |
 | `league_waiting_queue` | Flask 网站 + `/api/plugin/check-league` | 等待组（满 N 人自动创建，20 分钟超时解散） |
@@ -532,8 +532,8 @@ docker compose up -d
   - 2026-04-12 实测：BG 游戏无结束 step，STEP 10 只是战斗阶段；游戏结束依赖 HDT 的 `IsInMenu`（由日志 mode 变化驱动）
 - [x] 编译验证 HearthDb 引用是否可用（`Cards.All` 查英雄名）
 - [x] SSE 连接 120 秒自动断开 + 客户端重连，防僵尸连接堆积
-- [x] **bg_ratings 精简：移除 `games`、`ratingChanges`、`placements` 数组** ✅ 已完成
-  - 联赛所有数据（排名、英雄、时间戳）已完整存储在 `league_matches` 中，`bg_ratings` 的历史数组纯属冗余
+- [x] **player_records 精简：移除 `games`、`ratingChanges`、`placements` 数组** ✅ 已完成
+  - 联赛所有数据（排名、英雄、时间戳）已完整存储在 `league_matches` 中，`player_records` 的历史数组纯属冗余
   - 移除后单条从 ~14.5KB 降到 ~1.5KB，节省 90%
   - 保留字段：`playerId`、`accountIdLo`、`rating`、`lastRating`、`ratingChange`、`gameCount`、`mode`、`region`、`timestamp`、`verificationCode`
   - 已同步更新 `README.md`、`API.md` 数据结构文档

@@ -97,7 +97,7 @@ tar -a -cf HDT_BGTracker.zip HDT_BGTracker.dll
 
 ## 数据结构
 
-MongoDB 数据库: `hearthstone`，集合: `bg_ratings`
+MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 ```json
 {

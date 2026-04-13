@@ -366,7 +366,7 @@ https://art.hearthstonejson.com/v1/256x/{heroCardId}.jpg
 
 | 集合 | 说明 |
 |------|------|
-| `bg_ratings` | 插件上传的玩家分数记录（含验证码） |
+| `player_records` | 插件上传的玩家分数记录（含验证码） |
 | `league_matches` | 联赛对局（8 人完整数据） |
 | `league_queue` | 报名队列 |
 | `league_waiting_queue` | 等待组（满 8 人自动创建） |
