@@ -353,6 +353,14 @@ pipeline = [
 
 ## 5. 更新记录
 
+### v0.5.2 (2026-04-13)
+- **队列超时机制**：
+  - `@app.before_request` 刷新 `league_players.lastSeen` + `league_queue.lastSeen`
+  - 报名队列 10 分钟无活动自动踢出（`QUEUE_TIMEOUT_MINUTES`）
+  - 等待队列 20 分钟自动解散，活跃玩家回报名队列（`WAITING_QUEUE_TIMEOUT_MINUTES`）
+  - 登出时自动退出所有队列
+  - 清理时机：周期性（60s）+ 队列操作时 + check-league 时
+
 ### v0.5.1 (2026-04-13)
 - 版本号 0.5.1，编译输出 DLL 改用下划线分隔（`HDT_BGTracker_0.5.1.dll`）
 
@@ -390,11 +398,22 @@ pipeline = [
 |------|--------|------|
 | `bg_ratings` | Flask API（`/api/plugin/upload-rating`） | 玩家分数记录（含验证码） |
 | `league_matches` | Flask API（`/api/plugin/check-league` + `/api/plugin/update-placement`） | 联赛对局（8人完整数据） |
-| `league_queue` | Flask 网站 | 报名队列 |
-| `league_waiting_queue` | Flask 网站 + `/api/plugin/check-league` | 等待组（满 N 人自动创建） |
-| `league_players` | Flask 网站 | 已注册选手 |
+| `league_queue` | Flask 网站 | 报名队列（含 `lastSeen` 超时踢出） |
+| `league_waiting_queue` | Flask 网站 + `/api/plugin/check-league` | 等待组（满 N 人自动创建，20 分钟超时解散） |
+| `league_players` | Flask 网站 | 已注册选手（含 `lastSeen` 活跃追踪） |
 
 > C# 插件不再直接操作 MongoDB，所有写入通过 Flask API 中转。
+
+### 队列超时机制
+
+| 队列 | 超时时间 | 触发条件 | 行为 |
+|------|----------|----------|------|
+| `league_queue` | 10 分钟 | `lastSeen` 超时 | 自动踢出 |
+| `league_waiting_queue` | 20 分钟 | `createdAt` 超时 | 解散组，活跃玩家回报名队列 |
+
+`lastSeen` 由 `@app.before_request` 在每次页面请求时刷新，报名队列条目同步更新。
+登出时自动退出所有队列。
+清理时机：周期性（60s）+ 队列 API 调用时 + 插件 check-league 调用时。
 
 ### 积分规则
 
