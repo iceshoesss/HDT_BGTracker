@@ -56,73 +56,17 @@ FLASK_NORMAL = '''\
     # >>> BEGIN TEST_MODE
     if matched_group is None:
         # fallback：等待组已被队友匹配删除，但联赛对局已创建
-        if db.league_matches.find_one({"gameUuid": game_uuid}):
-            resp = {"isLeague": True}
-            player_id = data.get("playerId", "").strip()
-            if player_id and player_id != "unknown":
-                account_id_lo_for_code = data.get("accountIdLo", "").strip()
-                existing_rating = db.bg_ratings.find_one({"playerId": player_id})
-                if existing_rating:
-                    vc = existing_rating.get("verificationCode")
-                    if vc:
-                        resp["verificationCode"] = vc
-                    if account_id_lo_for_code and not existing_rating.get("accountIdLo"):
-                        db.bg_ratings.update_one(
-                            {"_id": existing_rating["_id"]},
-                            {"$set": {"accountIdLo": account_id_lo_for_code}}
-                        )
-                else:
-                    mode = data.get("mode", "solo")
-                    region = data.get("region", "CN")
-                    now_str = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
-                    doc = {
-                        "playerId": player_id,
-                        "accountIdLo": account_id_lo_for_code,
-                        "rating": 0, "lastRating": 0, "ratingChange": 0,
-                        "mode": mode, "region": region, "timestamp": now_str, "gameCount": 0,
-                    }
-                    result = db.bg_ratings.insert_one(doc)
-                    vc = _generate_verification_code(result.inserted_id)
-                    db.bg_ratings.update_one({"_id": result.inserted_id}, {"$set": {"verificationCode": vc}})
-                    resp["verificationCode"] = vc
-            return jsonify(resp)
-        # 真的不是联赛局
-        resp = {"isLeague": False}
-        player_id = data.get("playerId", "").strip()
-        if player_id and player_id != "unknown":
-            account_id_lo_for_code = data.get("accountIdLo", "").strip()
-            existing_rating = db.bg_ratings.find_one({"playerId": player_id})
-            if existing_rating:
-                vc = existing_rating.get("verificationCode")
-                if vc:
-                    resp["verificationCode"] = vc
-                if account_id_lo_for_code and not existing_rating.get("accountIdLo"):
-                    db.bg_ratings.update_one(
-                        {"_id": existing_rating["_id"]},
-                        {"$set": {"accountIdLo": account_id_lo_for_code}}
-                    )
-            else:
-                mode = data.get("mode", "solo")
-                region = data.get("region", "CN")
-                now_str = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
-                doc = {
-                    "playerId": player_id,
-                    "accountIdLo": account_id_lo_for_code,
-                    "rating": 0,
-                    "lastRating": 0,
-                    "ratingChange": 0,
-                    "mode": mode,
-                    "region": region,
-                    "timestamp": now_str,
-                    "gameCount": 0,
-                }
-                result = db.bg_ratings.insert_one(doc)
-                vc = _generate_verification_code(result.inserted_id)
-                db.bg_ratings.update_one(
-                    {"_id": result.inserted_id},
-                    {"$set": {"verificationCode": vc}}
-                )
-                resp["verificationCode"] = vc
+        is_league = db.league_matches.find_one({"gameUuid": game_uuid}) is not None
+        resp = {"isLeague": is_league}
+        vc = _ensure_verification_code(
+            db,
+            player_id=data.get("playerId", "").strip(),
+            account_id_lo=data.get("accountIdLo", "").strip(),
+            mode=data.get("mode", "solo"),
+            region=data.get("region", "CN"),
+        )
+        if vc:
+            resp["verificationCode"] = vc
         return jsonify(resp)
     # <<< END TEST_MODE'''
 
@@ -164,26 +108,14 @@ FLASK_TEST = '''\
 
         # 验证码处理
         resp = {"isLeague": True}
-        player_id = data.get("playerId", "").strip()
-        if player_id and player_id != "unknown":
-            account_id_lo_for_code = data.get("accountIdLo", "").strip()
-            existing_rating = db.bg_ratings.find_one({"playerId": player_id})
-            if existing_rating:
-                vc = existing_rating.get("verificationCode")
-                if vc:
-                    resp["verificationCode"] = vc
-            else:
-                now_str = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
-                doc = {
-                    "playerId": player_id,
-                    "accountIdLo": account_id_lo_for_code,
-                    "rating": 0, "lastRating": 0, "ratingChange": 0,
-                    "mode": mode, "region": region, "timestamp": now_str, "gameCount": 0,
-                }
-                result = db.bg_ratings.insert_one(doc)
-                vc = _generate_verification_code(result.inserted_id)
-                db.bg_ratings.update_one({"_id": result.inserted_id}, {"$set": {"verificationCode": vc}})
-                resp["verificationCode"] = vc
+        vc = _ensure_verification_code(
+            db,
+            player_id=data.get("playerId", "").strip(),
+            account_id_lo=data.get("accountIdLo", "").strip(),
+            mode=mode, region=region, timestamp=started_at,
+        )
+        if vc:
+            resp["verificationCode"] = vc
         return jsonify(resp)
     # <<< END TEST_MODE'''
 
