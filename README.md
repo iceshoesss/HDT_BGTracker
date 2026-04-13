@@ -1,6 +1,8 @@
 # HDT_BGTracker
 
-炉石传说酒馆战棋分数记录插件，在每局结束后自动记录分数并上传到联赛网站。配套联赛网站用于排行榜、对局记录和报名。
+炉石传说酒馆战棋联赛插件（HDT 插件），每局结束后自动检测联赛对局并上传排名。
+
+**配套联赛网站**：[LeagueWeb](https://github.com/iceshoesss/LeagueWeb)（已拆分为独立仓库）
 
 ## 项目结构
 
@@ -11,48 +13,29 @@ HDT_BGTracker/
 │   ├── RatingTracker.cs    # 核心逻辑（联赛匹配 + 排名上传）
 │   ├── LobbyOverlay.cs     # 游戏内浮动面板（已禁用）
 │   └── HDT_BGTracker.csproj
-├── league/                 # Flask 联赛网站 + 插件 API
-│   ├── app.py              # 后端 API + 页面 + 插件端点
-│   ├── templates/          # Jinja2 模板（Tailwind CSS + ECharts CDN）
-│   ├── Dockerfile
-│   └── requirements.txt
-├── docker-compose.yml      # Docker 部署
-├── API.md                  # 网站 API 文档
+├── API.md                  # 插件调用的 API 文档（与 LeagueWeb 共享）
 ├── DEV_NOTES.md            # 开发文档（踩坑记录）
 └── sync.ps1 / sync.sh      # 同步脚本（保护本地配置）
 ```
 
 ## 版本管理
 
-项目有**两套独立版本号**，互不关联：
-
-| 组件 | 版本常量 | 何时递增 |
-|------|----------|----------|
-| C# 插件 | `BGTrackerPlugin.cs` + `csproj` | 插件功能/bugfix 时 |
-| 联赛网站 | `league/app.py` → `WEB_VERSION` | 网站功能/bugfix 时 |
-
 ### 版本号规则
 
-采用 `v主版本.次版本.修订号`（如 `v0.1.0`）：
+采用 `v主版本.次版本.修订号`（如 `v0.5.2`）：
 
-- **修订号 +1** — 修 bug（`v0.2.12` → `v0.2.13`）
-- **次版本 +1** — 加新功能（`v0.2.13` → `v0.3.0`）
+- **修订号 +1** — 修 bug（`v0.5.2` → `v0.5.3`）
+- **次版本 +1** — 加新功能（`v0.5.2` → `v0.6.0`）
 - **主版本 +1** — 大改/重构/正式发布（`v0.x.x` → `v1.0.0`）
 
 ### 修改版本号的位置
 
-**C# 插件**（两个地方同步修改）：
+两个地方必须同步修改：
 
 | 文件 | 位置 | 用途 |
 |------|------|------|
 | `HDT_BGTracker/HDT_BGTracker.csproj` | `<Version>1.0.0</Version>` | 程序集版本 |
 | `HDT_BGTracker/BGTrackerPlugin.cs` | `public Version Version => new Version(1, 0, 0);` | HDT 插件显示版本 |
-
-**联赛网站**（一个地方修改）：
-
-| 文件 | 位置 | 用途 |
-|------|------|------|
-| `league/app.py` | `WEB_VERSION = "0.2.13"` | 网站版本，自动显示在页面底部 |
 
 ### Docker 镜像 tag
 
@@ -66,54 +49,11 @@ docker build -t league-web:v0.1.0 -t league-web:latest ./league
 
 ### 前置条件
 
-- Docker
+## 联赛网站
 
-### 构建
+联赛网站已拆分为独立仓库：[LeagueWeb](https://github.com/iceshoesss/LeagueWeb)
 
-```bash
-docker build -t league-web:latest ./league
-```
-
-### 启动
-
-```bash
-docker compose up -d
-```
-
-访问 http://localhost:5000
-
-### 环境变量
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `MONGO_URL` | `mongodb://mongo:27017` | MongoDB 连接地址 |
-| `DB_NAME` | `hearthstone` | 数据库名 |
-| `FLASK_SECRET_KEY` | 随机生成 | Session 签名密钥，生产环境建议固定设置 |
-| `SITE_NAME` | `酒馆战棋联赛` | 网站名称（导航栏 + 页面标题） |
-| `SITE_LOGO` | `🍺` | 网站 Logo，支持 emoji 或图片 URL（如 `https://example.com/logo.png`） |
-
-### 常用命令
-
-```bash
-docker compose logs -f web     # 看日志
-docker compose down            # 停止
-docker compose restart web     # 重启
-```
-
-### 使用外部 MongoDB
-
-删掉 `docker-compose.yml` 中的 `mongo` service 和 `depends_on`，改为：
-
-```yaml
-services:
-  web:
-    image: league-web:latest
-    ports:
-      - "5000:5000"
-    environment:
-      - MONGO_URL=mongodb://你的外部地址:27017
-    restart: unless-stopped
-```
+部署、配置、环境变量等详见 LeagueWeb 仓库。
 
 ## C# 插件编译
 
@@ -178,11 +118,7 @@ MongoDB 数据库: `hearthstone`，集合: `bg_ratings`
 
 ## 更新日志
 
-### v0.2.13 (2026-04-14)
-- 修复登录后导航到其他页面丢失登录状态的问题（Session cookie SameSite 配置）
-- 修复 player 页面历史对局时间显示错误（双重时区偏移）
-- 时间格式统一：所有 ISO 时间字符串带 Z 后缀，前端正确解析为 UTC
-- 新增 `WEB_VERSION` 常量，页面底部显示当前版本号
+> Web 端更新日志已迁移至 [LeagueWeb](https://github.com/iceshoesss/LeagueWeb) 仓库。
 
 ### v0.5.2 (2026-04-13)
 - 队列超时机制：报名队列 10 分钟自动踢出，等待队列 20 分钟自动解散
