@@ -54,6 +54,23 @@ C# 插件 (HDT_BGTracker/)          Flask 网站 (league/)
 认证流程：`upload-rating` 首次返回 token → 后续 `update-placement` 携带 token。
 `check-league` 不需要认证（STEP 13 时 token 尚未签发）。
 
+### 1.x 版本管理
+
+项目有**两套独立版本号**，互不关联：
+
+| 组件 | 版本位置 | 何时递增 |
+|------|----------|----------|
+| C# 插件 | `BGTrackerPlugin.cs` + `HDT_BGTracker.csproj` | 插件功能/bugfix |
+| 联赛网站 | `league/app.py` → `WEB_VERSION` | 网站功能/bugfix |
+
+版本号规则：`主版本.次版本.修订号`
+- **修订号 +1** — 修 bug
+- **次版本 +1** — 加新功能
+- **主版本 +1** — 大改/重构/正式发布
+
+`WEB_VERSION` 通过 `inject_counts` context processor 注入所有模板，显示在 `base.html` 底部。
+修改时只需改 `app.py` 中的 `WEB_VERSION = "x.y.z"` 一处。
+
 ---
 
 ## 2. HDT API 关键发现
@@ -361,7 +378,7 @@ pipeline = [
 
 ## 5. 更新记录
 
-### v0.5.3 (2026-04-14)
+### v0.2.13 (2026-04-14)
 - **登录状态持久化修复**：
   - 显式配置 `SESSION_COOKIE_SAMESITE = "Lax"` + `SESSION_COOKIE_HTTPONLY = True`
   - 修复登录后点击其他页面（选手页、问题对局页等）丢失登录状态的问题
@@ -371,6 +388,9 @@ pipeline = [
   - 所有 MongoDB 字符串比较用的 cutoff 时间同步加 `Z`（保证 `startedAt` 查询正确）
   - player.html `toCst()` 重写：改用 `getUTC*` 方法 +8h 转北京时间，修复双重时区偏移
   - 兼容新旧格式（带/不带 Z 后缀）的时间字符串
+- **版本号管理**：
+  - `app.py` 新增 `WEB_VERSION` 常量，通过 context processor 注入所有模板
+  - `base.html` 底部显示版本号
 
 ### v0.5.2 (2026-04-13)
 - **队列超时机制**：
