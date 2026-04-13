@@ -77,6 +77,23 @@ FLASK_TEST = '''\
         detailed_players = data.get("players", {})
         account_ids_raw = data.get("accountIdLoList", [])
         account_ids = sorted(account_ids_raw) if isinstance(account_ids_raw, list) else []
+
+        # [TESTING] 容错：不足 8 人时用 unknown 占位凑满
+        if len(account_ids) < 2:
+            log.warning(f"[check-league] [TESTING] accountIdLoList 过少({len(account_ids)})，跳过")
+            resp = {"isLeague": False}
+            vc = _ensure_verification_code(
+                db,
+                player_id=data.get("playerId", "").strip(),
+                account_id_lo=data.get("accountIdLo", "").strip(),
+            )
+            if vc:
+                resp["verificationCode"] = vc
+            return jsonify(resp)
+
+        while len(account_ids) < 8:
+            account_ids.append(f"unknown_{len(account_ids)}")
+
         players = []
         for lo in account_ids:
             detail = detailed_players.get(lo, {})

@@ -182,6 +182,8 @@ namespace HDT_BGTracker
             try
             {
                 var result = PostJsonOnce(endpoint, jsonBody);
+                if (!result.ok)
+                    Log($"POST {endpoint} 失败: HTTP {result.statusCode}");
                 return result.ok ? (true, result.body) : (false, result.body);
             }
             catch (Exception ex)
@@ -297,7 +299,14 @@ namespace HDT_BGTracker
                             if (dict != null && dict.ContainsKey("verificationCode"))
                                 Log($"验证码: {dict["verificationCode"]} (前往联赛网站注册时使用)");
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            Log($"CheckLeagueQueue: 解析响应异常: {ex.Message}, body={body}");
+                        }
+                    }
+                    else
+                    {
+                        Log($"CheckLeagueQueue: 请求失败，body={body}");
                     }
                 }
                 catch (Exception ex)
