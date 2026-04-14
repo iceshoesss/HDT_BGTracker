@@ -16,7 +16,7 @@ namespace HDT_BGTracker
         // ── 配置 ──────────────────────────────────────────
         private const string ApiBaseUrl = "https://da.iceshoes.dpdns.org/";
         private const string PluginHeaderName = "X-HDT-Plugin";
-        private const string PluginHeaderValue = "v1";
+        private static readonly string PluginHeaderValue = typeof(RatingTracker).Assembly.GetName().Version.ToString(3);
 
         // ── 状态 ──────────────────────────────────────────
         private bool _enabled;
