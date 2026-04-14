@@ -405,9 +405,11 @@ pipeline = [
 - **update-placement 网络重试**：HTTP 请求失败时重试 3 次（间隔 1s/2s/3s）
   - 原逻辑：placement HTTP 请求失败直接丢弃，排名丢失无日志
   - 新逻辑：与 check-league 保持一致，失败后重试 3 次，全部失败才放弃并记录日志
-- **插件版本号机制**：`X-HDT-Plugin` header 从固定值 `v1` 改为自动读取程序集版本号（如 `0.5.5`）
-  - 服务端通过 `MIN_PLUGIN_VERSION` 环境变量控制最低版本
-  - 低于最低版本的插件请求将被拒绝（403），强制用户更新
+- **插件认证 + 版本强制更新**：
+  - `X-HDT-Plugin` header 从固定值 `v1` 改为自动读取程序集版本号（如 `0.5.5`）
+  - 所有请求带 `Authorization: Bearer <key>` header
+  - 服务端双重校验：API Key 不匹配 → 403；版本号过低 → 403
+  - 发新插件时同步更换 key 和版本号，旧插件自动失效
 
 ### v0.5.4 (2026-04-14)
 - **check-league 网络重试**：HTTP 请求失败时重试 3 次（间隔 1s/2s/3s）

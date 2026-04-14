@@ -122,7 +122,7 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 ### v0.5.5 (2026-04-14)
 - update-placement 网络失败时重试 3 次
-- X-HDT-Plugin header 改为自动读取程序集版本号，支持服务端最低版本强制更新
+- 插件认证：所有请求带 `Authorization: Bearer <key>` + 版本号 header，服务端双重校验
 
 ### v0.5.4 (2026-04-14)
 - check-league 网络失败时重试 3 次

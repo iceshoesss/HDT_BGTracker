@@ -17,6 +17,7 @@ namespace HDT_BGTracker
         private const string ApiBaseUrl = "https://da.iceshoes.dpdns.org/";
         private const string PluginHeaderName = "X-HDT-Plugin";
         private static readonly string PluginHeaderValue = typeof(RatingTracker).Assembly.GetName().Version.ToString(3);
+        private const string PluginApiKey = "bgtracker-20260414";
 
         // ── 状态 ──────────────────────────────────────────
         private bool _enabled;
@@ -56,6 +57,8 @@ namespace HDT_BGTracker
 
                 _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
                 _httpClient.DefaultRequestHeaders.Add(PluginHeaderName, PluginHeaderValue);
+                _httpClient.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", PluginApiKey);
 
                 Log("插件已启动（纯联赛模式）");
             }
