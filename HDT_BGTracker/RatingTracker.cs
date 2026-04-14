@@ -468,24 +468,11 @@ namespace HDT_BGTracker
 
         private string GetAccountIdLo()
         {
-            // 方案 1：直接从 Player 对象获取（最可靠，不依赖 Player.Name）
-            try
-            {
-                var playerId = Core.Game?.Player?.AccountId?.Lo;
-                if (playerId.HasValue && playerId.Value != 0)
-                {
-                    string lo = playerId.Value.ToString();
-                    Log($"GetAccountIdLo: Player.AccountId.Lo = {lo}");
-                    return lo;
-                }
-            }
-            catch { }
-
-            // 方案 2：从 LobbyInfo 用名字匹配（兜底）
+            // 从 LobbyInfo 用名字匹配（目前 HDT Player 对象没有直接暴露 AccountId）
             try
             {
                 var lobbyInfo = Core.Game?.MetaData?.BattlegroundsLobbyInfo;
-                if (lobbyInfo?.Players != null && !string.IsNullOrEmpty(_cachedPlayerId))
+                if (lobbyInfo?.Players != null && !string.IsNullOrEmpty(_cachedPlayerId) && _cachedPlayerId != "unknown")
                 {
                     string myNameNoTag = _cachedPlayerId;
                     int hashIdx = myNameNoTag.IndexOf('#');
@@ -507,7 +494,7 @@ namespace HDT_BGTracker
                 Log($"GetAccountIdLo 异常: {ex.Message}");
             }
 
-            Log("GetAccountIdLo: 未找到 accountIdLo");
+            Log("GetAccountIdLo: 未找到 accountIdLo（等待 GetPlayerId 成功后重试）");
             return null;
         }
 
