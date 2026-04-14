@@ -4,13 +4,13 @@
 
 完整流程:
   报名队列 → 等待组(满8人) → STEP 13 check-league → 对局进入「正在进行」
-  → 玩家按顺序被淘汰 → 每人回菜单读 FinalPlacement → 上传 update-placement
-  → 8 人都提交 → 对局结束 → 出现在「最近对局」
+  → 玩家按顺序被淘汰 → 每人独立回菜单 → 独立检查 placement → 上传
+  → 8 人都提交 → 对局结束
 
-支持两种模式对比 placement 重试机制的效果：
-  --mode=before  模拟修复前：placement 读取失败直接跳过
-  --mode=after   模拟修复后：placement 读取失败会重试
-  --mode=both    两种模式都跑，对比结果
+支持两种模式对比 placement 重试机制:
+  --mode=before  模拟修复前: placement 读取失败直接跳过
+  --mode=after   模拟修复后: placement 读取失败会重试 (最多 10 次)
+  --mode=both    两种模式都跑, 对比结果
 
 用法:
   python3 test_league.py --mode=before
@@ -100,7 +100,87 @@ def make_players():
     return players
 
 
-# ── 完整流程函数 ─────────────────────────────────────
+# ── 真实插件模拟 ─────────────────────────────────────
+
+# 插件常量 (与 RatingTracker.cs 一致)
+PLUGIN_DELAY_SECONDS = 2    # IsInMenu 后等 2 秒读 placement
+ON_UPDATE_INTERVAL = 0.1    # OnUpdate 每 ~100ms 调用一次
+MAX_RETRIES = 10            # 修复后: placement 失败最多重试次数
+
+
+def simulate_single_plugin(player, game_uuid, placement, placement_delay, mode):
+    """
+    模拟一个玩家的插件行为。
+
+    真实流程:
+    1. 玩家被淘汰 → 回到菜单 → IsInMenu = true
+    2. 插件记录 _gameEndTime, 等 2 秒
+    3. 读 FinalPlacement
+       - placement_delay: FinalPlacement 从淘汰时刻起多少秒后才可读
+       - 取决于 HDT 何时写入该值 (自然淘汰 vs 投降等不同情况)
+    4. 修复前: placement=null → 跳过, 放弃
+       修复后: placement=null → 等下一个 OnUpdate 周期(~100ms)重试, 最多 10 次
+
+    参数:
+        player: 玩家信息 dict
+        game_uuid: 对局 UUID
+        placement: 排名 1-8
+        placement_delay: FinalPlacement 可用延迟 (秒), 从淘汰时算起
+        mode: "before" 或 "after"
+
+    返回: (success: bool, attempts: int, reason: str)
+    """
+    name = player["displayName"]
+
+    # ── 阶段 1: 淘汰 → 回到菜单 → IsInMenu = true ──
+    # 插件记录 _gameEndTime, 下一个 OnUpdate 返回 (等 2 秒)
+    # 这里不需要模拟, 直接跳到 2 秒后
+
+    # ── 阶段 2: 2 秒后开始尝试读 placement ──
+    # 修复前: 只读一次
+    # 修复后: 读失败就等 ~100ms 重试, 最多 10 次
+
+    total_wait = PLUGIN_DELAY_SECONDS  # 已经等了 2 秒
+
+    for attempt in range(1 if mode == "before" else MAX_RETRIES + 1):
+        if mode == "after" and attempt > 0:
+            total_wait += ON_UPDATE_INTERVAL
+
+        # 检查 FinalPlacement 是否已可用
+        placement_ready = total_wait >= placement_delay
+
+        if placement_ready:
+            # 上传
+            points = 9 if placement == 1 else max(1, 9 - placement)
+            payload = {
+                "playerId": player["battleTag"],
+                "gameUuid": game_uuid,
+                "accountIdLo": player["accountIdLo"],
+                "placement": placement,
+            }
+            try:
+                resp = requests.post(
+                    f"{BASE_URL}/api/plugin/update-placement",
+                    json=payload, timeout=10,
+                )
+                if resp.status_code in (200, 409):
+                    return True, attempt + 1, f"第{placement}名 +{points}分"
+                else:
+                    return False, attempt + 1, f"HTTP {resp.status_code}"
+            except Exception as e:
+                return False, attempt + 1, f"异常: {e}"
+
+        # placement 还没好
+        if mode == "before":
+            # 修复前: 只读一次, 放弃
+            return False, 1, f"placement=null, 放弃 (delay={placement_delay:.1f}s > 等待{PLUGIN_DELAY_SECONDS}s)"
+        # else: 修复后, 继续下一轮循环
+
+    # 修复后: 重试耗尽
+    return False, MAX_RETRIES, f"重试耗尽 (delay={placement_delay:.1f}s, 总等待{total_wait:.1f}s)"
+
+
+# ── 流程函数 ────────────────────────────────────────
 
 def step_register_and_get_codes(players):
     """上传分数获取验证码 + 注册到网站"""
@@ -108,7 +188,6 @@ def step_register_and_get_codes(players):
 
     codes = {}
     for p in players:
-        # upload-rating 获取验证码
         payload = {
             "playerId": p["battleTag"],
             "accountIdLo": p["accountIdLo"],
@@ -127,7 +206,6 @@ def step_register_and_get_codes(players):
         except Exception as e:
             fail(f"{p['displayName']:12s} → {e}")
 
-    # 注册到网站
     header("STEP 1b: 注册到网站")
     for p in players:
         try:
@@ -146,40 +224,31 @@ def step_register_and_get_codes(players):
 
 
 def step_join_queue(players, codes):
-    """8 个玩家依次报名入队 → 满 8 人自动移入等待组"""
-    header("STEP 2: 报名入队 (报名队列 → 等待组)")
+    """8 个玩家依次报名入队"""
+    header("STEP 2: 报名入队")
 
-    sessions = []
     for p in players:
         s = requests.Session()
-        # login 获取 session
         s.post(f"{BASE_URL}/api/login", json={
             "battleTag": p["battleTag"],
             "verificationCode": codes.get(p["battleTag"], ""),
         })
-        # 加入队列
         resp = s.post(f"{BASE_URL}/api/queue/join", json={}, timeout=10)
         if resp.status_code == 200:
             data = resp.json()
-            moved = data.get("moved", False)
-            if moved:
-                ok(f"{p['displayName']:12s} → 等待组满员，移入! 🎉")
+            if data.get("moved"):
+                ok(f"{p['displayName']:12s} → 等待组满员! 🎉")
             else:
-                # 查看当前队列人数
                 q_resp = requests.get(f"{BASE_URL}/api/queue", timeout=5)
                 q_count = len(q_resp.json()) if q_resp.status_code == 200 else "?"
                 ok(f"{p['displayName']:12s} → 报名队列 ({q_count}人)")
         else:
-            fail(f"{p['displayName']:12s} → {resp.status_code} {resp.text[:80]}")
-        sessions.append(s)
-
-    return sessions
+            fail(f"{p['displayName']:12s} → {resp.status_code}")
 
 
 def step_verify_waiting_queue():
-    """验证等待组已创建"""
+    """验证等待组"""
     header("STEP 3: 验证等待队列")
-
     resp = requests.get(f"{BASE_URL}/api/waiting-queue", timeout=10)
     if resp.status_code == 200:
         groups = resp.json()
@@ -188,26 +257,17 @@ def step_verify_waiting_queue():
                 names = [p["name"] for p in g.get("players", [])]
                 ok(f"等待组: {len(names)} 人 → {', '.join(names)}")
             return True
-        else:
-            fail("没有等待组!")
-            return False
-    else:
-        fail(f"查询失败: {resp.status_code}")
-        return False
+    fail("没有等待组!")
+    return False
 
 
 def step_check_league(players):
-    """
-    STEP 13: 所有插件调用 check-league
-    服务端匹配等待组 → 创建 league_matches → 等待组被删除
-    """
-    header("STEP 4: STEP 13 — 所有插件调用 check-league")
+    """STEP 13: 插件调用 check-league"""
+    header("STEP 4: STEP 13 — 插件调用 check-league")
 
     game_uuid = str(uuid.uuid4())
     started_at = (datetime.now(UTC) - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # 模拟所有 8 个插件几乎同时调用 check-league
-    # （真实游戏中每个玩家的插件独立触发）
     detailed_players = {}
     for p in players:
         detailed_players[p["accountIdLo"]] = {
@@ -218,9 +278,9 @@ def step_check_league(players):
         }
 
     account_id_list = [p["accountIdLo"] for p in players]
+    is_league = False
 
-    is_league_confirmed = False
-    for i, p in enumerate(players):
+    for p in players:
         payload = {
             "playerId": p["battleTag"],
             "accountIdLo": p["accountIdLo"],
@@ -233,23 +293,17 @@ def step_check_league(players):
         }
         try:
             resp = requests.post(f"{BASE_URL}/api/plugin/check-league", json=payload, timeout=10)
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("isLeague"):
-                    ok(f"{p['displayName']:12s} → isLeague=true ★")
-                    is_league_confirmed = True
-                else:
-                    info(f"{p['displayName']:12s} → isLeague=false")
-            else:
-                fail(f"{p['displayName']:12s} → {resp.status_code}")
+            if resp.status_code == 200 and resp.json().get("isLeague"):
+                ok(f"{p['displayName']:12s} → isLeague=true ★")
+                is_league = True
         except Exception as e:
             fail(f"{p['displayName']:12s} → {e}")
 
-    return game_uuid, is_league_confirmed
+    return game_uuid, is_league
 
 
 def step_verify_active_game(game_uuid, players):
-    """验证对局进入「正在进行」列表"""
+    """验证对局进入「正在进行」"""
     header("STEP 5: 验证对局进入「正在进行」")
 
     resp = requests.get(f"{BASE_URL}/api/active-games", timeout=10)
@@ -257,374 +311,220 @@ def step_verify_active_game(game_uuid, players):
         fail(f"查询失败: {resp.status_code}")
         return False
 
-    games = resp.json()
-    found = [g for g in games if g.get("gameUuid") == game_uuid]
-
+    found = [g for g in resp.json() if g.get("gameUuid") == game_uuid]
     if not found:
-        fail(f"未找到对局 {game_uuid[:8]}... (进行中共 {len(games)} 局)")
+        fail(f"未找到对局 {game_uuid[:8]}...")
         return False
 
-    game = found[0]
-    game_players = game.get("players", [])
+    game_players = found[0].get("players", [])
     ok(f"找到进行中对局! {len(game_players)} 名玩家")
-
     for gp in game_players:
-        name = gp.get("displayName", "?")
-        hero = gp.get("heroName", "?")
-        placement = gp.get("placement")
-        # 正在进行中所有人的 placement 应该是 null
-        status = "进行中" if placement is None else f"已死亡(第{placement}名)"
-        info(f"  {name:12s}  英雄={hero:10s}  {status}")
-
+        info(f"  {gp.get('displayName','?'):12s}  英雄={gp.get('heroName','?'):10s}  进行中")
     return True
 
 
-def step_simulate_eliminations(game_uuid, players, mode):
+def step_simulate_game(game_uuid, players, mode):
     """
-    模拟游戏过程：玩家按随机顺序被淘汰
-    
-    真实场景：
-    1. 玩家在游戏中被淘汰 → 回到菜单 → IsInMenu=true
-    2. 插件等 2 秒后读取 FinalPlacement
-    3. 如果 placement 有值 → POST /api/plugin/update-placement
-    4. 修复前: placement=null → 跳过，排名丢失
-    5. 修复后: placement=null → 重试，最终上传成功
-    
-    模拟 placement 延迟:
-    - 第8名(最先淘汰): FinalPlacement 延迟最长(~6s)，游戏还在进行
-    - 第1名(最后存活): FinalPlacement 几乎立即可用(~0.5s)，游戏已结束
-    """
-    header(f"STEP 6: 模拟游戏过程 — 玩家淘汰 (mode={mode})")
+    模拟游戏过程 — 每个玩家独立模拟
 
-    # 固定种子保证两种模式淘汰顺序一致
+    真实场景:
+    1. 游戏进行中, 玩家按随机顺序被淘汰
+    2. 每个玩家被淘汰后独立回到菜单
+    3. 每个玩家的插件独立检测到 IsInMenu, 独立读 placement, 独立上传
+    4. 各玩家之间完全独立, 互不影响
+    """
+    header(f"STEP 6: 模拟游戏淘汰 (mode={mode})")
+
+    # 固定种子保证两种模式一致
     rng = random.Random(123)
 
-    # 淘汰顺序: indices[0] = 第8名(最先淘汰), indices[7] = 第1名(最后存活)
+    # 淘汰顺序: [7] = 第8名(最先淘汰), [0] = 第1名(最后存活)
     elimination_order = list(range(8))
     rng.shuffle(elimination_order)
 
-    # placement 延迟: 最先淘汰的延迟最长
-    placement_delays = []
-    for i in range(8):
-        if i == 7:      # 第1名: 游戏结束，立即可用
-            placement_delays.append(0.5)
-        elif i == 6:    # 第2名: 几乎同时
-            placement_delays.append(1.0)
-        elif i == 0:    # 第8名: 最先淘汰，延迟最长
-            placement_delays.append(6.0)
+    # 排名分配: 最先淘汰 = 第8名
+    player_placements = {}
+    for order_idx, player_idx in enumerate(elimination_order):
+        player_placements[player_idx] = 8 - order_idx
+
+    # 淘汰间隔: 每隔 ~1.5 秒淘汰一个
+    elimination_times = [i * 1.5 + 0.5 for i in range(8)]
+
+    # placement 延迟: 每个玩家不同
+    # - 第8名(最先淘汰): 游戏刚开始, FinalPlacement 可能延迟较长
+    # - 第1名(最后存活): 游戏完全结束, FinalPlacement 立即可用
+    placement_delays = {}
+    for order_idx, player_idx in enumerate(elimination_order):
+        placement = 8 - order_idx
+        if placement == 1:
+            placement_delays[player_idx] = 0.3   # 最后存活, 游戏结束
+        elif placement == 2:
+            placement_delays[player_idx] = 0.8   # 倒数第二个
+        elif placement == 8:
+            placement_delays[player_idx] = 4.0   # 最先淘汰, 延迟最长
         else:
-            placement_delays.append(rng.uniform(2.0, 5.0))
+            placement_delays[player_idx] = rng.uniform(1.0, 3.5)
 
     # 打印淘汰计划
     info("淘汰计划:")
     for order_idx, player_idx in enumerate(elimination_order):
         placement = 8 - order_idx
         p = players[player_idx]
-        delay = placement_delays[order_idx]
-        info(f"  第{placement}名 {p['displayName']:12s} (placement_delay={delay:.1f}s)")
+        delay = placement_delays[player_idx]
+        elim_t = elimination_times[order_idx]
+        info(f"  第{placement}名 {p['displayName']:12s} "
+             f"淘汰t={elim_t:.1f}s  placement_delay={delay:.1f}s")
 
-    # ── 开始模拟 ──
     print()
-    info("游戏进行中，等待玩家被淘汰...")
+    info("游戏开始, 玩家独立淘汰...")
 
-    # 每个玩家的状态
-    player_states = {}
-    for i in range(8):
-        player_states[i] = {
-            "eliminated": False,
-            "eliminated_at": None,
-            "uploaded": False,
-            "attempts": 0,
-            "checked_once": False,  # 修复前模式: 是否已检查过一次
-        }
-
+    # ── 模拟: 每个玩家独立处理 ──
+    # 按淘汰顺序, 等待对应时间后, 模拟该玩家的插件行为
+    results = {}  # player_idx -> (success, attempts, reason)
     total_uploaded = 0
     total_failed = 0
+
     game_start = time.time()
-    max_game_time = 15  # 最长模拟 15 秒
-    check_interval = 0.25  # 每 0.25 秒检查
 
-    PLUGIN_WAIT_SECONDS = 2   # 插件在 IsInMenu 后等待 2 秒再读 placement
-    MAX_RETRIES = 10          # 修复后: 最多重试次数 (与代码中 MaxPlacementRetries 一致)
+    for order_idx, player_idx in enumerate(elimination_order):
+        placement = player_placements[player_idx]
+        elim_time = elimination_times[order_idx]
+        delay = placement_delays[player_idx]
+        p = players[player_idx]
 
-    while True:
-        elapsed = time.time() - game_start
+        # 等到这个玩家该被淘汰的时间
+        target_time = game_start + elim_time
+        now = time.time()
+        if target_time > now:
+            time.sleep(target_time - now)
 
-        if elapsed > max_game_time:
-            warn("模拟超时，结束")
-            break
+        info(f"  ⚰️  {p['displayName']:12s} 被淘汰 (第{placement}名)")
 
-        # 检查哪些玩家该被淘汰了
-        # 淘汰节奏: 每隔 ~1.2 秒淘汰一个玩家
-        for order_idx, player_idx in enumerate(elimination_order):
-            elimination_time = order_idx * 1.2 + 0.5  # 秒
+        # 这个玩家回到菜单, IsInMenu = true
+        # 插件: 等 2 秒 → 尝试读 placement → 上传
+        # 模拟这个过程 (不实际等待, 直接调用模拟函数)
+        success, attempts, reason = simulate_single_plugin(
+            player=p,
+            game_uuid=game_uuid,
+            placement=placement,
+            placement_delay=delay,
+            mode=mode,
+        )
 
-            if elapsed >= elimination_time and not player_states[player_idx]["eliminated"]:
-                player_states[player_idx]["eliminated"] = True
-                player_states[player_idx]["eliminated_at"] = time.time()
-                player_states[player_idx]["checked_once"] = False
-                p = players[player_idx]
-                placement = 8 - order_idx
-                info(f"  ⚰️  {p['displayName']:12s} 被淘汰 (第{placement}名) "
-                     f"[placement 将在 {placement_delays[order_idx]:.1f}s 后可用]")
+        results[player_idx] = (success, attempts, reason)
 
-        # 已淘汰的玩家: 等插件延迟(2s)后尝试读取 placement
-        for i in range(8):
-            state = player_states[i]
-            if state["eliminated"] and not state["uploaded"]:
-                p = players[i]
-                time_since_elim = time.time() - state["eliminated_at"]
-
-                # 插件在 IsInMenu 后等待 2 秒才读 placement
-                if time_since_elim < PLUGIN_WAIT_SECONDS:
-                    continue
-
-                # 找到这个玩家的 placement 和 delay
-                order_idx = elimination_order.index(i)
-                placement = 8 - order_idx
-                delay = placement_delays[order_idx]
-
-                # 模拟 FinalPlacement 是否可用
-                # (placement_delay 是从淘汰时算起的延迟)
-                placement_ready = time_since_elim >= delay
-
-                if mode == "before":
-                    # ── 修复前逻辑 ──
-                    # 插件只检查一次: 等 2 秒 → 读 placement → 有就上传，没有就放弃
-                    if state["checked_once"]:
-                        continue  # 已经检查过了，不再管
-
-                    state["checked_once"] = True
-                    state["attempts"] = 1
-
-                    if placement_ready:
-                        # placement 可用，上传成功
-                        points = 9 if placement == 1 else max(1, 9 - placement)
-                        payload = {
-                            "playerId": p["battleTag"],
-                            "gameUuid": game_uuid,
-                            "accountIdLo": p["accountIdLo"],
-                            "placement": placement,
-                        }
-                        try:
-                            resp = requests.post(
-                                f"{BASE_URL}/api/plugin/update-placement",
-                                json=payload, timeout=10,
-                            )
-                            if resp.status_code in (200, 409):
-                                state["uploaded"] = True
-                                total_uploaded += 1
-                                ok(f"  {p['displayName']:12s} ✓ 第{placement}名 +{points}分"
-                                   f" (修复前: 一次成功, delay={delay:.1f}s ≤ 等待{PLUGIN_WAIT_SECONDS}s)")
-                            else:
-                                state["uploaded"] = True
-                                total_failed += 1
-                                fail(f"  {p['displayName']:12s} ✗ HTTP {resp.status_code}")
-                        except Exception as e:
-                            state["uploaded"] = True
-                            total_failed += 1
-                            fail(f"  {p['displayName']:12s} ✗ 异常: {e}")
-                    else:
-                        # placement 不可用，修复前直接放弃
-                        state["uploaded"] = True
-                        total_failed += 1
-                        fail(f"  {p['displayName']:12s} ✗ placement=null, "
-                             f"放弃 (delay={delay:.1f}s > 等待{PLUGIN_WAIT_SECONDS}s)")
-
-                else:
-                    # ── 修复后逻辑 ──
-                    # 插件在 OnUpdate 中重试: placement 不可用就下次再试
-                    # 有次数限制: 最多 MAX_RETRIES 次
-                    state["attempts"] += 1
-
-                    if placement_ready:
-                        points = 9 if placement == 1 else max(1, 9 - placement)
-                        payload = {
-                            "playerId": p["battleTag"],
-                            "gameUuid": game_uuid,
-                            "accountIdLo": p["accountIdLo"],
-                            "placement": placement,
-                        }
-                        try:
-                            resp = requests.post(
-                                f"{BASE_URL}/api/plugin/update-placement",
-                                json=payload, timeout=10,
-                            )
-                            if resp.status_code in (200, 409):
-                                state["uploaded"] = True
-                                total_uploaded += 1
-                                ok(f"  {p['displayName']:12s} ✓ 第{placement}名 +{points}分"
-                                   f" (修复后: 第{state['attempts']}次尝试)")
-                            else:
-                                state["uploaded"] = True
-                                total_failed += 1
-                                fail(f"  {p['displayName']:12s} ✗ HTTP {resp.status_code}")
-                        except Exception as e:
-                            state["uploaded"] = True
-                            total_failed += 1
-                            fail(f"  {p['displayName']:12s} ✗ 异常: {e}")
-                    elif state["attempts"] >= MAX_RETRIES:
-                        # 重试耗尽，放弃
-                        state["uploaded"] = True
-                        total_failed += 1
-                        fail(f"  {p['displayName']:12s} ✗ placement 重试耗尽"
-                             f" ({MAX_RETRIES}次, delay={delay:.1f}s)")
-                    # else: placement 还没好，继续等下一轮循环
-
-        # 检查是否所有人都已处理
-        all_eliminated = all(player_states[i]["eliminated"] for i in range(8))
-        all_processed = all(player_states[i]["uploaded"] for i in range(8) if player_states[i]["eliminated"])
-        if all_eliminated and all_processed:
-            break
-
-        time.sleep(check_interval)
-
-    # 处理超时未处理的
-    for i in range(8):
-        if player_states[i]["eliminated"] and not player_states[i]["uploaded"]:
-            p = players[i]
+        if success:
+            total_uploaded += 1
+            ok(f"  {p['displayName']:12s} ✓ {reason} (第{attempts}次尝试)")
+        else:
             total_failed += 1
-            fail(f"  {p['displayName']:12s} ✗ 超时 (尝试{player_states[i]['attempts']}次)")
+            fail(f"  {p['displayName']:12s} ✗ {reason}")
 
     # 打印汇总
     print()
     info("淘汰结果汇总:")
     for order_idx, player_idx in enumerate(elimination_order):
         p = players[player_idx]
-        placement = 8 - order_idx
-        state = player_states[player_idx]
-        delay = placement_delays[order_idx]
-
-        if state["uploaded"] and total_uploaded > 0 and total_failed == 0:
-            status = f"{GREEN}✓ 已上传{RESET}"
-        elif state["uploaded"] and not any(
-            not player_states[pi]["uploaded"]
-            for pi in range(8) if player_states[pi]["eliminated"]
-        ):
-            status = f"{GREEN}✓ 已上传{RESET}"
-        else:
-            status = f"{RED}✗ 丢失{RESET}"
+        placement = player_placements[player_idx]
+        delay = placement_delays[player_idx]
+        success, attempts, reason = results[player_idx]
 
         medal = "🥇" if placement == 1 else "🥈" if placement == 2 else "🥉" if placement == 3 else "  "
+        status = f"{GREEN}✓{RESET}" if success else f"{RED}✗{RESET}"
         print(f"    {medal} 第{placement}名 {p['displayName']:12s} "
-              f"delay={delay:.1f}s 尝试{state['attempts']}次 {status}")
+              f"delay={delay:.1f}s 尝试{attempts}次 {status} {reason}")
 
-    return total_uploaded, total_failed, game_uuid
+    return total_uploaded, total_failed
 
 
 def step_verify_completed(game_uuid, players):
-    """验证对局从「正在进行」移除，出现在「最近对局」中"""
+    """验证对局完成"""
     header("STEP 7: 验证对局完成")
 
-    # 检查是否从进行中移除
+    # 检查从进行中移除
     resp = requests.get(f"{BASE_URL}/api/active-games", timeout=10)
     if resp.status_code == 200:
         still_active = [g for g in resp.json() if g.get("gameUuid") == game_uuid]
         if not still_active:
             ok("对局已从「正在进行」移除")
         else:
-            warn("对局仍在「正在进行」列表（可能有玩家未提交）")
+            warn("对局仍在「正在进行」(可能有玩家未提交)")
 
     # 检查对局详情
     time.sleep(0.5)
     resp = requests.get(f"{BASE_URL}/api/match/{game_uuid}", timeout=10)
     if resp.status_code != 200:
         fail(f"查询对局失败: {resp.status_code}")
-        return False, {}
+        return False
 
     match = resp.json()
     match_players = match.get("players", [])
 
-    results = {}
     all_ok = True
-
     for mp in match_players:
         name = mp.get("displayName", "?")
         placement = mp.get("placement")
         points = mp.get("points")
-        aid = mp.get("accountIdLo")
 
         if placement is not None:
             medal = "🥇" if placement == 1 else "🥈" if placement == 2 else "🥉" if placement == 3 else "  "
             ok(f"{medal} {name:12s} → 第{placement}名 {points}分")
-            results[aid] = (True, placement)
         else:
-            fail(f"    {name:12s} → placement=null (排名丢失!)")
-            results[aid] = (False, None)
+            fail(f"    {name:12s} → placement=null (丢失!)")
             all_ok = False
 
     ended_at = match.get("endedAt")
     if ended_at:
         ok(f"对局已结束: endedAt={ended_at}")
     else:
-        warn("endedAt 为 null（部分玩家未提交）")
+        warn("endedAt 为 null")
 
-    return all_ok, results
+    return all_ok
 
 
 def run_single_mode(players, codes, mode):
-    """运行单个模式的完整测试"""
+    """运行单个模式"""
     section(f"模式: {mode.upper()} "
-            f"{'(修复前: placement 失败不重试)' if mode == 'before' else '(修复后: placement 失败重试)'}")
+            f"{'(修复前: 只读一次 placement)' if mode == 'before' else '(修复后: 最多重试 10 次)'}")
 
-    # STEP 2: 报名入队
     step_join_queue(players, codes)
 
-    # STEP 3: 验证等待组
     if not step_verify_waiting_queue():
-        fail("等待组未创建，终止测试")
+        fail("等待组未创建")
         return False
 
-    # STEP 4: STEP 13 check-league
     game_uuid, is_league = step_check_league(players)
     if not is_league:
-        fail("联赛匹配失败，终止测试")
+        fail("联赛匹配失败")
         return False
 
-    # STEP 5: 验证进入正在进行
     if not step_verify_active_game(game_uuid, players):
-        fail("对局未进入「正在进行」，终止测试")
+        fail("未进入进行中")
         return False
 
-    # STEP 6: 模拟淘汰
-    uploaded, failed, game_uuid = step_simulate_eliminations(game_uuid, players, mode)
+    uploaded, failed = step_simulate_game(game_uuid, players, mode)
 
-    # STEP 7: 验证完成
     time.sleep(1)
-    all_ok, verify_map = step_verify_completed(game_uuid, players)
+    all_ok = step_verify_completed(game_uuid, players)
 
-    # 总结
     header(f"{mode.upper()} 模式总结")
     print(f"  插件上传: {GREEN}{uploaded} 成功{RESET}  {RED}{failed} 失败{RESET}")
-    print(f"  服务端验证: {'✅ 全部正常' if all_ok else '❌ 有玩家排名丢失'}")
+    print(f"  服务端验证: {'✅ 全部正常' if all_ok else '❌ 有排名丢失'}")
     print()
 
     return all_ok
 
 
-def cleanup_before_mode():
-    """清理 before 模式可能残留的等待组"""
-    try:
-        resp = requests.get(f"{BASE_URL}/api/waiting-queue", timeout=5)
-        if resp.status_code == 200 and resp.json():
-            info("清理 before 模式残留等待组...")
-            # 等待组无法通过 API 清除，但 check-league 会删除它
-    except:
-        pass
-
-
 def main():
-    parser = argparse.ArgumentParser(description="联赛全流程模拟测试 — placement 重试对比")
-    parser.add_argument("--mode", choices=["before", "after", "both"], default="both",
-                        help="测试模式")
-    parser.add_argument("--api", default=None, help="API 地址")
+    parser = argparse.ArgumentParser(description="联赛模拟测试 — placement 重试对比")
+    parser.add_argument("--mode", choices=["before", "after", "both"], default="both")
+    parser.add_argument("--api", default=None)
     args = parser.parse_args()
 
     if args.api:
         global BASE_URL
         BASE_URL = args.api
 
-    random.seed(42)
     players = make_players()
 
     print(f"""
@@ -636,14 +536,12 @@ def main():
 ╚══════════════════════════════════════════════════════╝
 {RESET}""")
 
-    # 检查 API 可达
     try:
         requests.get(f"{BASE_URL}/api/players", timeout=5)
     except requests.ConnectionError:
         fail(f"无法连接到 {BASE_URL}")
         sys.exit(1)
 
-    # STEP 1: 注册（所有模式共享）
     codes = step_register_and_get_codes(players)
     if len(codes) < 8:
         fail("部分玩家注册失败")
@@ -659,21 +557,16 @@ def main():
         print(f"  {'修复后 (after)':20s} → {'✅ 全部上传' if after_ok else '❌ 部分排名丢失'}")
         print()
         if not before_ok and after_ok:
-            print(f"  {GREEN}{BOLD}🎉 修复生效! 修复后所有玩家排名正常上传{RESET}")
+            print(f"  {GREEN}{BOLD}🎉 修复生效!{RESET}")
         elif before_ok and after_ok:
-            print(f"  {YELLOW}两种模式都成功 (可能本次 placement delay 较短){RESET}")
+            print(f"  {YELLOW}两种模式都成功{RESET}")
         elif not before_ok and not after_ok:
-            print(f"  {RED}两种模式都有问题，需要进一步排查{RESET}")
+            print(f"  {RED}两种模式都有问题{RESET}")
         print()
-
     else:
         ok_result = run_single_mode(players, codes, args.mode)
         section("测试结果")
-        if ok_result:
-            print(f"  {GREEN}{BOLD}✅ 测试通过{RESET}")
-        else:
-            print(f"  {RED}{BOLD}❌ 测试失败{RESET}")
-        print()
+        print(f"  {GREEN}{BOLD}✅ 通过{RESET}" if ok_result else f"  {RED}{BOLD}❌ 失败{RESET}")
 
 
 if __name__ == "__main__":
