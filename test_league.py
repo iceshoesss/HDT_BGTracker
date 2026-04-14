@@ -344,7 +344,8 @@ def step_simulate_eliminations(game_uuid, players, mode):
     max_game_time = 15  # 最长模拟 15 秒
     check_interval = 0.25  # 每 0.25 秒检查
 
-    PLUGIN_WAIT_SECONDS = 2  # 插件在 IsInMenu 后等待 2 秒再读 placement
+    PLUGIN_WAIT_SECONDS = 2   # 插件在 IsInMenu 后等待 2 秒再读 placement
+    MAX_RETRIES = 10          # 修复后: 最多重试次数 (与代码中 MaxPlacementRetries 一致)
 
     while True:
         elapsed = time.time() - game_start
@@ -433,6 +434,7 @@ def step_simulate_eliminations(game_uuid, players, mode):
                 else:
                     # ── 修复后逻辑 ──
                     # 插件在 OnUpdate 中重试: placement 不可用就下次再试
+                    # 有次数限制: 最多 MAX_RETRIES 次
                     state["attempts"] += 1
 
                     if placement_ready:
@@ -461,6 +463,12 @@ def step_simulate_eliminations(game_uuid, players, mode):
                             state["uploaded"] = True
                             total_failed += 1
                             fail(f"  {p['displayName']:12s} ✗ 异常: {e}")
+                    elif state["attempts"] >= MAX_RETRIES:
+                        # 重试耗尽，放弃
+                        state["uploaded"] = True
+                        total_failed += 1
+                        fail(f"  {p['displayName']:12s} ✗ placement 重试耗尽"
+                             f" ({MAX_RETRIES}次, delay={delay:.1f}s)")
                     # else: placement 还没好，继续等下一轮循环
 
         # 检查是否所有人都已处理
