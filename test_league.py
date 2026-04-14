@@ -335,6 +335,7 @@ def step_simulate_eliminations(game_uuid, players, mode):
             "eliminated_at": None,
             "uploaded": False,
             "attempts": 0,
+            "checked_once": False,  # 修复前模式: 是否已检查过一次
         }
 
     total_uploaded = 0
@@ -342,6 +343,8 @@ def step_simulate_eliminations(game_uuid, players, mode):
     game_start = time.time()
     max_game_time = 15  # 最长模拟 15 秒
     check_interval = 0.25  # 每 0.25 秒检查
+
+    PLUGIN_WAIT_SECONDS = 2  # 插件在 IsInMenu 后等待 2 秒再读 placement
 
     while True:
         elapsed = time.time() - game_start
@@ -358,18 +361,22 @@ def step_simulate_eliminations(game_uuid, players, mode):
             if elapsed >= elimination_time and not player_states[player_idx]["eliminated"]:
                 player_states[player_idx]["eliminated"] = True
                 player_states[player_idx]["eliminated_at"] = time.time()
+                player_states[player_idx]["checked_once"] = False
                 p = players[player_idx]
                 placement = 8 - order_idx
                 info(f"  ⚰️  {p['displayName']:12s} 被淘汰 (第{placement}名) "
                      f"[placement 将在 {placement_delays[order_idx]:.1f}s 后可用]")
 
-        # 已淘汰的玩家尝试上传 placement
+        # 已淘汰的玩家: 等插件延迟(2s)后尝试读取 placement
         for i in range(8):
             state = player_states[i]
             if state["eliminated"] and not state["uploaded"]:
                 p = players[i]
                 time_since_elim = time.time() - state["eliminated_at"]
-                state["attempts"] += 1
+
+                # 插件在 IsInMenu 后等待 2 秒才读 placement
+                if time_since_elim < PLUGIN_WAIT_SECONDS:
+                    continue
 
                 # 找到这个玩家的 placement 和 delay
                 order_idx = elimination_order.index(i)
@@ -377,53 +384,84 @@ def step_simulate_eliminations(game_uuid, players, mode):
                 delay = placement_delays[order_idx]
 
                 # 模拟 FinalPlacement 是否可用
+                # (placement_delay 是从淘汰时算起的延迟)
                 placement_ready = time_since_elim >= delay
 
-                if not placement_ready:
-                    # FinalPlacement 还没写入
-                    if mode == "before":
-                        # 修复前: placement=null → 跳过，不再重试
-                        state["uploaded"] = True  # 标记为"已处理"
-                        total_failed += 1
-                        fail(f"  {p['displayName']:12s} ✗ placement=null, "
-                             f"跳过不再重试 (delay={delay:.1f}s, 已等{time_since_elim:.1f}s)")
-                    else:
-                        # 修复后: placement=null → 跳过本轮，下轮重试
-                        pass  # 不做任何事，等下一轮循环
-                else:
-                    # FinalPlacement 可用，上传
-                    points = 9 if placement == 1 else max(1, 9 - placement)
-                    payload = {
-                        "playerId": p["battleTag"],
-                        "gameUuid": game_uuid,
-                        "accountIdLo": p["accountIdLo"],
-                        "placement": placement,
-                    }
-                    try:
-                        resp = requests.post(
-                            f"{BASE_URL}/api/plugin/update-placement",
-                            json=payload, timeout=10,
-                        )
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            finalized = data.get("finalized", False)
-                            state["uploaded"] = True
-                            total_uploaded += 1
-                            ok(f"  {p['displayName']:12s} ✓ 第{placement}名 +{points}分"
-                               f"{' 🏁对局结束' if finalized else ''}"
-                               f" (第{state['attempts']}次尝试)")
-                        elif resp.status_code == 409:
-                            state["uploaded"] = True
-                            total_uploaded += 1
-                            info(f"  {p['displayName']:12s} 已提交过(幂等)")
-                        else:
+                if mode == "before":
+                    # ── 修复前逻辑 ──
+                    # 插件只检查一次: 等 2 秒 → 读 placement → 有就上传，没有就放弃
+                    if state["checked_once"]:
+                        continue  # 已经检查过了，不再管
+
+                    state["checked_once"] = True
+                    state["attempts"] = 1
+
+                    if placement_ready:
+                        # placement 可用，上传成功
+                        points = 9 if placement == 1 else max(1, 9 - placement)
+                        payload = {
+                            "playerId": p["battleTag"],
+                            "gameUuid": game_uuid,
+                            "accountIdLo": p["accountIdLo"],
+                            "placement": placement,
+                        }
+                        try:
+                            resp = requests.post(
+                                f"{BASE_URL}/api/plugin/update-placement",
+                                json=payload, timeout=10,
+                            )
+                            if resp.status_code in (200, 409):
+                                state["uploaded"] = True
+                                total_uploaded += 1
+                                ok(f"  {p['displayName']:12s} ✓ 第{placement}名 +{points}分"
+                                   f" (修复前: 一次成功, delay={delay:.1f}s ≤ 等待{PLUGIN_WAIT_SECONDS}s)")
+                            else:
+                                state["uploaded"] = True
+                                total_failed += 1
+                                fail(f"  {p['displayName']:12s} ✗ HTTP {resp.status_code}")
+                        except Exception as e:
                             state["uploaded"] = True
                             total_failed += 1
-                            fail(f"  {p['displayName']:12s} ✗ HTTP {resp.status_code}: {resp.text[:60]}")
-                    except Exception as e:
+                            fail(f"  {p['displayName']:12s} ✗ 异常: {e}")
+                    else:
+                        # placement 不可用，修复前直接放弃
                         state["uploaded"] = True
                         total_failed += 1
-                        fail(f"  {p['displayName']:12s} ✗ 异常: {e}")
+                        fail(f"  {p['displayName']:12s} ✗ placement=null, "
+                             f"放弃 (delay={delay:.1f}s > 等待{PLUGIN_WAIT_SECONDS}s)")
+
+                else:
+                    # ── 修复后逻辑 ──
+                    # 插件在 OnUpdate 中重试: placement 不可用就下次再试
+                    state["attempts"] += 1
+
+                    if placement_ready:
+                        points = 9 if placement == 1 else max(1, 9 - placement)
+                        payload = {
+                            "playerId": p["battleTag"],
+                            "gameUuid": game_uuid,
+                            "accountIdLo": p["accountIdLo"],
+                            "placement": placement,
+                        }
+                        try:
+                            resp = requests.post(
+                                f"{BASE_URL}/api/plugin/update-placement",
+                                json=payload, timeout=10,
+                            )
+                            if resp.status_code in (200, 409):
+                                state["uploaded"] = True
+                                total_uploaded += 1
+                                ok(f"  {p['displayName']:12s} ✓ 第{placement}名 +{points}分"
+                                   f" (修复后: 第{state['attempts']}次尝试)")
+                            else:
+                                state["uploaded"] = True
+                                total_failed += 1
+                                fail(f"  {p['displayName']:12s} ✗ HTTP {resp.status_code}")
+                        except Exception as e:
+                            state["uploaded"] = True
+                            total_failed += 1
+                            fail(f"  {p['displayName']:12s} ✗ 异常: {e}")
+                    # else: placement 还没好，继续等下一轮循环
 
         # 检查是否所有人都已处理
         all_eliminated = all(player_states[i]["eliminated"] for i in range(8))
