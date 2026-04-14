@@ -120,6 +120,9 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 > Web 端更新日志已迁移至 [LeagueWeb](https://github.com/iceshoesss/LeagueWeb) 仓库。
 
+### v0.5.3 (2026-04-14)
+- 修复淘汰玩家排名丢失：placement 为 null 时重试读取，最多 10 次
+
 ### v0.5.2 (2026-04-13)
 - 队列超时机制：报名队列 10 分钟自动踢出，等待队列 20 分钟自动解散
 - 登出时自动退出所有队列

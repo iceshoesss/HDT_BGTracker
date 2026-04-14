@@ -401,6 +401,17 @@ pipeline = [
   - `app.py` 新增 `WEB_VERSION` 常量，通过 context processor 注入所有模板
   - `base.html` 底部显示版本号
 
+### v0.5.3 (2026-04-14)
+- **placement 重试机制：修复淘汰玩家排名丢失**
+  - 问题：玩家被淘汰后回到菜单（IsInMenu=true），插件等 2 秒读 FinalPlacement，可能为 null（HDT 尚未写入）
+  - 原逻辑：placement=null → 跳过 → 重置状态 → 排名永远丢失
+  - 新逻辑：placement=null → 不重置状态 → 下个 OnUpdate 周期重试，最多 10 次
+  - `UpdateLeaguePlacement` 改为返回 `bool`（true=已上传，false=需重试）
+  - `IsInMenu` 分支增加 `_placementRetryCount` 计数器
+- **测试脚本 `test_league.py`**
+  - 模拟真实插件行为：每个玩家独立淘汰 → 独立检测 IsInMenu → 独立读 placement
+  - `--mode=before/after/both` 对比重试机制效果
+
 ### v0.5.2 (2026-04-13)
 - **队列超时机制**：
   - `@app.before_request` 刷新 `league_players.lastSeen` + `league_queue.lastSeen`
