@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-toggle-test-mode.py — 切换联赛测试/正常模式
+toggle-test-mode.py — 切换 C# 插件测试/正常模式
 
 测试模式：所有对局都强制标记为联赛对局（跳过等待组匹配）
 正常模式：未匹配到等待组的对局视为普通天梯局
@@ -12,9 +12,6 @@ toggle-test-mode.py — 切换联赛测试/正常模式
   python toggle-test-mode.py flip     # 翻转
 
 工作原理：基于代码中的 BEGIN/END TEST_MODE 标记进行整块替换。
-标记格式：
-  # >>> BEGIN TEST_MODE   /  # <<< END TEST_MODE        (Python)
-  // >>> BEGIN TEST_MODE  /  // <<< END TEST_MODE       (C#)
 """
 
 import sys
@@ -25,9 +22,7 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)) or ".")
 BEGIN = "BEGIN TEST_MODE"
 END = "END TEST_MODE"
 
-# =====================================================================
-# C# 插件 — RatingTracker.cs 中 else 分支的两种形态
-# =====================================================================
+CS_PATH = "HDT_BGTracker/RatingTracker.cs"
 
 CS_NORMAL = '''\
                             // >>> BEGIN TEST_MODE
@@ -48,94 +43,6 @@ CS_TEST = '''\
                             }
                             // <<< END TEST_MODE'''
 
-# =====================================================================
-# Flask — app.py 中 matched_group is None 后的两种形态
-# =====================================================================
-
-FLASK_NORMAL = '''\
-    # >>> BEGIN TEST_MODE
-    if matched_group is None:
-        # fallback：等待组已被队友匹配删除，但联赛对局已创建
-        is_league = db.league_matches.find_one({"gameUuid": game_uuid}) is not None
-        resp = {"isLeague": is_league}
-        vc = _ensure_verification_code(
-            db,
-            player_id=data.get("playerId", "").strip(),
-            account_id_lo=data.get("accountIdLo", "").strip(),
-            mode=data.get("mode", "solo"),
-            region=data.get("region", "CN"),
-        )
-        if vc:
-            resp["verificationCode"] = vc
-        return jsonify(resp)
-    # <<< END TEST_MODE'''
-
-FLASK_TEST = '''\
-    # >>> BEGIN TEST_MODE
-    if matched_group is None:
-        # [TESTING] 暂时跳过等待组匹配，直接用插件上报的玩家数据创建联赛对局
-        detailed_players = data.get("players", {})
-        account_ids_raw = data.get("accountIdLoList", [])
-        account_ids = sorted(account_ids_raw) if isinstance(account_ids_raw, list) else []
-
-        # [TESTING] 容错：不足 8 人时用 unknown 占位凑满
-        if len(account_ids) < 2:
-            log.warning(f"[check-league] [TESTING] accountIdLoList 过少({len(account_ids)})，跳过")
-            resp = {"isLeague": False}
-            vc = _ensure_verification_code(
-                db,
-                player_id=data.get("playerId", "").strip(),
-                account_id_lo=data.get("accountIdLo", "").strip(),
-            )
-            if vc:
-                resp["verificationCode"] = vc
-            return jsonify(resp)
-
-        while len(account_ids) < 8:
-            account_ids.append(f"unknown_{len(account_ids)}")
-
-        players = []
-        for lo in account_ids:
-            detail = detailed_players.get(lo, {})
-            players.append({
-                "accountIdLo": lo,
-                "battleTag": detail.get("battleTag", ""),
-                "displayName": detail.get("displayName", ""),
-                "heroCardId": detail.get("heroCardId", ""),
-                "heroName": detail.get("heroName", ""),
-                "placement": None,
-                "points": None,
-            })
-
-        mode = data.get("mode", "solo")
-        region = data.get("region", "CN")
-        started_at = data.get("startedAt", datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S"))
-
-        db.league_matches.update_one(
-            {"gameUuid": game_uuid},
-            {"$setOnInsert": {
-                "players": players,
-                "region": region,
-                "mode": mode,
-                "startedAt": started_at,
-                "endedAt": None,
-            }},
-            upsert=True,
-        )
-
-        # 验证码处理
-        resp = {"isLeague": True}
-        vc = _ensure_verification_code(
-            db,
-            player_id=data.get("playerId", "").strip(),
-            account_id_lo=data.get("accountIdLo", "").strip(),
-            mode=mode, region=region, timestamp=started_at,
-        )
-        if vc:
-            resp["verificationCode"] = vc
-        return jsonify(resp)
-    # <<< END TEST_MODE'''
-
 
 def find_marker_block(content: str) -> str | None:
     """返回两个标记之间的完整文本（含标记行），找不到返回 None"""
@@ -143,7 +50,6 @@ def find_marker_block(content: str) -> str | None:
     end_idx = content.find(END)
     if begin_idx < 0 or end_idx < 0:
         return None
-    # 往前找行首，往后找行尾
     block_start = content.rfind("\n", 0, begin_idx) + 1
     end_line_end = content.find("\n", end_idx)
     if end_line_end < 0:
@@ -151,22 +57,19 @@ def find_marker_block(content: str) -> str | None:
     return content[block_start:end_line_end]
 
 
-def detect_mode(content: str, normal: str, test: str) -> str | None:
+def detect_mode(content: str) -> str | None:
     block = find_marker_block(content)
     if block is None:
         return None
-    # 去掉标记行本身，只比较内容
     def strip_markers(b):
         return "\n".join(
             line for line in b.split("\n")
             if BEGIN not in line and END not in line
         )
     block_core = strip_markers(block)
-    normal_core = strip_markers(normal)
-    test_core = strip_markers(test)
-    if block_core == normal_core:
+    if block_core == strip_markers(CS_NORMAL):
         return "normal"
-    if block_core == test_core:
+    if block_core == strip_markers(CS_TEST):
         return "test"
     return None
 
@@ -179,64 +82,43 @@ def replace_block(content: str, new_block: str) -> str:
 
 
 def main():
-    args = sys.argv[1:]
+    if not os.path.exists(CS_PATH):
+        print(f"⚠ 找不到 {CS_PATH}")
+        sys.exit(1)
 
-    cs_path = "HDT_BGTracker/RatingTracker.cs"
-    flask_path = "league/app.py"
-
-    with open(cs_path, "r", encoding="utf-8") as f:
+    with open(CS_PATH, "r", encoding="utf-8") as f:
         cs_content = f.read()
-    with open(flask_path, "r", encoding="utf-8") as f:
-        flask_content = f.read()
 
-    # 检测当前模式
-    cs_mode = detect_mode(cs_content, CS_NORMAL, CS_TEST)
-    flask_mode = detect_mode(flask_content, FLASK_NORMAL, FLASK_TEST)
-
-    if cs_mode is None:
-        print(f"⚠ C# 文件 ({cs_path}) 无法识别模式，TEST_MODE 标记可能被修改")
-        sys.exit(1)
-    if flask_mode is None:
-        print(f"⚠ Flask 文件 ({flask_path}) 无法识别模式，TEST_MODE 标记可能被修改")
+    mode = detect_mode(cs_content)
+    if mode is None:
+        print(f"⚠ {CS_PATH} 无法识别模式，TEST_MODE 标记可能被修改")
         sys.exit(1)
 
-    if cs_mode != flask_mode:
-        print(f"⚠ 两个文件模式不一致: C#={cs_mode}, Flask={flask_mode}")
-        sys.exit(1)
+    print(f"[插件] 当前模式: {mode}")
 
-    current = cs_mode
-    print(f"当前模式: {current}")
-
+    args = sys.argv[1:]
     if not args:
         sys.exit(0)
 
     target = args[0]
     if target == "flip":
-        target = "test" if current == "normal" else "normal"
+        target = "test" if mode == "normal" else "normal"
     if target not in ("test", "normal"):
         print(f"用法: {sys.argv[0]} [test|normal|flip]")
         sys.exit(1)
 
-    if target == current:
+    if target == mode:
         print(f"已经是 {target} 模式，无需切换")
         sys.exit(0)
 
-    print(f"切换到: {target} 模式")
+    print(f"[插件] 切换到: {target} 模式")
 
-    if target == "test":
-        cs_content = replace_block(cs_content, CS_TEST)
-        flask_content = replace_block(flask_content, FLASK_TEST)
-    else:
-        cs_content = replace_block(cs_content, CS_NORMAL)
-        flask_content = replace_block(flask_content, FLASK_NORMAL)
+    new_content = replace_block(cs_content, CS_TEST if target == "test" else CS_NORMAL)
+    with open(CS_PATH, "w", encoding="utf-8") as f:
+        f.write(new_content)
 
-    with open(cs_path, "w", encoding="utf-8") as f:
-        f.write(cs_content)
-    with open(flask_path, "w", encoding="utf-8") as f:
-        f.write(flask_content)
-
-    print(f"✅ 已切换到 {target} 模式")
-    os.system(f"git diff --stat {cs_path} {flask_path}")
+    print(f"✅ 插件已切换到 {target} 模式")
+    os.system(f"git diff --stat {CS_PATH}")
 
 
 if __name__ == "__main__":
