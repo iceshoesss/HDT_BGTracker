@@ -117,24 +117,15 @@ namespace HDT_BGTracker
                     }
                     catch { }
 
-                    // 延迟 3 秒后读取 PlayerId
+                    // 延迟 3 秒后读取，三个缓存各自独立重试
                     if (DateTime.Now - _bgGameStartTime >= IdReadDelay)
                     {
-                        if (string.IsNullOrEmpty(_cachedPlayerId))
-                        {
+                        if (string.IsNullOrEmpty(_cachedPlayerId) || _cachedPlayerId == "unknown")
                             _cachedPlayerId = GetPlayerId();
-                        }
-                        if (!string.IsNullOrEmpty(_cachedPlayerId) && _cachedPlayerId != "unknown")
-                        {
-                            if (string.IsNullOrEmpty(_cachedAccountIdLo))
-                            {
-                                _cachedAccountIdLo = GetAccountIdLo();
-                            }
-                            if (string.IsNullOrEmpty(_cachedGameUuid))
-                            {
-                                _cachedGameUuid = GetGameUuid();
-                            }
-                        }
+                        if (string.IsNullOrEmpty(_cachedAccountIdLo))
+                            _cachedAccountIdLo = GetAccountIdLo();
+                        if (string.IsNullOrEmpty(_cachedGameUuid))
+                            _cachedGameUuid = GetGameUuid();
                     }
 
                     // lobby 玩家名单（不带英雄）
@@ -197,9 +188,11 @@ namespace HDT_BGTracker
             try
             {
                 var result = PostJsonOnce(endpoint, jsonBody);
-                if (!result.ok)
+                // 409 Conflict = 数据已存在，视为成功
+                bool ok = result.ok || result.statusCode == 409;
+                if (!ok)
                     Log($"POST {endpoint} 失败: HTTP {result.statusCode}");
-                return result.ok ? (true, result.body) : (false, result.body);
+                return ok ? (true, result.body) : (false, result.body);
             }
             catch (Exception ex)
             {
@@ -350,7 +343,11 @@ namespace HDT_BGTracker
         private bool UpdateLeaguePlacement(string accountIdLo, string gameUuid)
         {
             if (_httpClient == null) return true;
-            if (string.IsNullOrEmpty(gameUuid) || string.IsNullOrEmpty(accountIdLo)) return true;
+            if (string.IsNullOrEmpty(gameUuid) || string.IsNullOrEmpty(accountIdLo))
+            {
+                Log($"UpdateLeaguePlacement: 数据未就绪 gameUuid={gameUuid ?? "null"} accountIdLo={accountIdLo ?? "null"}，等待重试");
+                return false;
+            }
 
             int? placement = null;
             try
@@ -471,6 +468,20 @@ namespace HDT_BGTracker
 
         private string GetAccountIdLo()
         {
+            // 方案 1：直接从 Player 对象获取（最可靠，不依赖 Player.Name）
+            try
+            {
+                var playerId = Core.Game?.Player?.AccountId?.Lo;
+                if (playerId.HasValue && playerId.Value != 0)
+                {
+                    string lo = playerId.Value.ToString();
+                    Log($"GetAccountIdLo: Player.AccountId.Lo = {lo}");
+                    return lo;
+                }
+            }
+            catch { }
+
+            // 方案 2：从 LobbyInfo 用名字匹配（兜底）
             try
             {
                 var lobbyInfo = Core.Game?.MetaData?.BattlegroundsLobbyInfo;
@@ -484,7 +495,9 @@ namespace HDT_BGTracker
                     {
                         if (p.Name == myNameNoTag && p.AccountId != null)
                         {
-                            return p.AccountId.Lo.ToString();
+                            string lo = p.AccountId.Lo.ToString();
+                            Log($"GetAccountIdLo: LobbyInfo 名字匹配 = {lo}");
+                            return lo;
                         }
                     }
                 }
@@ -493,6 +506,8 @@ namespace HDT_BGTracker
             {
                 Log($"GetAccountIdLo 异常: {ex.Message}");
             }
+
+            Log("GetAccountIdLo: 未找到 accountIdLo");
             return null;
         }
 

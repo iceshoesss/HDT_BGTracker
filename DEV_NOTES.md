@@ -401,6 +401,14 @@ pipeline = [
   - `app.py` 新增 `WEB_VERSION` 常量，通过 context processor 注入所有模板
   - `base.html` 底部显示版本号
 
+### v0.5.6 (2026-04-14)
+- **Bug 修复：GetPlayerId 失败导致 update-placement 静默丢失**
+  - 原逻辑：`GetPlayerId()` 只在游戏开始 3 秒时调用一次，失败后不再重试；`GetAccountIdLo`/`GetGameUuid` 依赖 `_cachedPlayerId` 成功才执行；游戏结束时空值直接 return true，状态重置，placement 永远不会上传且无日志
+  - 新逻辑：三个缓存各自独立重试，不互相关联；`GetAccountIdLo` 优先用 `Player.AccountId.Lo`（不依赖名字），fallback 才用 LobbyInfo 名字匹配；空值时打印日志并返回 false 触发重试
+- **Bug 修复：409 误判为失败导致无限重试**
+  - 原逻辑：`PostJson` 把 HTTP 409（已提交过排名）当作失败处理，触发 3 次无意义重试，并打印"排名可能丢失"
+  - 新逻辑：409 视为成功（数据已存在），不再重试
+
 ### v0.5.5 (2026-04-14)
 - **update-placement 网络重试**：HTTP 请求失败时重试 3 次（间隔 1s/2s/3s）
   - 原逻辑：placement HTTP 请求失败直接丢弃，排名丢失无日志

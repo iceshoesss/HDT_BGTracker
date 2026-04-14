@@ -120,6 +120,10 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 > Web 端更新日志已迁移至 [LeagueWeb](https://github.com/iceshoesss/LeagueWeb) 仓库。
 
+### v0.5.6 (2026-04-14)
+- 修复 GetPlayerId 失败导致 update-placement 静默丢失：三个缓存独立重试，accountIdLo 改用 Player.AccountId.Lo 优先，空值时有日志+重试
+- 修复 409 误判为失败：已提交的 placement 返回 409 时不再重试
+
 ### v0.5.5 (2026-04-14)
 - update-placement 网络失败时重试 3 次
 - 插件认证：所有请求带 `Authorization: Bearer <key>` + 版本号 header，服务端双重校验
