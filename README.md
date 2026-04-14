@@ -120,6 +120,9 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 > Web 端更新日志已迁移至 [LeagueWeb](https://github.com/iceshoesss/LeagueWeb) 仓库。
 
+### v0.5.5 (2026-04-14)
+- update-placement 网络失败时重试 3 次
+
 ### v0.5.4 (2026-04-14)
 - check-league 网络失败时重试 3 次
 

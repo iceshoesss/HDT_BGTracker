@@ -401,6 +401,11 @@ pipeline = [
   - `app.py` 新增 `WEB_VERSION` 常量，通过 context processor 注入所有模板
   - `base.html` 底部显示版本号
 
+### v0.5.5 (2026-04-14)
+- **update-placement 网络重试**：HTTP 请求失败时重试 3 次（间隔 1s/2s/3s）
+  - 原逻辑：placement HTTP 请求失败直接丢弃，排名丢失无日志
+  - 新逻辑：与 check-league 保持一致，失败后重试 3 次，全部失败才放弃并记录日志
+
 ### v0.5.4 (2026-04-14)
 - **check-league 网络重试**：HTTP 请求失败时重试 3 次（间隔 1s/2s/3s）
   - check-league 失败比 placement 失败更严重（整个对局不被标记为联赛）

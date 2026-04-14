@@ -380,6 +380,18 @@ namespace HDT_BGTracker
                     });
 
                     var (ok, body) = PostJson("/api/plugin/update-placement", json);
+
+                    // HTTP 失败时重试（排名数据已就绪，只需重发请求）
+                    if (!ok)
+                    {
+                        for (int retry = 1; retry <= 3 && !ok; retry++)
+                        {
+                            Log($"UpdateLeaguePlacement: 第{retry}次重试...");
+                            System.Threading.Thread.Sleep(1000 * retry);
+                            (ok, body) = PostJson("/api/plugin/update-placement", json);
+                        }
+                    }
+
                     if (ok)
                     {
                         int points = placement.Value == 1 ? 9 : Math.Max(1, 9 - placement.Value);
@@ -392,6 +404,10 @@ namespace HDT_BGTracker
                                 Log($"对局已全部提交，endedAt 已写入");
                         }
                         catch { }
+                    }
+                    else
+                    {
+                        Log($"UpdateLeaguePlacement: 请求失败，排名可能丢失 gameUuid={gameUuid} placement={placement.Value}");
                     }
                 }
                 catch (Exception ex)
