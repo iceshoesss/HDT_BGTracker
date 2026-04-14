@@ -378,6 +378,15 @@ pipeline = [
 
 ## 5. 更新记录
 
+### v0.3.0 (2026-04-14) — Web
+- **测试模式改为重叠人数匹配**：
+  - 原逻辑：test 模式无脑判联赛（跳过一切匹配）
+  - 新逻辑：遍历等待组，计算本局玩家 `accountIdLo` 与等待组的交集，重叠 ≥ `MIN_MATCH_PLAYERS` 才判联赛
+  - `MIN_MATCH_PLAYERS` 常量控制阈值（test=3, normal=8）
+  - 报名队列→等待组的移入阈值同步跟随 `MIN_MATCH_PLAYERS`（不再硬编码 8）
+  - `toggle-test-mode.py` 切换模式时自动改 `MIN_MATCH_PLAYERS` 值
+  - 日志带 `[TEST]` 标签，方便排查
+
 ### v0.2.13 (2026-04-14)
 - **登录状态持久化修复**：
   - 显式配置 `SESSION_COOKIE_SAMESITE = "Lax"` + `SESSION_COOKIE_HTTPONLY = True`
