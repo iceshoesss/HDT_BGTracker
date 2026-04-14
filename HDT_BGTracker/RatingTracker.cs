@@ -31,6 +31,8 @@ namespace HDT_BGTracker
         private bool _isLeagueGame;
         private string _cachedGameUuid;
         private int _lastStepValue = -1;
+        private int _placementRetryCount;
+        private const int MaxPlacementRetries = 10;
 
         // ── HTTP + JSON ───────────────────────────────────
         private HttpClient _httpClient;
@@ -144,6 +146,7 @@ namespace HDT_BGTracker
                     if (_gameEndTime == DateTime.MinValue)
                     {
                         _gameEndTime = DateTime.Now;
+                        _placementRetryCount = 0;
                         return;
                     }
 
@@ -153,7 +156,15 @@ namespace HDT_BGTracker
                     // 游戏结束处理
                     if (_isLeagueGame)
                     {
-                        UpdateLeaguePlacement(_cachedAccountIdLo, _cachedGameUuid);
+                        bool placementUploaded = UpdateLeaguePlacement(_cachedAccountIdLo, _cachedGameUuid);
+                        if (!placementUploaded && _placementRetryCount < MaxPlacementRetries)
+                        {
+                            _placementRetryCount++;
+                            Log($"OnUpdate: placement 尚未就绪，第 {_placementRetryCount}/{MaxPlacementRetries} 次重试");
+                            return; // 下个 OnUpdate 周期再试
+                        }
+                        if (!placementUploaded)
+                            Log("OnUpdate: placement 重试耗尽，放弃本次上传");
                     }
 
                     // 重置状态
@@ -167,6 +178,7 @@ namespace HDT_BGTracker
                     _heroLogged = false;
                     _lobbyLogged = false;
                     _isLeagueGame = false;
+                    _placementRetryCount = 0;
                 }
             }
             catch (Exception ex)
@@ -318,34 +330,35 @@ namespace HDT_BGTracker
 
         /// <summary>
         /// 游戏结束时，更新自己在联赛对局中的排名
+        /// 返回 true 表示已成功上传（或已确认上传），false 表示 placement 尚未就绪需重试
         /// </summary>
-        private void UpdateLeaguePlacement(string accountIdLo, string gameUuid)
+        private bool UpdateLeaguePlacement(string accountIdLo, string gameUuid)
         {
-            if (_httpClient == null) return;
-            if (string.IsNullOrEmpty(gameUuid) || string.IsNullOrEmpty(accountIdLo)) return;
+            if (_httpClient == null) return true;
+            if (string.IsNullOrEmpty(gameUuid) || string.IsNullOrEmpty(accountIdLo)) return true;
+
+            int? placement = null;
+            try
+            {
+                var stats = Core.Game.CurrentGameStats;
+                var details = stats?.BattlegroundsDetails;
+                placement = details?.FinalPlacement;
+            }
+            catch (Exception ex)
+            {
+                Log($"UpdateLeaguePlacement: 读取 placement 异常: {ex.Message}");
+            }
+
+            if (!placement.HasValue)
+            {
+                Log("UpdateLeaguePlacement: placement 为 null，需要重试");
+                return false;
+            }
 
             Task.Run(() =>
             {
                 try
                 {
-                    int? placement = null;
-                    try
-                    {
-                        var stats = Core.Game.CurrentGameStats;
-                        var details = stats?.BattlegroundsDetails;
-                        placement = details?.FinalPlacement;
-                    }
-                    catch (Exception ex)
-                    {
-                        Log($"UpdateLeaguePlacement: 读取 placement 异常: {ex.Message}");
-                    }
-
-                    if (!placement.HasValue)
-                    {
-                        Log("UpdateLeaguePlacement: placement 为 null，跳过更新");
-                        return;
-                    }
-
                     string json = _json.Serialize(new Dictionary<string, object>
                     {
                         ["playerId"] = _cachedPlayerId ?? "",
@@ -374,6 +387,8 @@ namespace HDT_BGTracker
                     Log($"UpdateLeaguePlacement 异常: {ex.Message}");
                 }
             });
+
+            return true; // placement 有值，后续上传由 Task.Run 异步完成
         }
 
         // ── 辅助方法 ──────────────────────────────────────
