@@ -117,8 +117,20 @@ C# 插件 (HDT_BGTracker/)          Flask 网站 (LeagueWeb/)
 - 投降或自然淘汰：**无新 STEP 变化**，游戏直接切回菜单
 - **STEP 检测无法判断 BG 游戏结束**
 - 游戏结束依赖 HDT 的 `IsInMenu = true`（由日志 mode 变化驱动）
-- 自然淘汰时 `FinalPlacement` 在 `HandleGameEnd(true)` 时已可读
 - **当前方案：保持 `IsInMenu` 检测**
+
+**关于 FinalPlacement 的踩坑记录（2026-04-15 实测）**：
+- ❌ `FinalPlacement` **在游戏内始终为 null**，不可用于提前检测淘汰
+- `FinalPlacement` 由 HDT 的 `HandleGameEnd()` 设置，读取的是 `PLAYER_LEADERBOARD_PLACE` tag
+- 该 tag 只有在 HDT 处理完整 power log（`STATE=COMPLETE`）后才可读
+- 游戏内轮询 ~500 次全部 null，IsInMenu 触发后才变为实际值
+- ❌ 英雄血量 ≤ 0 可在游戏内读取，但**无法解决并列排名和投降排名问题**
+  - 自然淘汰时有并列可能（同轮多人淘汰，排名相同）
+  - 投降时排名不确定（可能在任意轮次，排名不等于"活着人数+1"）
+  - 只有服务端的 `PLAYER_LEADERBOARD_PLACE` 才是准确的
+- ⚠️ 玩家淘汰后 AFK 挂机不回菜单时，`IsInMenu` 延迟触发，上传会有延迟
+  - 这是 HDT 层面的限制，插件无法绕过
+  - 服务端有 80 分钟超时兜底
 
 ### 2.5 HeroDb → 英雄名
 
