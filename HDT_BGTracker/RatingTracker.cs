@@ -288,6 +288,18 @@ namespace HDT_BGTracker
                     });
 
                     var (ok, body) = PostJson("/api/plugin/check-league", json);
+
+                    // 网络失败时重试（数据已就绪，只是请求没送到）
+                    if (!ok)
+                    {
+                        for (int retry = 1; retry <= 3 && !ok; retry++)
+                        {
+                            Log($"CheckLeagueQueue: 第{retry}次重试...");
+                            System.Threading.Thread.Sleep(1000 * retry);
+                            (ok, body) = PostJson("/api/plugin/check-league", json);
+                        }
+                    }
+
                     if (ok)
                     {
                         try
