@@ -366,9 +366,13 @@ def print_status(game: GameResult, event: str):
 # ─── 实时监控模式 ─────────────────────────────────────────
 
 def tail_log(log_path: str):
-    """实时监控 Power.log 变化"""
+    """实时监控 Power.log 变化，自动切换到新日志文件"""
     game = GameResult()
     running = True
+    current_path = log_path
+    check_interval = 0.1      # 轮询间隔
+    file_check_counter = 0
+    file_check_every = 100    # 每 100 次轮询检查一次新文件（约 10 秒）
 
     def signal_handler(sig, frame):
         nonlocal running
@@ -377,18 +381,34 @@ def tail_log(log_path: str):
 
     signal.signal(signal.SIGINT, signal_handler)
 
-    print(f"👁 监控: {log_path}")
+    print(f"👁 监控: {current_path}")
     print(f"   等待游戏开始...")
     print(f"   (Ctrl+C 停止)\n")
 
-    # 先读完现有内容（不处理，跳过历史）
-    with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
-        f.seek(0, 2)  # 跳到文件末尾
-        pos = f.tell()
+    # 跳过已有内容
+    pos = _get_file_end(current_path)
 
     while running:
         try:
-            with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+            # 定期检查是否有新的日志文件
+            file_check_counter += 1
+            if file_check_counter >= file_check_every:
+                file_check_counter = 0
+                new_path = _check_new_log_file(current_path)
+                if new_path:
+                    # 结束当前对局（如果有）
+                    if game.is_active:
+                        print(f"\n🔄 检测到游戏重启，当前对局中断")
+                        game.is_active = False
+                        game = GameResult()
+
+                    current_path = new_path
+                    pos = _get_file_end(current_path)
+                    print(f"\n🔄 切换到新日志: {current_path}")
+                    print(f"   等待游戏开始...\n")
+
+            # 读取新内容
+            with open(current_path, 'r', encoding='utf-8', errors='replace') as f:
                 f.seek(pos)
                 lines = f.readlines()
                 pos = f.tell()
@@ -398,17 +418,84 @@ def tail_log(log_path: str):
                 if event:
                     print_status(game, event)
                     if event == 'game_end':
-                        # 结束后回到等待状态
                         game = GameResult()
 
-            time.sleep(0.1)  # 100ms 轮询
+            time.sleep(check_interval)
 
         except FileNotFoundError:
-            print("❌ 日志文件消失，等待恢复...")
-            time.sleep(2)
+            # 文件可能被删除/移动，尝试找新文件
+            new_path = _check_new_log_file(current_path)
+            if new_path:
+                current_path = new_path
+                pos = _get_file_end(current_path)
+                game = GameResult()
+                print(f"\n🔄 日志文件已切换: {current_path}")
+                print(f"   等待游戏开始...\n")
+            else:
+                print("❌ 日志文件消失，等待恢复...")
+                time.sleep(3)
         except Exception as e:
             print(f"⚠️ 错误: {e}")
             time.sleep(1)
+
+
+def _get_file_end(path: str) -> int:
+    """获取文件末尾位置"""
+    try:
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
+            f.seek(0, 2)
+            return f.tell()
+    except (FileNotFoundError, OSError):
+        return 0
+
+
+def _check_new_log_file(current_path: str) -> str:
+    """
+    检查是否有比当前更新的日志文件
+    返回新路径或 None
+    """
+    # 从当前路径推断 Logs 目录
+    current_dir = os.path.dirname(current_path)
+    parent = os.path.dirname(current_dir)
+
+    # 判断当前路径是 归档文件夹/Power.log 还是 Logs/Power.log
+    basename = os.path.basename(current_dir)
+    if basename.startswith("Hearthstone_"):
+        logs_dir = parent
+    else:
+        logs_dir = current_dir
+
+    if not os.path.isdir(logs_dir):
+        return None
+
+    # 找所有日志文件，按修改时间排序
+    candidates = []
+    for folder in glob.glob(os.path.join(logs_dir, "Hearthstone_*")):
+        p = os.path.join(folder, "Power.log")
+        if os.path.isfile(p) and os.path.abspath(p) != os.path.abspath(current_path):
+            candidates.append((os.path.getmtime(p), p))
+
+    root_log = os.path.join(logs_dir, "Power.log")
+    if os.path.isfile(root_log) and os.path.abspath(root_log) != os.path.abspath(current_path):
+        candidates.append((os.path.getmtime(root_log), root_log))
+
+    if not candidates:
+        return None
+
+    # 取最新且比当前文件更新的
+    current_mtime = 0
+    try:
+        current_mtime = os.path.getmtime(current_path)
+    except OSError:
+        pass
+
+    candidates.sort(reverse=True)
+    newest_mtime, newest_path = candidates[0]
+
+    if newest_mtime > current_mtime:
+        return newest_path
+
+    return None
 
 
 # ─── 批量解析模式 ─────────────────────────────────────────
