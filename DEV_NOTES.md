@@ -484,6 +484,16 @@ HDT 的 `BattlegroundsLobbyInfo`（含对手 BattleTag + accountIdLo）来自 **
 - `_find_last_create_game_pos()` 跳到该位置，静默处理已有数据（不打印历史排名变化）
 - 扫描完后如果对局仍在进行，输出当前状态概要（玩家、英雄、当前排名），然后继续实时监控
 
+**游戏结束检测（扫描阶段）：**
+- `RE_LB_TAG` 匹配到本地玩家 BattleTag → 游戏已结束（HDT 只在游戏结束时用 BattleTag 格式写排名行）
+- 8 个英雄全部有 placement → 游戏已结束
+- 以上两个信号任一命中即标记 `is_active = False`，不再追踪该局
+
+**断线重连英雄匹配：**
+- LEADERBOARD_PLACE 通过 `card_id + player_slot` 匹配已有英雄（而非 entity_id）
+- 原因：断线重连后 entity_id 可能变化，但 card_id + player_slot 保持一致
+- 没有匹配到已有英雄时才创建新的 HeroPlacement（正常游戏 FULL_ENTITY 已创建）
+
 **LEADERBOARD_PLACE 追踪所有玩家（不仅是本地玩家）：**
 - 通过 `RE_LB_ENTITY` 正则匹配带 cardId 的 LEADERBOARD_PLACE 行
 - 每次匹配时更新 `all_heroes` 和 `hero_placements`（如果 entity 不存在则自动创建）

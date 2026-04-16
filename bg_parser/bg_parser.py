@@ -295,19 +295,31 @@ def _process_active_line(line: str, game: GameResult):
         old_placement = game.hero_placements.get(entity_id, 0)
         game.hero_placements[entity_id] = placement
 
-        if entity_id not in game.all_heroes:
-            game.all_heroes[entity_id] = HeroPlacement(
+        # 优先用 card_id+player_slot 匹配已有英雄（断线重连后 entity_id 可能变化）
+        matched_hero = None
+        for h in game.all_heroes.values():
+            if h.card_id == card_id and h.player_slot == player_slot:
+                matched_hero = h
+                break
+
+        if matched_hero:
+            matched_hero.placement = placement
+            hero_entity_id = matched_hero.entity_id
+        else:
+            hero = HeroPlacement(
                 entity_id=entity_id, hero_name=hero_name,
                 card_id=card_id, player_slot=player_slot,
             )
-        game.all_heroes[entity_id].placement = placement
+            hero.placement = placement
+            game.all_heroes[entity_id] = hero
+            hero_entity_id = entity_id
 
         # 判断是否是本地玩家（entity_id 匹配 或 player_slot=7）
-        is_local = (entity_id == game.local_hero_entity_id) or (player_slot == 7 and game.local_hero_entity_id == 0)
+        is_local = (hero_entity_id == game.local_hero_entity_id) or (player_slot == 7 and game.local_hero_entity_id == 0)
         if is_local:
             game.local_placement = placement
             if game.local_hero_entity_id == 0:
-                game.local_hero_entity_id = entity_id
+                game.local_hero_entity_id = hero_entity_id
             if placement != old_placement:
                 return 'placement_update'
 
@@ -394,12 +406,34 @@ def _scan_quiet(file, pos):
     静默扫描已有内容，不打印中间事件。
     返回 (game, end_pos)。
     如果最后一局已结束，game.is_active == False。
+    游戏结束信号：
+      1. BattleTag 出现在 LEADERBOARD_PLACE（游戏结束的明确标记）
+      2. 8 个玩家全部有排名（完整提交）
     """
     game = GameResult()
     file.seek(pos)
+    game_end_seen = False
     for line in file:
         process_line(line, game)
+        if not game.is_active:
+            break
+        # 信号 1：BattleTag 出现在 LEADERBOARD_PLACE（游戏结束的明确标记）
+        if game.local_player_tag:
+            m = RE_LB_TAG.search(line)
+            if m and m.group(1).strip() == game.local_player_tag:
+                game_end_seen = True
     end_pos = file.tell()
+
+    # 信号 2：8 人全部有排名
+    if game.is_active:
+        placed_count = sum(1 for h in game.all_heroes.values() if h.placement > 0)
+        if placed_count >= 8:
+            game_end_seen = True
+
+    # 如果检测到游戏结束，标记为非活跃
+    if game_end_seen:
+        game.is_active = False
+
     return game, end_pos
 
 
