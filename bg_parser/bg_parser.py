@@ -182,25 +182,19 @@ def process_line(line: str, game: GameResult):
 
     状态机:
     ────
-    空闲 → CREATE_GAME → 对局中
-    空闲 → LEADERBOARD_PLACE（无 CREATE_GAME） → 对局中（中途启动检测）
-    对局中 → 下一个 CREATE_GAME → 保存结果、开始新局
+    空闲 → CREATE_GAME → 对局中（game_start）
+    对局中 → 下一个 CREATE_GAME → 保存结果、开始新局（game_end → game_start）
     """
     # ── 新游戏开始 ──
     if RE_CREATE_GAME.search(line) and 'PowerTaskList' not in line:
         if game.is_active:
-            return 'game_end'
+            # 上一局结束，输出结果，然后开始新局
+            print_status(game, 'game_end')
 
         _reset_game(game)
         return 'game_start'
 
     if not game.is_active:
-        return None
-
-    # 跳过 PowerTaskList 的 CREATE_GAME 重复
-    if 'PowerTaskList' in line and 'CREATE_GAME' in line:
-        return None
-
         return None
 
     # 跳过 PowerTaskList 的 CREATE_GAME 重复
@@ -286,7 +280,7 @@ def _process_active_line(line: str, game: GameResult):
             )
         return None
 
-    # ── LEADERBOARD_PLACE（排名更新）──
+    # ── LEADERBOARD_PLACE（排名更新，追踪所有玩家）──
     m = RE_LB_ENTITY.search(line)
     if m:
         hero_name = m.group(1)
@@ -308,9 +302,12 @@ def _process_active_line(line: str, game: GameResult):
             )
         game.all_heroes[entity_id].placement = placement
 
-        # 本地玩家的英雄排名变化
-        if entity_id == game.local_hero_entity_id:
+        # 判断是否是本地玩家（entity_id 匹配 或 player_slot=7）
+        is_local = (entity_id == game.local_hero_entity_id) or (player_slot == 7 and game.local_hero_entity_id == 0)
+        if is_local:
             game.local_placement = placement
+            if game.local_hero_entity_id == 0:
+                game.local_hero_entity_id = entity_id
             if placement != old_placement:
                 return 'placement_update'
 
@@ -381,7 +378,13 @@ def print_status(game: GameResult, event: str):
 # ─── 实时监控模式 ─────────────────────────────────────────
 
 def tail_log(log_path: str):
-    """实时监控 Power.log 变化，自动切换到新日志文件"""
+    """实时监控 Power.log 变化，自动切换到新日志文件
+
+    支持三种场景：
+    1. 游戏前启动 → 等待 CREATE_GAME，正常追踪
+    2. 游戏中启动 → 扫描已有内容，从日志重建状态
+    3. 断线重连   → 文件切换后扫描新文件，重建对局
+    """
     game = GameResult()
     running = True
     current_path = log_path
@@ -397,11 +400,30 @@ def tail_log(log_path: str):
     signal.signal(signal.SIGINT, signal_handler)
 
     print(f"👁 监控: {current_path}")
-    print(f"   等待游戏开始...")
+    print(f"   扫描已有内容（支持中途接入）...")
     print(f"   (Ctrl+C 停止)\n")
 
-    # 跳过已有内容
-    pos = _get_file_end(current_path)
+    # 从文件开头扫描，而非末尾
+    # 原因：游戏中启动脚本 / 断线重连后，需要从已有日志中重建对局状态
+    # CREATE_GAME 处理会自动跳过已结束的对局，只保留最后一个活跃对局
+    pos = 0
+
+    # 首次扫描：处理文件已有内容
+    try:
+        with open(current_path, 'r', encoding='utf-8', errors='replace') as f:
+            lines = f.readlines()
+            pos = f.tell()
+        for line in lines:
+            event = process_line(line, game)
+            if event:
+                print_status(game, event)
+        if game.is_active:
+            print(f"   ✓ 检测到进行中的对局，继续监控...")
+        else:
+            print(f"   等待游戏开始...")
+    except Exception as e:
+        print(f"⚠️ 首次扫描失败: {e}")
+        pos = _get_file_end(current_path)
 
     while running:
         try:
@@ -414,13 +436,27 @@ def tail_log(log_path: str):
                     # 结束当前对局（如果有）
                     if game.is_active:
                         print(f"\n🔄 检测到游戏重启，当前对局中断")
-                        game.is_active = False
                         game = GameResult()
 
                     current_path = new_path
-                    pos = _get_file_end(current_path)
                     print(f"\n🔄 切换到新日志: {current_path}")
-                    print(f"   等待游戏开始...\n")
+
+                    # 扫描新文件已有内容（断线重连场景）
+                    try:
+                        with open(current_path, 'r', encoding='utf-8', errors='replace') as f:
+                            scan_lines = f.readlines()
+                            pos = f.tell()
+                        for line in scan_lines:
+                            event = process_line(line, game)
+                            if event:
+                                print_status(game, event)
+                        if game.is_active:
+                            print(f"   ✓ 检测到进行中的对局，继续监控...")
+                        else:
+                            print(f"   等待游戏开始...\n")
+                    except Exception as e:
+                        print(f"⚠️ 新文件扫描失败: {e}")
+                        pos = _get_file_end(current_path)
 
             # 读取新内容
             with open(current_path, 'r', encoding='utf-8', errors='replace') as f:
@@ -432,8 +468,6 @@ def tail_log(log_path: str):
                 event = process_line(line, game)
                 if event:
                     print_status(game, event)
-                    if event == 'game_end':
-                        game = GameResult()
 
             time.sleep(check_interval)
 
@@ -442,10 +476,25 @@ def tail_log(log_path: str):
             new_path = _check_new_log_file(current_path)
             if new_path:
                 current_path = new_path
-                pos = _get_file_end(current_path)
-                game = GameResult()
-                print(f"\n🔄 日志文件已切换: {current_path}")
-                print(f"   等待游戏开始...\n")
+                # 扫描新文件
+                try:
+                    with open(current_path, 'r', encoding='utf-8', errors='replace') as f:
+                        scan_lines = f.readlines()
+                        pos = f.tell()
+                    game = GameResult()
+                    for line in scan_lines:
+                        event = process_line(line, game)
+                        if event:
+                            print_status(game, event)
+                    print(f"\n🔄 日志文件已切换: {current_path}")
+                    if game.is_active:
+                        print(f"   ✓ 检测到进行中的对局，继续监控...")
+                    else:
+                        print(f"   等待游戏开始...\n")
+                except Exception as e:
+                    print(f"⚠️ 新文件扫描失败: {e}")
+                    pos = _get_file_end(current_path)
+                    game = GameResult()
             else:
                 print("❌ 日志文件消失，等待恢复...")
                 time.sleep(3)

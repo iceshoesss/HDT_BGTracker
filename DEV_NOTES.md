@@ -474,17 +474,26 @@ HDT 的 `BattlegroundsLobbyInfo`（含对手 BattleTag + accountIdLo）来自 **
 
 - 100ms 轮询读取文件新内容
 - 每 ~10 秒检查 Logs 目录下是否有更新的 `Hearthstone_xx` 文件夹
-- 玩家重启游戏 → 自动切换到新日志 → 当前对局中断提示
+- 玩家重启游戏 → 自动切换到新日志 → 扫描新文件已有内容重建对局状态
+
+### 8.6 中途接入与断线重连
+
+**启动时从文件开头扫描，而非末尾。** 原因：
+- 游戏中启动脚本：需要从已有日志重建对局（CREATE_GAME + FULL_ENTITY + LEADERBOARD_PLACE）
+- 断线重连：炉石会生成新的 Power.log，包含完整游戏状态（含 CREATE_GAME），脚本切换到新文件后扫描即可恢复
+- `process_line` 的 CREATE_GAME 逻辑自动跳过已结束的旧对局，只保留最后一个活跃对局
+
+**LEADERBOARD_PLACE 追踪所有玩家（不仅是本地玩家）：**
+- 通过 `RE_LB_ENTITY` 正则匹配带 cardId 的 LEADERBOARD_PLACE 行
+- 每次匹配时更新 `all_heroes` 和 `hero_placements`（如果 entity 不存在则自动创建）
+- 本地玩家判定：entity_id 匹配 `local_hero_entity_id`，或 `player_slot == 7`
+- 断线重连时本地玩家的 HERO_ENTITY 可能不出现，通过 player_slot=7 回退识别
 
 ---
 
 ## 9. 待办
 
-- [ ] **插件架构改造：直连 MongoDB → HTTP API（通过 CF Tunnel）**
-  - 背景：CF Tunnel 只能穿透 HTTP，无法暴露 MongoDB 端口
-  - C# 插件：`MongoDB.Driver` → `HttpClient` + `JavaScriptSerializer`
-  - Flask 端：`/api/plugin/*` 端点，由插件 HTTP 调用
-  - 插件体积：仅 1 个 DLL（移除 MongoDB 全套依赖）
+- [ ] ELO 评分系统上线（feature/elo 分支有代码，已 revert）
 
 ---
 
