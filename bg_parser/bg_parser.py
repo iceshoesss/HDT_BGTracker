@@ -178,41 +178,70 @@ RE_LB_TAG = re.compile(
 
 def process_line(line: str, game: GameResult):
     """
-    处理一行日志，返回 True 表示有新数据需要展示
+    处理一行日志，返回事件类型
 
     状态机:
     ────
-    空闲 → CREATE_GAME → 对局中（收集玩家信息、英雄、排名）
+    空闲 → CREATE_GAME → 对局中
+    空闲 → LEADERBOARD_PLACE（无 CREATE_GAME） → 对局中（中途启动检测）
     对局中 → 下一个 CREATE_GAME → 保存结果、开始新局
     """
     # ── 新游戏开始 ──
     if RE_CREATE_GAME.search(line) and 'PowerTaskList' not in line:
         if game.is_active:
-            # 结束上一局
             return 'game_end'
 
-        # 开始新局
-        game.is_active = True
-        game.game_seed = 0
-        game.local_player_tag = ""
-        game.local_player_name = ""
-        game.local_account_id_lo = 0
-        game.local_hero_name = ""
-        game.local_hero_card_id = ""
-        game.local_hero_entity_id = 0
-        game.local_placement = 0
-        game.all_heroes = {}
-        game.hero_placements = {}
-        game.start_time = datetime.now().strftime("%H:%M:%S")
+        _reset_game(game)
         return 'game_start'
 
     if not game.is_active:
+        # 跳过 PowerTaskList 的 CREATE_GAME
+        if 'PowerTaskList' in line and 'CREATE_GAME' in line:
+            return None
+
+        # ── 中途启动检测：LEADERBOARD_PLACE 说明游戏已在进行 ──
+        m = RE_LB_ENTITY.search(line)
+        if m and is_hero_card(m.group(3)):
+            _reset_game(game)
+            game.is_active = True
+            game.start_time = datetime.now().strftime("%H:%M:%S")
+            print(f"\n{'─'*50}")
+            print(f"🎮 检测到进行中的对局（中途接入）")
+            # 不 return game_start，因为后面还会处理这行
+            # 继续往下走，让这行的 LEADERBOARD_PLACE 被处理
+            # 但先 return 一个标记让外部知道
+            # 实际上直接 fall through 处理这行
+            # 用一个 trick: 先打印开始，然后处理这行
+            _process_active_line(line, game)
+            return 'game_start'
+
         return None
 
     # 跳过 PowerTaskList 的 CREATE_GAME 重复
     if 'PowerTaskList' in line and 'CREATE_GAME' in line:
         return None
 
+    return _process_active_line(line, game)
+
+
+def _reset_game(game: GameResult):
+    """重置游戏状态"""
+    game.game_seed = 0
+    game.local_player_tag = ""
+    game.local_player_name = ""
+    game.local_account_id_lo = 0
+    game.local_hero_name = ""
+    game.local_hero_card_id = ""
+    game.local_hero_entity_id = 0
+    game.local_placement = 0
+    game.all_heroes = {}
+    game.hero_placements = {}
+    game.is_active = True
+    game.start_time = datetime.now().strftime("%H:%M:%S")
+
+
+def _process_active_line(line: str, game: GameResult):
+    """处理对局中的日志行"""
     # ── GameType ──
     m = RE_GAME_TYPE.search(line)
     if m and 'DebugPrintGame()' in line:
