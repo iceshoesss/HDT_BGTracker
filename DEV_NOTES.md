@@ -416,7 +416,69 @@ docker compose up -d
 
 ---
 
-## 8. 待办
+## 8. Power.log 直接解析（bg_parser）
+
+> 脱离 HDT 插件，直接从游戏日志提取数据。位于 `bg_parser/bg_parser.py`。
+
+### 8.1 Power.log 格式
+
+关键日志行：
+
+```
+GameState.DebugPrintPower() - CREATE_GAME                          → 新游戏开始
+GameState.DebugPrintGame() - GameType=GT_BATTLEGROUNDS             → 确认战棋模式
+GameState.DebugPrintGame() - PlayerID=7, PlayerName=玩家名#1234    → 本地玩家
+GameState.DebugPrintPower() - Player EntityID=20 PlayerID=7 GameAccountId=[hi=.. lo=1708070391]
+                                                                   → accountIdLo
+PowerTaskList...FULL_ENTITY ... entityName=xxx cardId=BG34_HERO_002 player=7
+                                                                   → 英雄实体
+TAG_CHANGE Entity=[entityName=xxx ... cardId=xxx player=N] tag=PLAYER_LEADERBOARD_PLACE value=N
+                                                                   → 排名更新
+```
+
+### 8.2 可提取数据
+
+| 数据 | 来源 | 可靠性 |
+|------|------|--------|
+| 本地玩家 BattleTag | `DebugPrintGame` 的 `PlayerName` | ✅ 可靠 |
+| accountIdLo | `Player EntityID` 的 `lo` 字段 | ✅ 可靠 |
+| 英雄名 + cardId | `FULL_ENTITY` + `LEADERBOARD_PLACE` | ✅ 可靠 |
+| 最终排名 | `LEADERBOARD_PLACE` 最后出现的值 | ⚠️ 游戏中动态变化 |
+| 对手 BattleTag | — | ❌ 不存在于 Power.log |
+| 对手 accountIdLo | — | ❌ 不存在于 Power.log |
+
+### 8.3 关键发现
+
+**Power.log 中没有对手身份信息。**
+
+`CREATE_GAME` 块只列出 2 个 Player 实体：
+- `PlayerID=7` = 本地玩家（有 GameAccountId）
+- `PlayerID=15` = 共享的"酒馆老板/spectator"实体（`lo=0`）
+
+所有 8 个英雄都挂在 `player=15`（对手英雄）或 `player=7`（本地英雄）下。
+HDT 的 `BattlegroundsLobbyInfo`（含对手 BattleTag + accountIdLo）来自 **HearthMirror**——
+一个 C# 库，通过读取炉石客户端**进程内存**获取，不是从日志读取。
+
+**LEADERBOARD_PLACE 在游戏中动态变化：**
+- 排名会在战斗阶段不断重排（7↔8 互换等）
+- 真正的最终排名在游戏结束前最后几秒才确定
+- 解析器取最后出现的值，但中间值可能不准确
+
+### 8.4 自动查找日志路径
+
+1. Windows 注册表：`HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Blizzard Entertainment\Hearthstone\InstallPath`
+2. 常见安装路径兜底（D:\Battle.net\、C:\Program Files\ 等）
+3. 在 `Logs\` 下找最新修改的 `Hearthstone_*` 文件夹
+
+### 8.5 实时监控机制
+
+- 100ms 轮询读取文件新内容
+- 每 ~10 秒检查 Logs 目录下是否有更新的 `Hearthstone_xx` 文件夹
+- 玩家重启游戏 → 自动切换到新日志 → 当前对局中断提示
+
+---
+
+## 9. 待办
 
 - [ ] **插件架构改造：直连 MongoDB → HTTP API（通过 CF Tunnel）**
   - 背景：CF Tunnel 只能穿透 HTTP，无法暴露 MongoDB 端口
@@ -426,7 +488,7 @@ docker compose up -d
 
 ---
 
-## 9. 更新记录
+## 10. 更新记录
 
 <details>
 <summary>展开完整版本历史</summary>

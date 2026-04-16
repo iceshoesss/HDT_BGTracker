@@ -13,6 +13,8 @@ HDT_BGTracker/
 │   ├── RatingTracker.cs    # 核心逻辑（联赛匹配 + 排名上传）
 │   ├── LobbyOverlay.cs     # 游戏内浮动面板（已禁用）
 │   └── HDT_BGTracker.csproj
+├── bg_parser/              # Python 日志解析器（脱离 HDT）
+│   └── bg_parser.py        # Power.log 实时解析
 ├── API.md                  # 插件调用的 API 文档（与 LeagueWeb 共享）
 ├── DEV_NOTES.md            # 开发文档（踩坑记录）
 └── sync.ps1 / sync.sh      # 同步脚本（保护本地配置）
@@ -94,6 +96,33 @@ tar -a -cf HDT_BGTracker.zip HDT_BGTracker.dll
 - 联赛对局自动识别并记录排名，非联赛对局不处理
 - 点击插件设置中的「测试连接」按钮可验证 API 连接
 - 日志在 `%AppData%\HearthstoneDeckTracker\BGTracker\tracker.log`
+
+## Python 日志解析器（bg_parser）
+
+独立于 HDT 插件，直接读取游戏日志 Power.log 提取对局数据。Python 3.6+，无第三方依赖。
+
+### 用法
+
+```bash
+# 实时监控模式（默认）
+python bg_parser/bg_parser.py
+
+# 解析已有日志
+python bg_parser/bg_parser.py --parse "D:\...\Power.log"
+```
+
+### 功能
+
+- **自动查找日志**：Windows 注册表 → 常见安装路径 → Logs 目录下最新文件夹
+- **实时监控**：tail 模式，游戏中即时输出排名变化
+- **自动切换**：玩家重启游戏时自动检测新日志文件夹并切换
+- **可提取数据**：本地玩家 BattleTag、accountIdLo、英雄名+cardId、排名 1-8
+
+### 已知限制
+
+- Power.log 不含对手 BattleTag/accountIdLo（需多玩家协作）
+- `LEADERBOARD_PLACE` 游戏中动态重排，解析器取最后出现的值
+- 第 1 名英雄有时不在日志的初始 batch 中
 
 ## 数据结构
 
