@@ -377,13 +377,66 @@ def print_status(game: GameResult, event: str):
 
 # ─── 实时监控模式 ─────────────────────────────────────────
 
+def _find_last_create_game_pos(path: str) -> int:
+    """找最后一个 CREATE_GAME（非 PowerTaskList）的字节位置"""
+    pos = 0
+    last_pos = -1
+    with open(path, 'r', encoding='utf-8', errors='replace') as f:
+        for line in f:
+            if RE_CREATE_GAME.search(line) and 'PowerTaskList' not in line:
+                last_pos = pos
+            pos += len(line.encode('utf-8', errors='replace'))
+    return last_pos if last_pos >= 0 else 0
+
+
+def _scan_quiet(file, pos):
+    """
+    静默扫描已有内容，不打印中间事件。
+    返回 (game, end_pos)。
+    如果最后一局已结束，game.is_active == False。
+    """
+    game = GameResult()
+    file.seek(pos)
+    for line in file:
+        process_line(line, game)
+    end_pos = file.tell()
+    return game, end_pos
+
+
+def _print_mid_game_summary(game: GameResult):
+    """游戏中途接入时，输出当前状态概要（不打印历史排名变化）"""
+    print(f"{'─'*50}")
+    print(f"🎮 检测到进行中的对局 | 开始于 {game.start_time}")
+    if game.local_player_tag:
+        print(f"👤 {game.local_player_tag}")
+    if game.local_account_id_lo:
+        print(f"   账号ID: {game.local_account_id_lo}")
+    hero = game.all_heroes.get(game.local_hero_entity_id)
+    if hero:
+        print(f"🦸 英雄: {hero.hero_name} ({hero.card_id})")
+        game.local_hero_name = hero.hero_name
+        game.local_hero_card_id = hero.card_id
+    if game.local_placement > 0:
+        print(f"📊 当前排名: 第 {game.local_placement} 名")
+    # 显示其他玩家
+    others = sorted(
+        [h for h in game.all_heroes.values() if h.entity_id != game.local_hero_entity_id and h.placement > 0],
+        key=lambda h: h.placement
+    )
+    if others:
+        print(f"📊 其他玩家:")
+        for h in others:
+            print(f"   第{h.placement}名: {h.hero_name} ({h.card_id})")
+    print()
+
+
 def tail_log(log_path: str):
     """实时监控 Power.log 变化，自动切换到新日志文件
 
     支持三种场景：
     1. 游戏前启动 → 等待 CREATE_GAME，正常追踪
-    2. 游戏中启动 → 扫描已有内容，从日志重建状态
-    3. 断线重连   → 文件切换后扫描新文件，重建对局
+    2. 游戏中启动 → 找最后一个 CREATE_GAME，静默重建状态后继续监控
+    3. 断线重连   → 文件切换后同样处理
     """
     game = GameResult()
     running = True
@@ -399,27 +452,28 @@ def tail_log(log_path: str):
 
     signal.signal(signal.SIGINT, signal_handler)
 
+    def scan_file(file_path: str) -> tuple:
+        """扫描文件，找最后一个 CREATE_GAME 并静默处理。返回 (game, pos)"""
+        g = GameResult()
+        cg_pos = _find_last_create_game_pos(file_path)
+        with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+            f.seek(cg_pos)
+            for line in f:
+                process_line(line, g)
+            end_pos = f.tell()
+        return g, end_pos
+
     print(f"👁 监控: {current_path}")
-    print(f"   扫描已有内容（支持中途接入）...")
     print(f"   (Ctrl+C 停止)\n")
 
-    # 从文件开头扫描，而非末尾
-    # 原因：游戏中启动脚本 / 断线重连后，需要从已有日志中重建对局状态
-    # CREATE_GAME 处理会自动跳过已结束的对局，只保留最后一个活跃对局
-    pos = 0
-
-    # 首次扫描：处理文件已有内容
+    # 首次扫描
     try:
-        with open(current_path, 'r', encoding='utf-8', errors='replace') as f:
-            lines = f.readlines()
-            pos = f.tell()
-        for line in lines:
-            event = process_line(line, game)
-            if event:
-                print_status(game, event)
+        game, pos = scan_file(current_path)
         if game.is_active:
-            print(f"   ✓ 检测到进行中的对局，继续监控...")
+            _print_mid_game_summary(game)
+            print(f"   ✓ 已接入对局，继续监控...")
         else:
+            pos = _get_file_end(current_path)
             print(f"   等待游戏开始...")
     except Exception as e:
         print(f"⚠️ 首次扫描失败: {e}")
@@ -433,29 +487,22 @@ def tail_log(log_path: str):
                 file_check_counter = 0
                 new_path = _check_new_log_file(current_path)
                 if new_path:
-                    # 结束当前对局（如果有）
                     if game.is_active:
                         print(f"\n🔄 检测到游戏重启，当前对局中断")
-                        game = GameResult()
-
                     current_path = new_path
                     print(f"\n🔄 切换到新日志: {current_path}")
-
-                    # 扫描新文件已有内容（断线重连场景）
+                    # 扫描新文件
                     try:
-                        with open(current_path, 'r', encoding='utf-8', errors='replace') as f:
-                            scan_lines = f.readlines()
-                            pos = f.tell()
-                        for line in scan_lines:
-                            event = process_line(line, game)
-                            if event:
-                                print_status(game, event)
+                        game, pos = scan_file(current_path)
                         if game.is_active:
-                            print(f"   ✓ 检测到进行中的对局，继续监控...")
+                            _print_mid_game_summary(game)
+                            print(f"   ✓ 已接入对局，继续监控...")
                         else:
-                            print(f"   等待游戏开始...\n")
+                            pos = _get_file_end(current_path)
+                            print(f"   等待游戏开始...")
                     except Exception as e:
                         print(f"⚠️ 新文件扫描失败: {e}")
+                        game = GameResult()
                         pos = _get_file_end(current_path)
 
             # 读取新内容
@@ -472,29 +519,22 @@ def tail_log(log_path: str):
             time.sleep(check_interval)
 
         except FileNotFoundError:
-            # 文件可能被删除/移动，尝试找新文件
             new_path = _check_new_log_file(current_path)
             if new_path:
                 current_path = new_path
-                # 扫描新文件
                 try:
-                    with open(current_path, 'r', encoding='utf-8', errors='replace') as f:
-                        scan_lines = f.readlines()
-                        pos = f.tell()
-                    game = GameResult()
-                    for line in scan_lines:
-                        event = process_line(line, game)
-                        if event:
-                            print_status(game, event)
+                    game, pos = scan_file(current_path)
                     print(f"\n🔄 日志文件已切换: {current_path}")
                     if game.is_active:
-                        print(f"   ✓ 检测到进行中的对局，继续监控...")
+                        _print_mid_game_summary(game)
+                        print(f"   ✓ 已接入对局，继续监控...")
                     else:
-                        print(f"   等待游戏开始...\n")
+                        pos = _get_file_end(current_path)
+                        print(f"   等待游戏开始...")
                 except Exception as e:
                     print(f"⚠️ 新文件扫描失败: {e}")
-                    pos = _get_file_end(current_path)
                     game = GameResult()
+                    pos = _get_file_end(current_path)
             else:
                 print("❌ 日志文件消失，等待恢复...")
                 time.sleep(3)
