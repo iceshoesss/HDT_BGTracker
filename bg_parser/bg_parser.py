@@ -76,36 +76,79 @@ def find_latest_power_log(custom_path: str = None) -> str:
         print(f"❌ 文件不存在: {custom_path}")
         sys.exit(1)
 
-    search_dirs = [
+    # 方式 1: Windows 注册表查找安装目录
+    install_dir = _find_hs_install_dir()
+    if install_dir:
+        logs_dir = os.path.join(install_dir, "Logs")
+        log_path = _find_log_in_dir(logs_dir)
+        if log_path:
+            return log_path
+
+    # 方式 2: 常见安装路径兜底
+    fallback_dirs = [
         r"D:\Battle.net\Hearthstone\Logs",
         r"C:\Program Files (x86)\Hearthstone\Logs",
         r"C:\Program Files\Hearthstone\Logs",
+        r"D:\Hearthstone\Logs",
+        r"C:\Program Files (x86)\Battle.net\Hearthstone\Logs",
     ]
-
-    # 优先：最新的归档文件夹
-    latest_path = None
-    latest_time = 0
-    for base_dir in search_dirs:
-        if not os.path.isdir(base_dir):
-            continue
-        for folder in sorted(glob.glob(os.path.join(base_dir, "Hearthstone_*")), reverse=True):
-            log_path = os.path.join(folder, "Power.log")
-            if os.path.isfile(log_path):
-                mtime = os.path.getmtime(log_path)
-                if mtime > latest_time:
-                    latest_time = mtime
-                    latest_path = log_path
-
-    if latest_path:
-        return latest_path
-
-    # 回退：直接在 Logs 目录下的 Power.log
-    for base_dir in search_dirs:
-        log_path = os.path.join(base_dir, "Power.log")
-        if os.path.isfile(log_path):
+    for logs_dir in fallback_dirs:
+        log_path = _find_log_in_dir(logs_dir)
+        if log_path:
             return log_path
 
     return None
+
+
+def _find_hs_install_dir() -> str:
+    """从 Windows 注册表获取炉石安装路径"""
+    try:
+        import winreg
+    except ImportError:
+        return None
+
+    keys = [
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Blizzard Entertainment\Hearthstone"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Blizzard Entertainment\Hearthstone"),
+        (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Blizzard Entertainment\Hearthstone"),
+    ]
+    for hive, path in keys:
+        try:
+            key = winreg.OpenKey(hive, path)
+            install_path, _ = winreg.QueryValueEx(key, "InstallPath")
+            winreg.CloseKey(key)
+            if install_path and os.path.isdir(install_path):
+                return install_path
+        except (FileNotFoundError, OSError):
+            continue
+    return None
+
+
+def _find_log_in_dir(logs_dir: str) -> str:
+    """在 Logs 目录下查找最新的 Power.log"""
+    if not os.path.isdir(logs_dir):
+        return None
+
+    # 查找 Hearthstone_时间戳 归档文件夹
+    candidates = []
+
+    # 归档文件夹
+    for folder in glob.glob(os.path.join(logs_dir, "Hearthstone_*")):
+        log_path = os.path.join(folder, "Power.log")
+        if os.path.isfile(log_path):
+            candidates.append((os.path.getmtime(log_path), log_path))
+
+    # 直接在 Logs 根目录的 Power.log
+    root_log = os.path.join(logs_dir, "Power.log")
+    if os.path.isfile(root_log):
+        candidates.append((os.path.getmtime(root_log), root_log))
+
+    if not candidates:
+        return None
+
+    # 取最新修改的
+    candidates.sort(reverse=True)
+    return candidates[0][1]
 
 
 # ─── 核心解析引擎 ─────────────────────────────────────────
