@@ -502,9 +502,99 @@ HDT 的 `BattlegroundsLobbyInfo`（含对手 BattleTag + accountIdLo）来自 **
 
 ---
 
-## 9. 待办
+## 9. 待办与已知问题
+
+### 已知问题
+
+- [ ] **bg_parser 游戏结束检测不完全可靠**（2026-04-16）：最后一局已结束但脚本仍显示"进行中"。初步判断 BattleTag 格式的 LEADERBOARD_PLACE 行可能未出现在日志中（或出现在扫描范围外）。待采集更多 log 样本分析。
+
+### 待办
 
 - [ ] ELO 评分系统上线（feature/elo 分支有代码，已 revert）
+- [ ] bg_parser 重构为独立可执行程序（见下方开发计划）
+
+---
+
+## 10. 独立可执行程序开发计划
+
+### 目标
+
+脱离 HDT 依赖，做一个独立运行的可执行文件，实现原 HDT 插件的全部功能：
+- 自动查找并监控 Power.log
+- 实时解析对局数据（玩家信息、英雄、排名）
+- 自动上传联赛数据到 Flask API
+- 支持断线重连、中途启动、多局连续追踪
+- 单文件可执行，体积尽量小
+
+### 技术选型
+
+| 方案 | 可执行体积 | 开发效率 | 与现有代码复用 | 备注 |
+|------|-----------|---------|--------------|------|
+| Python + PyInstaller | 50~100MB | 高 | 100%（直接复用 bg_parser） | 体积大，启动慢 |
+| Python + Nuitka | 30~60MB | 高 | 100% | 编译型打包，比 PyInstaller 小 |
+| Python + cx_Freeze | 30~50MB | 高 | 100% | 介于两者之间 |
+| C# .NET 8 单文件发布 | 10~20MB | 中 | 需重写，但已有插件代码参考 | 体积最优，可复用 HDT 插件经验 |
+| Go | 10~15MB | 中 | 需重写 | 编译快，交叉编译方便 |
+| Rust | 5~10MB | 低 | 需重写 | 体积最小，但开发周期长 |
+
+**当前方案：Python 原型阶段，用于验证功能和调试。**
+
+**目标方案：C# .NET 8 单文件自包含发布。** 理由：
+- 现有 HDT 插件（v0.5.6）已有成熟的 C# 实现，核心逻辑可直接迁移
+- .NET 8 `dotnet publish -p:PublishSingleFile=true -p:PublishTrimmed=true` 产出约 10~20MB
+- 正则引擎（`System.Text.RegularExpressions`）性能优秀，适合日志解析
+- `HttpClient` 原生支持，对接 Flask API 无需第三方库
+- `FileSystemWatcher` 替代 Python 的轮询，更高效
+
+### 实现阶段
+
+#### Phase 1 — Python 原型（当前）
+- [x] Power.log 实时监控 + 自动查找日志路径
+- [x] 对局检测（CREATE_GAME → STEP → game_end）
+- [x] 玩家信息提取（BattleTag、accountIdLo、英雄）
+- [x] 排名追踪（所有玩家 LEADERBOARD_PLACE）
+- [x] 中途接入 / 断线重连支持
+- [x] 自动切换日志文件（游戏重启）
+- [ ] 游戏结束检测可靠性修复
+- [ ] 对接 Flask API（check-league / update-placement）
+- [ ] 多局连续追踪稳定性测试
+
+#### Phase 2 — C# 重构
+- [ ] 项目搭建（.NET 8 控制台应用，单文件发布配置）
+- [ ] 日志路径查找（Windows 注册表 + 常见路径）
+- [ ] Power.log 解析引擎（移植 bg_parser 正则逻辑）
+- [ ] 实时监控（`FileSystemWatcher` + 自动切换）
+- [ ] HTTP 客户端（对接 `/api/plugin/*` 端点）
+- [ ] 状态持久化（当前对局状态、已上传标记）
+- [ ] 控制台 UI（进度条、状态显示）
+- [ ] 打包为单文件可执行（`dotnet publish`）
+
+#### Phase 3 — 功能完善
+- [ ] 系统托盘运行模式（可选，后台常驻）
+- [ ] 自动更新检查
+- [ ] 错误报告与日志
+- [ ] 配置文件（API 地址、token 等）
+
+### Python → C# 迁移映射
+
+| Python 组件 | C# 对应 | 说明 |
+|-------------|---------|------|
+| `re.compile()` | `Regex` 静态字段 | 预编译正则 |
+| `open().readlines()` | `StreamReader` + `FileSystemWatcher` | 文件监控 |
+| `requests.post()` | `HttpClient` | HTTP 请求 |
+| `dataclass GameResult` | `record` 或 `class` | 数据模型 |
+| `signal.SIGINT` | `Console.CancelKeyPress` | 信号处理 |
+| `os.path` + `winreg` | `Registry` + `Path` | 日志路径查找 |
+| `glob.glob()` | `Directory.GetFiles()` | 文件查找 |
+
+### 已有 C# 可复用代码
+
+以下 HDT 插件代码可直接迁移到独立程序：
+- `RatingTracker.cs` 中的 HTTP 请求逻辑（`PostJson`、重试、认证）
+- `BGTrackerPlugin.cs` 中的游戏状态检测（STEP、IsInMenu）
+- 日志写入（`Log()` 方法）
+- HeroDb 英雄名查找（`GetHeroName()`）
+- 区域获取（`GetRegion()`）
 
 ---
 
