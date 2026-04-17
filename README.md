@@ -150,7 +150,6 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 ### Web v0.4.0 (2026-04-17)
 - QQ 绑定码 API + webhook 通知 + 队列退出自动补人
 - player 页面绑定按钮（仅自己可见）
-- **已知问题**：本地部署登录状态随机丢失，正在排查（详见 [DEV_NOTES.md](DEV_NOTES.md)）
 
 ### 进行中
 - QQ 机器人集成（Flask 侧 API 已完成，机器人端待开发）

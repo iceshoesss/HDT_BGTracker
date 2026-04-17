@@ -506,10 +506,6 @@ HDT 的 `BattlegroundsLobbyInfo`（含对手 BattleTag + accountIdLo）来自 **
 
 ### 已知问题
 
-- [ ] **网站登录状态随机丢失**（2026-04-17）：本地部署（Windows + `python app.py` + HTTP）下，登录后在页面间导航时 session 随机丢失，有时丢失后再次导航又恢复。v0.3.2 不存在此问题，疑似 v0.3.3 之后引入。待定位具体 commit 和原因。排查方向：
-  - 浏览器缓存导致旧页面被缓存（显示未登录状态）
-  - Flask session cookie 在某些请求中未被浏览器携带
-  - 可用 `git checkout 90335aa` 回退测试
 - [ ] **bg_parser 游戏结束检测不完全可靠**（2026-04-16）：最后一局已结束但脚本仍显示"进行中"。初步判断 BattleTag 格式的 LEADERBOARD_PLACE 行可能未出现在日志中（或出现在扫描范围外）。待采集更多 log 样本分析。
 
 ### 待办
