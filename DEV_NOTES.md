@@ -681,7 +681,10 @@ QQ群 ↔ QQ机器人 ↔ HTTP API ↔ Flask ↔ MongoDB
 
 #### C# 插件
 
-#### v0.5.6 (2026-04-14)
+#### v0.5.7 (2026-04-18)
+- 修复日志刷屏：GetPlayerId/GetAccountIdLo 未找到时加 1 秒日志节流，避免 OnUpdate 每 100ms 写一条重复日志
+
+### v0.5.6 (2026-04-14)
 - 修复 GetPlayerId 失败导致 update-placement 静默丢失：三个缓存独立重试
 - 修复 409 误判为失败：已提交的 placement 返回 409 时不再重试
 

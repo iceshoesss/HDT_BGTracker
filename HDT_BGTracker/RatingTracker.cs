@@ -34,6 +34,10 @@ namespace HDT_BGTracker
         private int _lastStepValue = -1;
         private int _placementRetryCount;
         private const int MaxPlacementRetries = 10;
+        private DateTime _lastAccountIdLoLog = DateTime.MinValue;
+        private DateTime _lastPlayerIdLog = DateTime.MinValue;
+        private DateTime _lastGameUuidLog = DateTime.MinValue;
+        private static readonly TimeSpan LogThrottle = TimeSpan.FromSeconds(1);
 
         // ── HTTP + JSON ───────────────────────────────────
         private HttpClient _httpClient;
@@ -462,7 +466,11 @@ namespace HDT_BGTracker
                 Log($"GetPlayerId: PlayerEntities 读取失败: {ex.Message}");
             }
 
-            Log("GetPlayerId: 未找到有效 ID");
+            if (DateTime.Now - _lastPlayerIdLog >= LogThrottle)
+            {
+                _lastPlayerIdLog = DateTime.Now;
+                Log("GetPlayerId: 未找到有效 ID");
+            }
             return "unknown";
         }
 
@@ -494,7 +502,11 @@ namespace HDT_BGTracker
                 Log($"GetAccountIdLo 异常: {ex.Message}");
             }
 
-            Log("GetAccountIdLo: 未找到 accountIdLo（等待 GetPlayerId 成功后重试）");
+            if (DateTime.Now - _lastAccountIdLoLog >= LogThrottle)
+            {
+                _lastAccountIdLoLog = DateTime.Now;
+                Log("GetAccountIdLo: 未找到 accountIdLo（等待 GetPlayerId 成功后重试）");
+            }
             return null;
         }
 
