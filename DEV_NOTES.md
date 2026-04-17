@@ -601,45 +601,136 @@ HDT 的 `BattlegroundsLobbyInfo`（含对手 BattleTag + accountIdLo）来自 **
 
 ---
 
-## 10. 更新记录
+## 11. QQ 机器人集成计划（待开发）
+
+### 目标
+
+通过 QQ 机器人实现：
+1. **查询排名** — 群内发送指令查询排行榜/选手详情
+2. **管理员补录** — 管理员通过机器人补录问题对局排名
+3. **问题对局通知** — 对局超时/掉线时自动通知相关玩家
+
+### 架构
+
+```
+QQ群 ↔ QQ机器人 ↔ HTTP API ↔ Flask ↔ MongoDB
+```
+
+机器人作为独立服务运行，通过 HTTP API 与 Flask 通信。不需要 WebSocket，现有 SSE 也不需要改。
+
+### 需要的改动
+
+#### 1. Webhook 通知（Flask 侧）
+
+- 新增环境变量 `WEBHOOK_URL`（QQ 机器人的接收地址）
+- 在问题对局发生时（超时、部分掉线），POST 通知到 webhook URL
+- payload 包含对局信息 + 玩家列表（battleTag）
+
+#### 2. QQ 号绑定机制（Flask 侧）
+
+采用 **方案 A**：在 `league_players` 上加字段
+
+```json
+{
+  "battleTag": "衣锦夜行#1000",
+  "bindCode": "A3F8",
+  "bindCodeExpire": "2026-04-17T08:30:00Z"
+}
+```
+
+- `bindCode`：一次性绑定码，有效期 5 分钟
+- `bindCodeExpire`：过期时间
+- 绑定成功后清除这两个字段
+
+流程：
+1. 玩家在网站点击「绑定 QQ」→ 生成临时绑定码
+2. 玩家在 QQ 机器人输入 `/绑定 A3F8`
+3. 机器人调 API 验证 → 匹配到 battleTag → 机器人写入本地映射表
+4. 绑定码用完即废
+
+**机器人侧**维护 QQ 号 ↔ battleTag 映射表，不存入 Flask 数据库。
+
+#### 3. 新增 API 端点
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/bind-code` | POST | 登录用户生成绑定码（返回 code） |
+| `/api/bind-code/verify` | POST | 机器人验证绑定码（返回 battleTag） |
+
+机器人调用第二个端点时，需要带机器人自己的认证 token（环境变量 `BOT_API_KEY`）。
+
+### 涉及的数据集合
+
+| 集合 | 改动 |
+|------|------|
+| `league_players` | 新增 `bindCode`、`bindCodeExpire` 字段（临时） |
+
+不需要新建集合，不需要改动现有字段。
+
+## 12. 更新记录
 
 <details>
 <summary>展开完整版本历史</summary>
 
-### v0.5.6 (2026-04-14)
+### C# 插件
+
+#### C# 插件
+
+#### v0.5.6 (2026-04-14)
 - 修复 GetPlayerId 失败导致 update-placement 静默丢失：三个缓存独立重试
 - 修复 409 误判为失败：已提交的 placement 返回 409 时不再重试
 
-### v0.5.5 (2026-04-14)
+#### v0.5.5 (2026-04-14)
 - update-placement 网络失败时重试 3 次
 - 插件认证：Bearer token + 版本号 header，服务端双重校验
 
-### v0.5.4 (2026-04-14)
+#### v0.5.4 (2026-04-14)
 - check-league 网络失败时重试 3 次
 
-### v0.5.3 (2026-04-14)
+#### v0.5.3 (2026-04-14)
 - placement 为 null 时重试上传，解决淘汰玩家排名丢失
 
-### v0.5.2 (2026-04-13)
+#### v0.5.2 (2026-04-13)
 - 队列超时机制：报名 10 分钟踢出，等待 20 分钟解散
 - 验证码逻辑去重，print → logging
 
-### v0.5.1 (2026-04-13)
+#### v0.5.1 (2026-04-13)
 - 编译输出改用下划线分隔
 
-### v0.3.0 Web (2026-04-14)
-- 测试模式改为重叠人数匹配，MIN_MATCH_PLAYERS 可配置
-
-### v0.2.13 Web (2026-04-14)
-- 登录状态持久化修复，时间显示修正
-
-### 插件架构改造 (2026-04-12)
+#### 插件架构改造 (2026-04-12)
 - 直连 MongoDB → HTTP API（CF Tunnel 限制）
 
-### 网站 UI 迭代 (2026-04-12 ~ 04-13)
+### 联赛网站
+
+#### v0.4.0 (2026-04-15)
+- 7人提交后自动推算第8人排名：当 7 位玩家提交 placement 后，自动计算剩余玩家的排名（唯一剩余数字），立即写入 endedAt 结束对局
+- 适用于插件 API 和管理员补录 API 两个端点
+- 解决第一名 AFK 不上传导致对局无法结束的问题
+
+#### v0.3.3 (2026-04-17)
+- 修复 player 页面 battleTag 不带 #tag：不再依赖 league_matches 中插件上报的不完整数据，改为从 league_players 读取真实 battleTag；匹配逻辑也从 battleTag 改为 accountIdLo，兼容带/不带 #tag 的访问
+
+#### v0.3.1 (2026-04-14)
+- 插件认证 + 版本强制更新：所有 /api/plugin/* 端点双重校验
+  - API Key：配置 PLUGIN_API_KEY 后，插件请求必须带 Authorization: Bearer <key>，否则 403
+  - 版本检查：X-HDT-Plugin header 版本号低于 MIN_PLUGIN_VERSION 则 403
+  - 两个 env var 配合使用，发新插件时同步更换即可让旧插件失效
+
+#### v0.3.0 (2026-04-14)
+- 测试模式改为重叠人数匹配，MIN_MATCH_PLAYERS 可配置
+- 报名队列阈值联动：满 N 人移入等待组，N 跟随 MIN_MATCH_PLAYERS（test=3, normal=8）
+- toggle-test-mode.py 拆分为独立脚本，只管本仓库的 app.py
+
+#### v0.2.13 (2026-04-14)
+- 修复登录后导航到其他页面丢失登录状态的问题（Session cookie SameSite 配置）
+- 修复 player 页面历史对局时间显示错误（双重时区偏移）
+- 时间格式统一：所有 ISO 时间字符串带 Z 后缀，前端正确解析为 UTC
+- 新增 WEB_VERSION 常量，页面底部显示当前版本号
+
+#### 网站 UI 迭代 (2026-04-12 ~ 04-13)
 - 问题对局提醒、选手页图表、SSE 实时推送
 
-### 数据统计修复 (2026-04-12)
+#### 数据统计修复 (2026-04-12)
 - 排除 timeout/abandoned 对局
 
 </details>
