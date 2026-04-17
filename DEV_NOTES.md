@@ -601,11 +601,16 @@ HDT 的 `BattlegroundsLobbyInfo`（含对手 BattleTag + accountIdLo）来自 **
 
 ---
 
-## 11. QQ 机器人集成计划（待开发）
+## 11. QQ 机器人集成（BG_QQBot 仓库）
 
-### 目标
+> 独立仓库：[BG_QQBot](https://github.com/iceshoesss/BG_QQBot)，v0.1.1（2026-04-17）
 
-通过 QQ 机器人实现：
+### 已实现
+
+- 排行榜 TOP 10、选手查询、队列状态、最近对局
+- QQ 绑定码验证 + 解绑
+- Webhook 接收（LeagueWeb 超时/掉线对局 → bot 转发群通知 @ 玩家）
+- 帮助命令
 1. **查询排名** — 群内发送指令查询排行榜/选手详情
 2. **管理员补录** — 管理员通过机器人补录问题对局排名
 3. **问题对局通知** — 对局超时/掉线时自动通知相关玩家
