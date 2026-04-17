@@ -681,6 +681,9 @@ QQ群 ↔ QQ机器人 ↔ HTTP API ↔ Flask ↔ MongoDB
 
 #### C# 插件
 
+#### v0.5.8 (2026-04-18)
+- 每次退出 HDT 时自动清空日志文件，下次启动从干净日志开始
+
 #### v0.5.7 (2026-04-18)
 - 修复日志刷屏：GetPlayerId/GetAccountIdLo 未找到时加 1 秒日志节流，避免 OnUpdate 每 100ms 写一条重复日志
 
