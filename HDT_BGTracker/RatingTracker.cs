@@ -78,7 +78,6 @@ namespace HDT_BGTracker
             _httpClient?.Dispose();
             _httpClient = null;
             Log("插件已停止");
-            try { File.WriteAllText(LogFile, ""); } catch { }
         }
 
         /// <summary>
