@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Power.log 实时解析器 — 炉石酒馆战棋
-实时监控游戏日志，游戏过程中输出玩家信息和排名变化
+bg_parser.py — 炉石酒馆战棋 Power.log 解析器（v2 重写）
 
-用法:
-    python bg_parser.py                  # 实时监控（自动查找 Power.log）
-    python bg_parser.py <Power.log路径>  # 指定路径
-    python bg_parser.py --parse <路径>   # 解析已有日志（非实时）
+功能：
+  - 解析已有日志文件（--parse）
+  - 实时监控日志变化（默认）
+
+设计文档：bg_parser/LOG_ANALYSIS.md
 """
 
 import re
@@ -19,45 +19,61 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 
+# ═══════════════════════════════════════════════════════════
+#  数据模型
+# ═══════════════════════════════════════════════════════════
+
 @dataclass
-class HeroPlacement:
+class Hero:
+    """一个英雄实体"""
     entity_id: int
     hero_name: str
     card_id: str
-    player_slot: int
+    player_slot: int  # player=N 中的 N
     placement: int = 0
 
 
 @dataclass
-class GameResult:
-    game_seed: int = 0
-    local_player_tag: str = ""
-    local_player_name: str = ""
-    local_account_id_lo: int = 0
-    local_hero_name: str = ""
-    local_hero_card_id: str = ""
-    local_hero_entity_id: int = 0
-    local_placement: int = 0
-    all_heroes: dict = field(default_factory=dict)  # entity_id -> HeroPlacement
-    hero_placements: dict = field(default_factory=dict)  # entity_id -> placement
+class Game:
+    """一局游戏的状态"""
+    # 玩家信息
+    player_tag: str = ""            # 南怀北瑾丨少头脑#5267
+    player_display_name: str = ""   # 南怀北瑾丨少头脑
+    account_id_lo: int = 0          # 1708070391
+
+    # 英雄信息
+    hero_entity_id: int = 0         # HERO_ENTITY 选定的 entity id
+    hero_name: str = ""
+    hero_card_id: str = ""
+
+    # 所有英雄（用 (card_id, player_slot) 去重）
+    all_heroes: dict = field(default_factory=dict)  # (card_id, slot) → Hero
+
+    # 游戏状态
     is_active: bool = False
-    start_time: str = ""
+    reconnected: bool = False
+    conceded: bool = False
+    start_time: str = ""            # 日志中的第一个时间戳
+    end_time: str = ""
 
 
-# ─── 英雄卡牌过滤 ─────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════
+#  英雄卡牌过滤
+# ═══════════════════════════════════════════════════════════
 
 _HERO_PREFIXES = (
     'TB_BaconShop_HERO_',
     'BG20_HERO_', 'BG21_HERO_', 'BG22_HERO_', 'BG23_HERO_',
     'BG24_HERO_', 'BG25_HERO_', 'BG26_HERO_', 'BG27_HERO_',
     'BG28_HERO_', 'BG29_HERO_', 'BG30_HERO_', 'BG31_HERO_',
-    'BG32_HERO_', 'BG33_HERO_', 'BG34_HERO_',
+    'BG32_HERO_', 'BG33_HERO_', 'BG34_HERO_', 'BG35_HERO_',
 )
+
+_HERO_EXCLUDE = ('TB_BaconShop_HERO_PH',)
 
 
 def is_hero_card(card_id: str) -> bool:
-    """判断 cardId 是否为 BG 英雄（排除英雄技能）"""
-    if card_id == 'TB_BaconShop_HERO_PH':
+    if card_id in _HERO_EXCLUDE:
         return False
     for prefix in _HERO_PREFIXES:
         if card_id.startswith(prefix):
@@ -66,418 +82,458 @@ def is_hero_card(card_id: str) -> bool:
     return False
 
 
-# ─── 日志路径查找 ─────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════
+#  正则表达式
+# ═══════════════════════════════════════════════════════════
+
+_RE_CREATE_GAME = re.compile(r'GameState\.DebugPrintPower\(\) - CREATE_GAME$')
+_RE_GAME_TYPE = re.compile(r'GameType=(\w+)')
+_RE_PLAYER_NAME = re.compile(r'PlayerID=(\d+),\s*PlayerName=(.+?)$')
+_RE_ACCOUNT_ID = re.compile(r'GameAccountId=\[hi=\d+ lo=(\d+)\]')
+_RE_HERO_ENTITY = re.compile(r'TAG_CHANGE Entity=(.+?) tag=HERO_ENTITY value=(\d+)')
+
+_RE_FULL_ENTITY = re.compile(
+    r'FULL_ENTITY - (?:Creating|Updating)\s+'
+    r'\[?entityName=(.+?)\s+id=(\d+)\s+zone=\w+.*?'
+    r'cardId=(\w+)\s+player=(\d+)\]'
+)
+
+_RE_LB_ENTITY = re.compile(
+    r'TAG_CHANGE Entity=\[entityName=(.+?) id=(\d+) zone=\w+.*?'
+    r'cardId=(\w+).*?player=(\d+)\]\s+tag=PLAYER_LEADERBOARD_PLACE value=(\d+)'
+)
+
+_RE_LB_TAG = re.compile(r'TAG_CHANGE Entity=(.+?) tag=PLAYER_LEADERBOARD_PLACE value=(\d+)\s*$')
+_RE_STEP = re.compile(r'TAG_CHANGE Entity=GameEntity tag=STEP value=(\w+)')
+_RE_CONCEDE_PLAYER_TAG = re.compile(r'TAG_CHANGE Entity=.+? tag=(3479|4356) value=1')
+_RE_CONCEDE_GAME_TAG = re.compile(r'TAG_CHANGE Entity=GameEntity tag=4302 value=1')
+
+# 提取日志时间戳
+_RE_TIMESTAMP = re.compile(r'^[DIWE] (\d{2}:\d{2}:\d{2})\.(\d+)')
+
+
+# ═══════════════════════════════════════════════════════════
+#  核心解析引擎
+# ═══════════════════════════════════════════════════════════
+
+class Parser:
+    """状态机解析器"""
+
+    def __init__(self):
+        self.game = Game()
+        self.games: list[Game] = []
+        self._in_create_block = False
+        self._create_has_turn = False
+        self._pending_new_game: Game | None = None  # 新局暂存，重连时回滚
+        self._concede_pending = False
+        self._concede_tag = ""
+        self._last_reconnect_time = ""
+
+    def process_line(self, line: str) -> str | None:
+        """
+        处理一行日志，返回事件类型或 None。
+
+        事件:
+          game_start / reconnect / player_info / account_info /
+          hero_entity / hero_found / phase_change / concede / game_end / not_bg
+        """
+        # ── CREATE_GAME ──
+        if _RE_CREATE_GAME.search(line):
+            self._in_create_block = True
+            self._create_has_turn = False
+            # 保存旧局，立即创建新局（让 DebugPrintGame 等行能处理）
+            if self.game.is_active:
+                self._pending_new_game = self.game  # 暂存旧局
+            else:
+                self._pending_new_game = None
+            self._reset_game()  # 立即激活新局
+            return None
+
+        # ── CREATE_GAME 块内 ──
+        if self._in_create_block:
+            if 'tag=TURN value=' in line:
+                # 断线重连！回滚到旧局
+                self._create_has_turn = True
+                if self._pending_new_game:
+                    self.games.pop() if self.games and self.games[-1] is self.game else None
+                    self.game = self._pending_new_game
+                    self.game.reconnected = True
+                    self._pending_new_game = None
+                return None
+            if 'GameAccountId=' in line:
+                m = _RE_ACCOUNT_ID.search(line)
+                if m:
+                    lo = int(m.group(1))
+                    if lo != 0 and not self.game.account_id_lo:
+                        self.game.account_id_lo = lo
+            if 'PowerTaskList.DebugDump()' in line:
+                self._in_create_block = False
+                # 如果是新局（非重连），旧局已经在 _reset_game 时被暂存
+                # 此时确认新局生效，把旧局存入 games
+                if not self._create_has_turn and self._pending_new_game:
+                    old = self._pending_new_game
+                    old.is_active = False
+                    old.end_time = datetime.now().strftime("%H:%M:%S")
+                    self.games.append(old)
+                    self._pending_new_game = None
+                return 'reconnect' if self._create_has_turn else 'game_start'
+            # DebugPrintGame / 其他行 → 不在块内处理，交给下面的逻辑
+            if 'PowerTaskList.DebugPrintPower()' not in line:
+                # 跳过块内的 PowerTaskList（还没到块结束）
+                pass
+
+        # ── 只处理 GameState + PowerTaskList ──
+        if 'GameState.' not in line and 'PowerTaskList.DebugPrintPower()' not in line:
+            return None
+
+        if not self.game.is_active:
+            return None
+
+        # ── PowerTaskList：只处理 FULL_ENTITY ──
+        if 'PowerTaskList.' in line:
+            return self._handle_powertasklist(line)
+
+        return self._handle_gamestate(line)
+
+    def _reset_game(self):
+        self.game = Game(is_active=True, start_time=datetime.now().strftime("%H:%M:%S"))
+        self._concede_pending = False
+        self._concede_tag = ""
+
+    def _end_game(self):
+        if not self.game.is_active:
+            return
+        self.game.is_active = False
+        self.game.end_time = datetime.now().strftime("%H:%M:%S")
+        self.games.append(self.game)
+
+    def _handle_gamestate(self, line: str) -> str | None:
+        """处理 GameState.DebugPrintPower 和 DebugPrintGame 行"""
+
+        # GameType
+        m = _RE_GAME_TYPE.search(line)
+        if m and 'DebugPrintGame()' in line:
+            if m.group(1) != 'GT_BATTLEGROUNDS':
+                self._end_game()
+                return 'not_bg'
+            return None
+
+        # PlayerName
+        m = _RE_PLAYER_NAME.search(line)
+        if m and 'DebugPrintGame()' in line and not self.game.player_tag:
+            name = m.group(2).strip()
+            if name in ('古怪之德鲁伊', '惊魂之武僧'):
+                return None
+            self.game.player_tag = name
+            if '#' in name:
+                self.game.player_display_name = name.rsplit('#', 1)[0]
+            else:
+                self.game.player_display_name = name
+            return 'player_info'
+
+        # HERO_ENTITY（本地玩家选英雄）
+        m = _RE_HERO_ENTITY.search(line)
+        if m:
+            entity_name = m.group(1).strip()
+            hero_entity_id = int(m.group(2))
+            if entity_name == self.game.player_tag:
+                self.game.hero_entity_id = hero_entity_id
+                # 回填英雄名（FULL_ENTITY 可能已经创建了该英雄）
+                hero = self._find_hero_by_entity(hero_entity_id)
+                if hero:
+                    self.game.hero_name = hero.hero_name
+                    self.game.hero_card_id = hero.card_id
+                return 'hero_entity'
+
+        # FULL_ENTITY（仅 GameState 中的，PowerTaskList 在另一路径处理）
+        m = _RE_FULL_ENTITY.search(line)
+        if m:
+            hero_name = m.group(1)
+            entity_id = int(m.group(2))
+            card_id = m.group(3)
+            player_slot = int(m.group(4))
+            if is_hero_card(card_id):
+                key = (card_id, player_slot)
+                if key not in self.game.all_heroes:
+                    hero = Hero(entity_id=entity_id, hero_name=hero_name,
+                                card_id=card_id, player_slot=player_slot)
+                    self.game.all_heroes[key] = hero
+                    if entity_id == self.game.hero_entity_id:
+                        self.game.hero_name = hero_name
+                        self.game.hero_card_id = card_id
+                # 如果 HERO_ENTITY 已经设了但英雄名还没填（FULL_ENTITY 在 HERO_ENTITY 之后出现）
+                elif entity_id == self.game.hero_entity_id and not self.game.hero_name:
+                    existing = self.game.all_heroes[key]
+                    self.game.hero_name = existing.hero_name
+                    self.game.hero_card_id = existing.card_id
+            return None
+
+        # STEP
+        m = _RE_STEP.search(line)
+        if m:
+            step = m.group(1)
+            return 'phase_change' if step in ('MAIN_READY', 'MAIN_ACTION') else None
+
+        # 投降：tag=3479/4356
+        if _RE_CONCEDE_PLAYER_TAG.search(line):
+            tag_match = re.search(r'Entity=(.+?) tag=(?:3479|4356)', line)
+            if tag_match:
+                self._concede_tag = tag_match.group(1).strip()
+            self._concede_pending = True
+            return None
+
+        # 投降：tag=4302
+        if self._concede_pending and _RE_CONCEDE_GAME_TAG.search(line):
+            return None
+
+        # 投降：PLACE=8 确认
+        if self._concede_pending:
+            m = _RE_LB_ENTITY.search(line)
+            if m and int(m.group(5)) == 8:
+                self.game.conceded = True
+                self._end_game()
+                return 'concede'
+
+            m = _RE_LB_TAG.search(line)
+            if m and int(m.group(2)) == 8:
+                self.game.conceded = True
+                self._end_game()
+                return 'concede'
+
+        return None
+
+    def _handle_powertasklist(self, line: str) -> str | None:
+        """PowerTaskList 行：只取 FULL_ENTITY"""
+        m = _RE_FULL_ENTITY.search(line)
+        if not m:
+            return None
+
+        hero_name = m.group(1)
+        entity_id = int(m.group(2))
+        card_id = m.group(3)
+        player_slot = int(m.group(4))
+
+        if not is_hero_card(card_id):
+            return None
+
+        # 用 (card_id, player_slot) 去重
+        key = (card_id, player_slot)
+        if key not in self.game.all_heroes:
+            hero = Hero(
+                entity_id=entity_id,
+                hero_name=hero_name,
+                card_id=card_id,
+                player_slot=player_slot,
+            )
+            self.game.all_heroes[key] = hero
+            # 如果这正是本地玩家选的英雄
+            if entity_id == self.game.hero_entity_id:
+                self.game.hero_name = hero_name
+                self.game.hero_card_id = card_id
+            return 'hero_found'
+        return None
+
+    def _find_hero_by_entity(self, entity_id: int) -> Hero | None:
+        """通过 entity_id 查找英雄（仅限当前活跃的 entity_id）"""
+        for hero in self.game.all_heroes.values():
+            if hero.entity_id == entity_id:
+                return hero
+        return None
+
+
+# ═══════════════════════════════════════════════════════════
+#  日志路径查找
+# ═══════════════════════════════════════════════════════════
 
 def find_latest_power_log(custom_path: str = None) -> str:
-    """查找最新的 Power.log"""
     if custom_path:
         if os.path.isfile(custom_path):
             return custom_path
         print(f"❌ 文件不存在: {custom_path}")
         sys.exit(1)
 
-    # 方式 1: Windows 注册表查找安装目录
     install_dir = _find_hs_install_dir()
     if install_dir:
-        logs_dir = os.path.join(install_dir, "Logs")
-        log_path = _find_log_in_dir(logs_dir)
+        log_path = _find_log_in_dir(os.path.join(install_dir, "Logs"))
         if log_path:
             return log_path
 
-    # 方式 2: 常见安装路径兜底
-    fallback_dirs = [
+    for logs_dir in [
         r"D:\Battle.net\Hearthstone\Logs",
         r"C:\Program Files (x86)\Hearthstone\Logs",
         r"C:\Program Files\Hearthstone\Logs",
         r"D:\Hearthstone\Logs",
-        r"C:\Program Files (x86)\Battle.net\Hearthstone\Logs",
-    ]
-    for logs_dir in fallback_dirs:
+    ]:
         log_path = _find_log_in_dir(logs_dir)
         if log_path:
             return log_path
-
     return None
 
 
 def _find_hs_install_dir() -> str:
-    """从 Windows 注册表获取炉石安装路径"""
     try:
         import winreg
     except ImportError:
         return None
-
-    keys = [
+    for hive, path in [
         (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Blizzard Entertainment\Hearthstone"),
         (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Blizzard Entertainment\Hearthstone"),
         (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Blizzard Entertainment\Hearthstone"),
-    ]
-    for hive, path in keys:
+    ]:
         try:
             key = winreg.OpenKey(hive, path)
-            install_path, _ = winreg.QueryValueEx(key, "InstallPath")
+            p, _ = winreg.QueryValueEx(key, "InstallPath")
             winreg.CloseKey(key)
-            if install_path and os.path.isdir(install_path):
-                return install_path
+            if p and os.path.isdir(p):
+                return p
         except (FileNotFoundError, OSError):
             continue
     return None
 
 
 def _find_log_in_dir(logs_dir: str) -> str:
-    """在 Logs 目录下查找最新的 Power.log"""
     if not os.path.isdir(logs_dir):
         return None
-
-    # 查找 Hearthstone_时间戳 归档文件夹
     candidates = []
-
-    # 归档文件夹
     for folder in glob.glob(os.path.join(logs_dir, "Hearthstone_*")):
-        log_path = os.path.join(folder, "Power.log")
-        if os.path.isfile(log_path):
-            candidates.append((os.path.getmtime(log_path), log_path))
-
-    # 直接在 Logs 根目录的 Power.log
+        p = os.path.join(folder, "Power.log")
+        if os.path.isfile(p):
+            candidates.append((os.path.getmtime(p), p))
     root_log = os.path.join(logs_dir, "Power.log")
     if os.path.isfile(root_log):
         candidates.append((os.path.getmtime(root_log), root_log))
-
     if not candidates:
         return None
-
-    # 取最新修改的
     candidates.sort(reverse=True)
     return candidates[0][1]
 
 
-# ─── 核心解析引擎 ─────────────────────────────────────────
-
-# 预编译正则
-RE_CREATE_GAME = re.compile(r'DebugPrintPower\(\).*CREATE_GAME')
-RE_GAME_TYPE = re.compile(r'GameType=(\w+)')
-RE_PLAYER_INFO = re.compile(r'PlayerID=(\d+),\s*PlayerName=(.+?)$')
-RE_ACCOUNT_ID = re.compile(
-    r'Player EntityID=(\d+) PlayerID=(\d+) GameAccountId=\[hi=\d+ lo=(\d+)\]'
-)
-RE_GAME_SEED = re.compile(r'tag=GAME_SEED value=(\d+)')
-RE_HERO_ENTITY = re.compile(r'TAG_CHANGE Entity=(.+?) tag=HERO_ENTITY value=(\d+)')
-RE_FULL_ENTITY = re.compile(
-    r'FULL_ENTITY - (?:Creating|Updating)\s+'
-    r'\[?entityName=(.+?)\s+id=(\d+)\s+zone=\w+.*?'
-    r'cardId=(\w+)\s+player=(\d+)\]'
-)
-RE_LB_ENTITY = re.compile(
-    r'TAG_CHANGE Entity=\[entityName=(.+?) id=(\d+) zone=\w+.*?'
-    r'cardId=(\w+).*?player=(\d+)\]\s+tag=PLAYER_LEADERBOARD_PLACE value=(\d+)'
-)
-RE_LB_TAG = re.compile(
-    r'TAG_CHANGE Entity=(.+?) tag=PLAYER_LEADERBOARD_PLACE value=(\d+)\s*$'
-)
-
-
-def process_line(line: str, game: GameResult):
-    """
-    处理一行日志，返回事件类型
-
-    状态机:
-    ────
-    空闲 → CREATE_GAME → 对局中（game_start）
-    对局中 → 下一个 CREATE_GAME → 保存结果、开始新局（game_end → game_start）
-    """
-    # ── 新游戏开始 ──
-    if RE_CREATE_GAME.search(line) and 'PowerTaskList' not in line:
-        if game.is_active:
-            # 上一局结束，输出结果，然后开始新局
-            print_status(game, 'game_end')
-
-        _reset_game(game)
-        return 'game_start'
-
-    if not game.is_active:
-        return None
-
-    # 跳过 PowerTaskList 的 CREATE_GAME 重复
-    if 'PowerTaskList' in line and 'CREATE_GAME' in line:
-        return None
-
-    return _process_active_line(line, game)
-
-
-def _reset_game(game: GameResult):
-    """重置游戏状态"""
-    game.game_seed = 0
-    game.local_player_tag = ""
-    game.local_player_name = ""
-    game.local_account_id_lo = 0
-    game.local_hero_name = ""
-    game.local_hero_card_id = ""
-    game.local_hero_entity_id = 0
-    game.local_placement = 0
-    game.all_heroes = {}
-    game.hero_placements = {}
-    game.is_active = True
-    game.start_time = datetime.now().strftime("%H:%M:%S")
-
-
-def _process_active_line(line: str, game: GameResult):
-    """处理对局中的日志行"""
-    # ── GameType ──
-    m = RE_GAME_TYPE.search(line)
-    if m and 'DebugPrintGame()' in line:
-        game_type = m.group(1)
-        if game_type != 'GT_BATTLEGROUNDS':
-            game.is_active = False
-            return 'not_bg'
-        return None
-
-    # ── PlayerName ──
-    m = RE_PLAYER_INFO.search(line)
-    if m and 'DebugPrintGame()' in line and not game.local_player_tag:
-        player_name = m.group(2).strip()
-        if player_name != '古怪之德鲁伊':
-            game.local_player_tag = player_name
-            if '#' in player_name:
-                game.local_player_name = player_name.rsplit('#', 1)[0]
-            else:
-                game.local_player_name = player_name
-            return 'player_info'
-
-    # ── accountIdLo ──
-    m = RE_ACCOUNT_ID.search(line)
-    if m:
-        account_lo = int(m.group(3))
-        if account_lo != 0 and not game.local_account_id_lo:
-            game.local_account_id_lo = account_lo
-            return 'account_info'
-
-    # ── GameSeed ──
-    m = RE_GAME_SEED.search(line)
-    if m:
-        game.game_seed = int(m.group(1))
-        return None
-
-    # ── HERO_ENTITY（本地玩家选英雄）──
-    m = RE_HERO_ENTITY.search(line)
-    if m:
-        entity_name = m.group(1).strip()
-        hero_entity_id = int(m.group(2))
-        if entity_name == game.local_player_tag:
-            game.local_hero_entity_id = hero_entity_id
-            return 'hero_selected'
-
-    # ── FULL_ENTITY（英雄实体创建）──
-    m = RE_FULL_ENTITY.search(line)
-    if m:
-        hero_name = m.group(1)
-        entity_id = int(m.group(2))
-        card_id = m.group(3)
-        player_slot = int(m.group(4))
-        if is_hero_card(card_id) and entity_id not in game.all_heroes:
-            game.all_heroes[entity_id] = HeroPlacement(
-                entity_id=entity_id, hero_name=hero_name,
-                card_id=card_id, player_slot=player_slot,
-            )
-        return None
-
-    # ── LEADERBOARD_PLACE（排名更新，追踪所有玩家）──
-    m = RE_LB_ENTITY.search(line)
-    if m:
-        hero_name = m.group(1)
-        entity_id = int(m.group(2))
-        card_id = m.group(3)
-        player_slot = int(m.group(4))
-        placement = int(m.group(5))
-
-        if not is_hero_card(card_id):
-            return None
-
-        old_placement = game.hero_placements.get(entity_id, 0)
-        game.hero_placements[entity_id] = placement
-
-        # 优先用 card_id+player_slot 匹配已有英雄（断线重连后 entity_id 可能变化）
-        matched_hero = None
-        for h in game.all_heroes.values():
-            if h.card_id == card_id and h.player_slot == player_slot:
-                matched_hero = h
-                break
-
-        if matched_hero:
-            matched_hero.placement = placement
-            hero_entity_id = matched_hero.entity_id
-        else:
-            hero = HeroPlacement(
-                entity_id=entity_id, hero_name=hero_name,
-                card_id=card_id, player_slot=player_slot,
-            )
-            hero.placement = placement
-            game.all_heroes[entity_id] = hero
-            hero_entity_id = entity_id
-
-        # 判断是否是本地玩家（entity_id 匹配 或 player_slot=7）
-        is_local = (hero_entity_id == game.local_hero_entity_id) or (player_slot == 7 and game.local_hero_entity_id == 0)
-        if is_local:
-            game.local_placement = placement
-            if game.local_hero_entity_id == 0:
-                game.local_hero_entity_id = hero_entity_id
-            if placement != old_placement:
-                return 'placement_update'
-
-        return None
-
-    # ── LEADERBOARD_PLACE（BattleTag 格式，本地玩家）──
-    m = RE_LB_TAG.search(line)
-    if m:
-        tag = m.group(1).strip()
-        placement = int(m.group(2))
-        if tag == game.local_player_tag:
-            old = game.local_placement
-            game.local_placement = placement
-            if game.local_hero_entity_id:
-                game.hero_placements[game.local_hero_entity_id] = placement
-                if game.local_hero_entity_id in game.all_heroes:
-                    game.all_heroes[game.local_hero_entity_id].placement = placement
-            if placement != old:
-                return 'placement_update'
-
-    return None
-
-
-def print_status(game: GameResult, event: str):
-    """根据事件类型打印状态"""
-    if event == 'game_start':
-        print(f"\n{'─'*50}")
-        print(f"🎮 新对局开始 | {game.start_time}")
-
-    elif event == 'player_info':
-        print(f"👤 {game.local_player_tag}")
-
-    elif event == 'account_info':
-        print(f"   账号ID: {game.local_account_id_lo}")
-
-    elif event == 'hero_selected':
-        hero = game.all_heroes.get(game.local_hero_entity_id)
-        if hero:
-            game.local_hero_name = hero.hero_name
-            game.local_hero_card_id = hero.card_id
-            print(f"🦸 英雄: {hero.hero_name} ({hero.card_id})")
-
-    elif event == 'placement_update':
-        rank_emoji = {1: '🥇', 2: '🥈', 3: '🥉'}.get(game.local_placement, '  ')
-        print(f"📊 {rank_emoji} 排名更新: 第 {game.local_placement} 名")
-
-    elif event == 'game_end':
-        print(f"\n{'─'*50}")
-        print(f"🏁 对局结束")
-        print(f"👤 {game.local_player_tag}")
-        hero = game.all_heroes.get(game.local_hero_entity_id)
-        if hero:
-            print(f"🦸 {hero.hero_name} ({hero.card_id})")
-        print(f"🏆 最终排名: 第 {game.local_placement} 名")
-
-        ranked = sorted(
-            [h for h in game.all_heroes.values() if h.placement > 0],
-            key=lambda h: h.placement
-        )
-        if ranked:
-            print(f"\n📊 全部排名:")
-            for h in ranked:
-                marker = " ← 你" if h.entity_id == game.local_hero_entity_id else ""
-                print(f"   第{h.placement}名: {h.hero_name} ({h.card_id}){marker}")
-        print()
-
-
-# ─── 实时监控模式 ─────────────────────────────────────────
-
 def _find_last_create_game_pos(path: str) -> int:
-    """找最后一个 CREATE_GAME（非 PowerTaskList）的字节位置"""
     pos = 0
-    last_pos = -1
+    last_pos = 0
     with open(path, 'r', encoding='utf-8', errors='replace') as f:
         for line in f:
-            if RE_CREATE_GAME.search(line) and 'PowerTaskList' not in line:
+            if _RE_CREATE_GAME.search(line):
                 last_pos = pos
             pos += len(line.encode('utf-8', errors='replace'))
-    return last_pos if last_pos >= 0 else 0
+    return last_pos
 
 
-def _scan_quiet(file, pos):
-    """
-    静默扫描已有内容，不打印中间事件。
-    返回 (game, end_pos)。
-    如果最后一局已结束，game.is_active == False。
-    游戏结束信号：
-      1. BattleTag 出现在 LEADERBOARD_PLACE（游戏结束的明确标记）
-      2. 8 个玩家全部有排名（完整提交）
-    """
-    game = GameResult()
-    file.seek(pos)
-    game_end_seen = False
-    for line in file:
-        process_line(line, game)
-        if not game.is_active:
-            break
-        # 信号 1：BattleTag 出现在 LEADERBOARD_PLACE（游戏结束的明确标记）
-        if game.local_player_tag:
-            m = RE_LB_TAG.search(line)
-            if m and m.group(1).strip() == game.local_player_tag:
-                game_end_seen = True
-    end_pos = file.tell()
+# ═══════════════════════════════════════════════════════════
+#  输出
+# ═══════════════════════════════════════════════════════════
 
-    # 信号 2：8 人全部有排名
-    if game.is_active:
-        placed_count = sum(1 for h in game.all_heroes.values() if h.placement > 0)
-        if placed_count >= 8:
-            game_end_seen = True
+def print_game_result(game: Game, index: int = 0):
+    print(f"\n{'─' * 50}")
+    prefix = f"第 {index} 局" if index > 0 else "对局"
+    print(f"🎮 {prefix}")
 
-    # 如果检测到游戏结束，标记为非活跃
-    if game_end_seen:
-        game.is_active = False
+    if game.player_tag:
+        print(f"👤 {game.player_tag}")
+    if game.account_id_lo:
+        print(f"   账号ID: {game.account_id_lo}")
+    if game.hero_name:
+        print(f"🦸 英雄: {game.hero_name} ({game.hero_card_id})")
 
-    return game, end_pos
+    events = []
+    if game.reconnected:
+        events.append("断线重连")
+    if game.conceded:
+        events.append("投降 (第8名)")
+    if not game.end_time and not game.conceded:
+        events.append("未正常结束")
+    status = " + ".join(events) if events else "正常结束"
+    print(f"📊 {status}")
 
+    # 显示其他英雄
+    my_key = (game.hero_card_id, None) if game.hero_card_id else None
+    others = [
+        h for h in game.all_heroes.values()
+        if h.hero_name and h.hero_name != game.hero_name
+    ]
+    # 去重（按 hero_name）
+    seen = set()
+    unique_others = []
+    for h in others:
+        if h.hero_name not in seen:
+            seen.add(h.hero_name)
+            unique_others.append(h)
 
-def _print_mid_game_summary(game: GameResult):
-    """游戏中途接入时，输出当前状态概要（不打印历史排名变化）"""
-    print(f"{'─'*50}")
-    print(f"🎮 检测到进行中的对局 | 开始于 {game.start_time}")
-    if game.local_player_tag:
-        print(f"👤 {game.local_player_tag}")
-    if game.local_account_id_lo:
-        print(f"   账号ID: {game.local_account_id_lo}")
-    hero = game.all_heroes.get(game.local_hero_entity_id)
-    if hero:
-        print(f"🦸 英雄: {hero.hero_name} ({hero.card_id})")
-        game.local_hero_name = hero.hero_name
-        game.local_hero_card_id = hero.card_id
-    if game.local_placement > 0:
-        print(f"📊 当前排名: 第 {game.local_placement} 名")
-    # 显示其他玩家
-    others = sorted(
-        [h for h in game.all_heroes.values() if h.entity_id != game.local_hero_entity_id and h.placement > 0],
-        key=lambda h: h.placement
-    )
-    if others:
-        print(f"📊 其他玩家:")
-        for h in others:
-            print(f"   第{h.placement}名: {h.hero_name} ({h.card_id})")
+    if unique_others:
+        print(f"\n📊 其他英雄:")
+        for h in unique_others:
+            print(f"   {h.hero_name} ({h.card_id})")
+
     print()
 
 
-def tail_log(log_path: str):
-    """实时监控 Power.log 变化，自动切换到新日志文件
+def print_summary(games: list[Game]):
+    if not games:
+        print("\n⚠️ 没有对局")
+        return
+    conceded = sum(1 for g in games if g.conceded)
+    reconnected = sum(1 for g in games if g.reconnected)
+    print(f"\n{'=' * 50}")
+    print(f"📈 汇总: {len(games)} 局")
+    print(f"   投降: {conceded} | 断线重连: {reconnected}")
 
-    支持三种场景：
-    1. 游戏前启动 → 等待 CREATE_GAME，正常追踪
-    2. 游戏中启动 → 找最后一个 CREATE_GAME，静默重建状态后继续监控
-    3. 断线重连   → 文件切换后同样处理
-    """
-    game = GameResult()
+
+# ═══════════════════════════════════════════════════════════
+#  批量解析
+# ═══════════════════════════════════════════════════════════
+
+def parse_file(log_path: str):
+    parser = Parser()
+    print(f"📖 读取: {log_path}")
+    print(f"📏 大小: {os.path.getsize(log_path) / 1024:.1f} KB\n")
+
+    with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+        for line in f:
+            event = parser.process_line(line)
+            if event:
+                _log_event(event, parser.game)
+
+    if parser.game.is_active:
+        parser._end_game()
+
+    if not parser.games:
+        print("⚠️ 未发现战棋对局")
+        return
+
+    print(f"\n🎯 共 {len(parser.games)} 局\n")
+    for i, g in enumerate(parser.games, 1):
+        print_game_result(g, i)
+    print_summary(parser.games)
+
+
+def _log_event(event: str, game: Game):
+    ts = datetime.now().strftime("%H:%M:%S")
+    if event == 'game_start':
+        print(f"  [{ts}] 🎮 新局开始")
+    elif event == 'reconnect':
+        print(f"  [{ts}] 🔄 断线重连（忽略）")
+    elif event == 'player_info':
+        print(f"  [{ts}] 👤 {game.player_tag}")
+    elif event == 'hero_entity':
+        print(f"  [{ts}] 🦸 选定英雄: {game.hero_name or '(等待数据)'}")
+    elif event == 'concede':
+        print(f"  [{ts}] 🏳️ 投降")
+    elif event == 'game_end':
+        print(f"  [{ts}] 🏁 对局结束")
+    elif event == 'not_bg':
+        print(f"  [{ts}] ⚠️ 非战棋模式，跳过")
+
+
+# ═══════════════════════════════════════════════════════════
+#  实时监控
+# ═══════════════════════════════════════════════════════════
+
+def tail_log(log_path: str):
     running = True
     current_path = log_path
-    check_interval = 0.1      # 轮询间隔
+    check_interval = 0.1
     file_check_counter = 0
-    file_check_every = 100    # 每 100 次轮询检查一次新文件（约 10 秒）
+    file_check_every = 100
 
     def signal_handler(sig, frame):
         nonlocal running
@@ -486,69 +542,66 @@ def tail_log(log_path: str):
 
     signal.signal(signal.SIGINT, signal_handler)
 
-    def scan_file(file_path: str) -> tuple:
-        """扫描文件，找最后一个 CREATE_GAME 并静默处理。返回 (game, pos)"""
-        g = GameResult()
+    def scan_existing(file_path: str) -> tuple[Parser, int]:
+        p = Parser()
         cg_pos = _find_last_create_game_pos(file_path)
         with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
             f.seek(cg_pos)
             for line in f:
-                process_line(line, g)
+                p.process_line(line)
             end_pos = f.tell()
-        return g, end_pos
+        return p, end_pos
 
     print(f"👁 监控: {current_path}")
     print(f"   (Ctrl+C 停止)\n")
 
-    # 首次扫描
     try:
-        game, pos = scan_file(current_path)
-        if game.is_active:
-            _print_mid_game_summary(game)
-            print(f"   ✓ 已接入对局，继续监控...")
+        parser, pos = scan_existing(current_path)
+        if parser.game.is_active:
+            _print_mid_game(parser.game)
         else:
             pos = _get_file_end(current_path)
             print(f"   等待游戏开始...")
     except Exception as e:
         print(f"⚠️ 首次扫描失败: {e}")
+        parser = Parser()
         pos = _get_file_end(current_path)
 
     while running:
         try:
-            # 定期检查是否有新的日志文件
             file_check_counter += 1
             if file_check_counter >= file_check_every:
                 file_check_counter = 0
                 new_path = _check_new_log_file(current_path)
                 if new_path:
-                    if game.is_active:
-                        print(f"\n🔄 检测到游戏重启，当前对局中断")
+                    if parser.game.is_active:
+                        print(f"\n🔄 游戏重启，当前对局中断")
                     current_path = new_path
-                    print(f"\n🔄 切换到新日志: {current_path}")
-                    # 扫描新文件
+                    print(f"🔄 切换: {current_path}")
                     try:
-                        game, pos = scan_file(current_path)
-                        if game.is_active:
-                            _print_mid_game_summary(game)
-                            print(f"   ✓ 已接入对局，继续监控...")
+                        parser, pos = scan_existing(current_path)
+                        if parser.game.is_active:
+                            _print_mid_game(parser.game)
                         else:
                             pos = _get_file_end(current_path)
                             print(f"   等待游戏开始...")
                     except Exception as e:
-                        print(f"⚠️ 新文件扫描失败: {e}")
-                        game = GameResult()
+                        print(f"⚠️ 扫描失败: {e}")
+                        parser = Parser()
                         pos = _get_file_end(current_path)
 
-            # 读取新内容
             with open(current_path, 'r', encoding='utf-8', errors='replace') as f:
                 f.seek(pos)
                 lines = f.readlines()
                 pos = f.tell()
 
             for line in lines:
-                event = process_line(line, game)
+                event = parser.process_line(line)
                 if event:
-                    print_status(game, event)
+                    if event == 'game_end' and not parser.game.is_active:
+                        print_game_result(parser.games[-1])
+                    else:
+                        _log_event(event, parser.game)
 
             time.sleep(check_interval)
 
@@ -557,28 +610,36 @@ def tail_log(log_path: str):
             if new_path:
                 current_path = new_path
                 try:
-                    game, pos = scan_file(current_path)
-                    print(f"\n🔄 日志文件已切换: {current_path}")
-                    if game.is_active:
-                        _print_mid_game_summary(game)
-                        print(f"   ✓ 已接入对局，继续监控...")
+                    parser, pos = scan_existing(current_path)
+                    print(f"🔄 日志切换: {current_path}")
+                    if parser.game.is_active:
+                        _print_mid_game(parser.game)
                     else:
                         pos = _get_file_end(current_path)
-                        print(f"   等待游戏开始...")
-                except Exception as e:
-                    print(f"⚠️ 新文件扫描失败: {e}")
-                    game = GameResult()
+                except Exception:
+                    parser = Parser()
                     pos = _get_file_end(current_path)
             else:
-                print("❌ 日志文件消失，等待恢复...")
+                print("❌ 日志消失，等待...")
                 time.sleep(3)
         except Exception as e:
             print(f"⚠️ 错误: {e}")
             time.sleep(1)
 
 
+def _print_mid_game(game: Game):
+    print(f"{'─' * 50}")
+    print(f"🎮 进行中的对局")
+    if game.player_tag:
+        print(f"👤 {game.player_tag}")
+    if game.hero_name:
+        print(f"🦸 {game.hero_name} ({game.hero_card_id})")
+    if game.reconnected:
+        print(f"🔄 已重连")
+    print()
+
+
 def _get_file_end(path: str) -> int:
-    """获取文件末尾位置"""
     try:
         with open(path, 'r', encoding='utf-8', errors='replace') as f:
             f.seek(0, 2)
@@ -588,98 +649,36 @@ def _get_file_end(path: str) -> int:
 
 
 def _check_new_log_file(current_path: str) -> str:
-    """
-    检查是否有比当前更新的日志文件
-    返回新路径或 None
-    """
-    # 从当前路径推断 Logs 目录
     current_dir = os.path.dirname(current_path)
     parent = os.path.dirname(current_dir)
-
-    # 判断当前路径是 归档文件夹/Power.log 还是 Logs/Power.log
     basename = os.path.basename(current_dir)
-    if basename.startswith("Hearthstone_"):
-        logs_dir = parent
-    else:
-        logs_dir = current_dir
-
+    logs_dir = parent if basename.startswith("Hearthstone_") else current_dir
     if not os.path.isdir(logs_dir):
         return None
-
-    # 找所有日志文件，按修改时间排序
     candidates = []
     for folder in glob.glob(os.path.join(logs_dir, "Hearthstone_*")):
         p = os.path.join(folder, "Power.log")
         if os.path.isfile(p) and os.path.abspath(p) != os.path.abspath(current_path):
             candidates.append((os.path.getmtime(p), p))
-
     root_log = os.path.join(logs_dir, "Power.log")
     if os.path.isfile(root_log) and os.path.abspath(root_log) != os.path.abspath(current_path):
         candidates.append((os.path.getmtime(root_log), root_log))
-
     if not candidates:
         return None
-
-    # 取最新且比当前文件更新的
-    current_mtime = 0
     try:
         current_mtime = os.path.getmtime(current_path)
     except OSError:
-        pass
-
+        current_mtime = 0
     candidates.sort(reverse=True)
     newest_mtime, newest_path = candidates[0]
-
-    if newest_mtime > current_mtime:
-        return newest_path
-
-    return None
+    return newest_path if newest_mtime > current_mtime else None
 
 
-# ─── 批量解析模式 ─────────────────────────────────────────
-
-def parse_file(log_path: str):
-    """解析完整日志文件"""
-    game = GameResult()
-    games = []
-
-    print(f"📖 读取: {log_path}")
-    print(f"📏 大小: {os.path.getsize(log_path) / 1024:.1f} KB\n")
-
-    with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
-        for line in f:
-            event = process_line(line, game)
-            if event == 'game_end':
-                games.append(game)
-                game = GameResult()
-
-    if game.is_active:
-        games.append(game)
-
-    if not games:
-        print("⚠️ 未发现战棋对局")
-        return
-
-    print(f"🎯 共 {len(games)} 局\n")
-    for i, g in enumerate(games, 1):
-        print(f"\n{'#'*50}")
-        print(f"# 第 {i} 局")
-        print_status(g, 'game_end')
-
-    # 汇总
-    placements = [g.local_placement for g in games if g.local_placement > 0]
-    if placements:
-        print(f"{'='*50}")
-        print(f"📈 汇总: {len(games)} 局")
-        print(f"   平均排名: {sum(placements)/len(placements):.2f}")
-        print(f"   前四: {sum(1 for p in placements if p <= 4)}/{len(placements)}")
-        print(f"   吃鸡: {sum(1 for p in placements if p == 1)}/{len(placements)}")
-
-
-# ─── 入口 ─────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════
+#  入口
+# ═══════════════════════════════════════════════════════════
 
 def main():
-    # 解析参数
     if '--parse' in sys.argv:
         idx = sys.argv.index('--parse')
         path = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else None
@@ -690,14 +689,12 @@ def main():
         parse_file(log_path)
         return
 
-    # 实时模式（默认）
     path = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith('--') else None
     log_path = find_latest_power_log(path)
     if not log_path:
         print("❌ 未找到 Power.log")
         print("用法: python bg_parser.py [Power.log路径]")
         sys.exit(1)
-
     tail_log(log_path)
 
 
