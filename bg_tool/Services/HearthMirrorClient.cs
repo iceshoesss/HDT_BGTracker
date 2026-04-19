@@ -47,6 +47,17 @@ public static class HearthMirrorClient
             if (lobby?.Players == null || lobby.Players.Count == 0)
                 return new List<LobbyPlayer>();
 
+            // 尝试读取 GameUuid
+            try
+            {
+                var gameUuid = lobby.GameUuid;
+                if (!string.IsNullOrEmpty(gameUuid))
+                    Console.WriteLine($"[HearthMirror] GameUuid: {gameUuid}");
+                else
+                    Console.WriteLine("[HearthMirror] GameUuid: (null)");
+            }
+            catch { Console.WriteLine("[HearthMirror] GameUuid: (不可访问)"); }
+
             var result = new List<LobbyPlayer>();
             foreach (var p in lobby.Players)
             {
