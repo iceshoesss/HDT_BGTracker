@@ -24,6 +24,7 @@ public class Parser
     // 投降检测
     private bool _concedePending;
     private string _concedeTag = "";
+    private int _debugLineCount;
 
     // ═══════════════════════════════════════
     //  英雄卡牌过滤
@@ -197,6 +198,14 @@ public class Parser
 
     private string? HandleGameState(string line)
     {
+        // 调试：打印前几行 GameState 内容
+        if (_debugLineCount < 20)
+        {
+            _debugLineCount++;
+            var preview = line.Length > 120 ? line.Substring(0, 120) : line;
+            Console.WriteLine($"  [DBG] {preview}");
+        }
+
         string? result = null;
 
         // GameType（不 return，同一行可能还有 PlayerName）
@@ -420,6 +429,7 @@ public class Parser
         };
         _concedePending = false;
         _concedeTag = "";
+        _debugLineCount = 0;
     }
 
     private void EndGame()
