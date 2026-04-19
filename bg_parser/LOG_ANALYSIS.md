@@ -1,170 +1,242 @@
-# bg_parser 日志分析 (2026-04-19)
+# Power.log 日志分析 — 完整参考手册
 
-> 给 AI 的提示：所有结论均基于实测日志，直接使用，不要重复实验。
-
----
-
-## 1. 日志格式概览
-
-Power.log 由 HDT 生成，记录炉石客户端的 power log。
-每行格式：`<级别> <时间戳> <模块> - <内容>`
-
-关键模块：
-- `GameState.DebugPrintPower()` — 游戏状态变化（最可靠）
-- `GameState.DebugPrintGame()` — 游戏元数据（GameType、PlayerName 等）
-- `PowerTaskList.DebugPrintPower()` — 任务执行（GameState 的重复/子集，可忽略）
-
-**只看 `GameState.DebugPrintPower()` 的行，忽略 `PowerTaskList`。**
+> 最后更新：2026-04-19
+> 所有结论基于实测日志验证，直接使用，不要重复实验。
+> 基于两份日志：日志1（2局，含重连+投降）、日志2（1局，含重连+投降）
 
 ---
 
-## 2. CREATE_GAME 事件
+## 1. Power.log 是什么
 
-日志中出现 `GameState.DebugPrintPower() - CREATE_GAME` 表示一个游戏状态初始化。
+HDT（Hearthstone Deck Tracker）生成的游戏日志，记录炉石客户端的 power log。
+位于：`<炉石安装目录>/Logs/Hearthstone_<时间戳>/Power.log`
 
-### 2.1 新局 vs 断线重连
+**不是 HDT 插件日志**，是炉石游戏本身的底层日志。
 
-| 特征 | 新局 | 断线重连 |
+---
+
+## 2. 能拿到什么、拿不到什么
+
+| 数据 | 能拿 | 来源 | 说明 |
+|------|------|------|------|
+| 本地玩家 BattleTag | ✅ | `DebugPrintGame` 的 `PlayerName` | 含 #tag，如 `南怀北瑾丨少头脑#5267` |
+| 本地玩家 accountIdLo | ✅ | `Player GameAccountId=[hi=... lo=N]` | 跨局唯一，如 `1708070391` |
+| GAME_SEED | ✅ | `tag=GAME_SEED value=N` | 暴雪内部种子，同一局的重连值相同 |
+| 英雄 cardId | ✅ | `FULL_ENTITY cardId=XXX` | 如 `BG22_HERO_305` |
+| 英雄中文名 | ✅ | `FULL_ENTITY entityName=XXX` | 如 `奥妮克希亚` |
+| 本地英雄 entity_id | ✅ | `HERO_ENTITY value=N` | 可能因重连变化 |
+| 所有英雄（cardId+player_slot） | ✅ | `FULL_ENTITY` | 8 个英雄的 cardId 和 player slot |
+| 对手 BattleTag | ❌ | 需要 HearthMirror（读进程内存） | Power.log 中不存在 |
+| 对手 accountIdLo | ❌ | 需要 HearthMirror | Power.log 中不存在 |
+| gameUuid | ❌ | HDT 内部生成，不写入 Power.log | 服务端或 HDT 插件才有 |
+| 准确的最终排名 | ⚠️ 部分 | `PLAYER_LEADERBOARD_PLACE` | 见下方详细说明 |
+
+### 排名（LEADERBOARD_PLACE）详解
+
+**投降时**：投降者立即变为 `PLACE=8`，100% 可靠。
+
+**正常淘汰时**：`LEADERBOARD_PLACE` 在游戏内动态变化（战斗阶段不断重排），最后一个观测值 ≈ 排名，但有以下不可靠因素：
+- 同轮多人淘汰时排名并列
+- 投降排名=8 不代表实际最后一名
+- 只有 HDT 的 `HandleGameEnd()` 处理完后才有准确值
+
+**结论**：记录最后一个 `LEADERPLACE` 值，不区分投降/淘汰，不确定的标记为不确定。
+
+---
+
+## 3. 日志行格式
+
+```
+<级别> <时间戳> <模块> - <内容>
+```
+
+示例：
+```
+D 12:06:24.7809362 GameState.DebugPrintPower() - CREATE_GAME
+D 12:06:24.7809362 GameState.DebugPrintGame() - PlayerID=1, PlayerName=南怀北瑾丨少头脑#5267
+D 12:06:24.7809362 PowerTaskList.DebugPrintPower() -     TAG_CHANGE ...
+```
+
+级别：D=Debug, I=Info, W=Warning, E=Error
+
+### 两个关键模块
+
+| 模块 | 内容 | 用途 |
+|------|------|------|
+| `GameState.DebugPrintPower()` | 游戏状态变化 | STEP、LEADERBOARD_PLACE、HERO_ENTITY、投降信号 |
+| `GameState.DebugPrintGame()` | 游戏元数据 | GameType、PlayerName（仅出现一次） |
+| `PowerTaskList.DebugPrintPower()` | 任务执行细节 | FULL_ENTITY（英雄创建，只在这里出现） |
+
+**重要**：`PowerTaskList` 是 `GameState` 的子集/重复，但 FULL_ENTITY **只出现在 PowerTaskList**，GameState 中没有。
+
+---
+
+## 4. CREATE_GAME 事件
+
+每次 `GameState.DebugPrintPower() - CREATE_GAME` 表示一个游戏状态初始化。
+
+### 4.1 新局 vs 断线重连
+
+CREATE_GAME 块内的标签（从 CREATE_GAME 行到 `PowerTaskList.DebugDump()` 行之间）：
+
+| 标签 | 新局 | 断线重连 |
 |------|------|----------|
 | `tag=TURN` | **不存在** | 存在，值 ≥ 1 |
 | `tag=STATE` | 不存在 | `value=RUNNING` |
-| `tag=STEP` | 不存在 | `value=MAIN_ACTION` 等 |
+| `tag=STEP` | 不存在 | 存在（如 `MAIN_ACTION`） |
 | `tag=NUM_TURNS_IN_PLAY` | 不存在 | 存在 |
 | `GAME_SEED` | 新值 | 与旧局相同 |
 | `GameEntity EntityID` | 不确定 | 与旧局相同 |
 
-**判断规则（最简）：CREATE_GAME 块内有没有 `tag=TURN`**
+**判断规则：CREATE_GAME 块内有没有 `tag=TURN`**
 - 有 → 断线重连（忽略，不触发新游戏）
 - 没有 → 真正的新局
 
-实测数据：
+实测：
 ```
-# 日志1
-Line     2  CREATE_GAME, 无 TURN        → 新局 (GAME_SEED=1610508937)
-Line  9587  CREATE_GAME, TURN=3          → 重连 (GAME_SEED=1610508937, 同上)
-Line 17001  CREATE_GAME, 无 TURN         → 新局 (GAME_SEED=1534385957, 新值)
+# 新局
+CREATE_GAME
+    GameEntity EntityID=1
+    tag=CARDTYPE value=GAME
+    tag=ZONE value=PLAY
+    ...（无 TURN/STATE/STEP）
 
-# 日志2
-Line     2  CREATE_GAME, 无 TURN         → 新局
-Line  5735  CREATE_GAME, TURN=1          → 重连
+# 重连
+CREATE_GAME
+    GameEntity EntityID=1
+    tag=STATE value=RUNNING
+    tag=STEP value=MAIN_ACTION
+    tag=TURN value=3
+    tag=NUM_TURNS_IN_PLAY value=4
+    ...
 ```
 
-### 2.2 CREATE_GAME 块内的 Player 实体
+### 4.2 CREATE_GAME 块结构
 
-新局的 Player 实体：
 ```
-Player EntityID=2 PlayerID=1 GameAccountId=[hi=... lo=1708070391]  ← 本地玩家
-Player EntityID=3 PlayerID=9 GameAccountId=[hi=0 lo=0]            ← 酒馆老板/spectator
+CREATE_GAME                          ← 块开始
+    GameEntity EntityID=1
+        tag=...
+        tag=GAME_SEED value=N        ← 对局种子
+    Player EntityID=2 PlayerID=1 GameAccountId=[hi=... lo=1708070391]  ← 本地玩家
+    Player EntityID=3 PlayerID=9 GameAccountId=[hi=0 lo=0]            ← 酒馆老板
+    ...（更多 tag）
+PowerTaskList.DebugDump()            ← 块结束标志
 ```
 
-重连的 Player 实体包含更多信息（HERO_ENTITY、PLAYSTATE 等）。
+**块结束标志**：`PowerTaskList.DebugDump()` 出现。之后是 `DebugPrintGame()`（含 PlayerName、GameType）。
 
 ---
 
-## 3. 游戏流程（STEP 流转）
+## 5. 游戏流程
 
-### 3.1 完整回合循环
+### 5.1 STEP 流转
 
 ```
 BEGIN_MULLIGAN → MAIN_READY → MAIN_START_TRIGGERS → MAIN_START → MAIN_ACTION → MAIN_END → MAIN_CLEANUP → MAIN_NEXT → MAIN_READY → ...
 ```
 
-一轮完整循环：
+一轮循环：
 ```
-MAIN_READY        ← 采购阶段开始（玩家可见的"回合开始"）
+MAIN_READY            ← 采购阶段开始
 MAIN_START_TRIGGERS
 MAIN_START
-MAIN_ACTION       ← 战斗阶段开始（采购结束）
+MAIN_ACTION           ← 战斗阶段开始
 MAIN_END
 MAIN_CLEANUP
 MAIN_NEXT
-MAIN_READY        ← 下一回合
+→ 回到 MAIN_READY     ← 下一回合
 ```
 
-### 3.2 STEP 与用户感知的"回合"
+### 5.2 STEP 与回合计数
 
-用户感知的"回合" = 采购阶段 = `MAIN_READY` 到 `MAIN_ACTION` 之间的窗口。
+`GameEntity tag=TURN` 每次 `MAIN_READY` 时递增，但**不等于用户感知的回合数**。
+重连后游戏会快进多个 STEP 循环，导致 TURN 值偏高。
 
-实测时间线（日志2，一局只有 2 回合）：
+**可靠做法**：用 `MAIN_READY` 事件计数回合，但接受重连后快进导致的误差。
+**更可靠做法**：不计回合数，只记录游戏事件（开始、重连、结束）。
+
+### 5.3 时间线示例（日志2，1局2回合）
+
 ```
 12:28:14  CREATE_GAME (新局)
-12:28:14  BEGIN_MULLIGAN                    ← 选英雄阶段
-12:29:25  MAIN_READY + TURN=1               ← 第1回合采购开始
-12:29:40  MAIN_ACTION                       ← 第1回合战斗开始
-12:29:58  CREATE_GAME (重连, TURN=1)         ← 断线重连
-12:30:12  MAIN_END → MAIN_NEXT → TURN=2      ← 快进
-12:30:13  TURN=3 (又快进一轮)
-12:30:13  MAIN_READY → MAIN_ACTION          ← 第2回合（用户看到的）
+12:28:14  BEGIN_MULLIGAN
+12:29:25  MAIN_READY + TURN=1 (第1回合采购开始)
+12:29:40  MAIN_ACTION (第1回合战斗)
+12:29:58  RECONNECT (CREATE_GAME, TURN=1, STATE=RUNNING)
+12:30:12  MAIN_END → MAIN_NEXT → TURN=2 (快进)
+12:30:13  TURN=3 (快进) → MAIN_READY → MAIN_ACTION (第2回合)
 12:30:42  投降 (tag=3479/4356/4302 → PLACE=8)
 ```
 
-**重要发现**：`GameEntity TURN` 的值**不等于**用户感知的回合数。重连后会快进导致 TURN 偏高。
-不要用 TURN 值来数回合，用 `MAIN_READY` 事件来计数。
-
-### 3.3 时间参考
-
-每个 STEP 变化都有精确时间戳（`D 12:29:25.0306260`）。格式：`<级别> <时:分:秒.微秒>`
-
 ---
 
-## 4. 玩家信息
+## 6. 玩家信息
 
-### 4.1 本地玩家 BattleTag
+### 6.1 本地玩家 BattleTag
 
-来源：`GameState.DebugPrintGame()` 行
+来源：`GameState.DebugPrintGame()` 行，CREATE_GAME 之后出现。
 ```
 PlayerID=1, PlayerName=南怀北瑾丨少头脑#5267
-PlayerID=9, PlayerName=惊魂之武僧
+PlayerID=9, PlayerName=惊魂之武僧          ← 酒馆老板，不是真实玩家
 ```
+- 只出现一次，必须缓存
+- `PlayerID=1` 通常为本地玩家
+- `古怪之德鲁伊` 和 `惊魂之武僧` 是酒馆老板，跳过
 
-- `PlayerID=1` 通常为本地玩家（但不绝对，需结合 GameAccountId 验证）
-- `PlayerName` 包含 `#tag` 后缀
-- **该行只出现一次**，在 CREATE_GAME 之后
+### 6.2 GameAccountId
 
-### 4.2 GameAccountId
-
-来源：Player 实体块内
+来源：CREATE_GAME 块内的 Player 实体
 ```
 Player EntityID=2 PlayerID=1 GameAccountId=[hi=144115211015832391 lo=1708070391]
 ```
+- `lo=1708070391` 是 accountIdLo
+- `lo=0` 是酒馆老板，忽略
+- 跨局稳定不变
 
-- `lo=1708070391` 是 accountIdLo，跨局唯一
-- `lo=0` 是酒馆老板/spectator，不是真实玩家
+### 6.3 英雄实体
 
-### 4.3 英雄实体
-
-英雄通过 `FULL_ENTITY` 创建：
+来源：`FULL_ENTITY`（**只在 PowerTaskList 中出现**）
 ```
 FULL_ENTITY - Creating [entityName=奥妮克希亚 id=100 zone=HAND zonePos=2 cardId=BG22_HERO_305 player=1]
 ```
 
 字段：
 - `entityName` — 英雄中文名
-- `id` — 实体 ID（**重连后可能变化**）
-- `cardId` — 英雄卡牌 ID（**重连后不变**）
-- `player` — 玩家 slot（**重连后不变**）
+- `id` — 实体 ID（重连后可能变化）
+- `cardId` — 卡牌 ID（重连后不变）
+- `player` — 玩家 slot（重连后不变）
 
-**重连安全匹配**：用 `cardId + player` 匹配，不用 `entity_id`。
-
-### 4.4 英雄选择（HERO_ENTITY）
+### 6.4 英雄选择（HERO_ENTITY）
 
 ```
 TAG_CHANGE Entity=南怀北瑾丨少头脑#5267 tag=HERO_ENTITY value=100
 ```
-
 - Entity 是玩家 BattleTag → 该玩家选了 entity id=100 的英雄
-- 这是唯一标识本地玩家英雄 entity_id 的方式
-- **仅对本地玩家可靠**（对手的 HERO_ENTITY 不出现在日志中）
+- **只有本地玩家的 HERO_ENTITY 出现在日志中**
+- 对手的 HERO_ENTITY 不可见
+
+### 6.5 英雄匹配（重连安全）
+
+重连后 entity_id 可能变化，用 `cardId + player` 匹配最安全。
+
+### 6.6 英雄与 FULL_ENTITY 的时序
+
+FULL_ENTITY（创建英雄）和 HERO_ENTITY（选定英雄）的出现顺序不确定：
+- 可能 FULL_ENTITY 先 → HERO_ENTITY 后匹配
+- 可能 HERO_ENTITY 先 → FULL_ENTITY 后匹配
+
+需要双向匹配：
+- FULL_ENTITY 时检查是否匹配已知的 hero_entity_id
+- HERO_ENTITY 时检查是否匹配已有的 all_heroes
 
 ---
 
-## 5. 排名（LEADERBOARD_PLACE）
+## 7. 排名（LEADERBOARD_PLACE）
 
-### 5.1 格式
+### 7.1 格式
 
-两种格式：
-
-**格式A**（带 entity 详情，最常见的战斗阶段排名变化）：
+**格式A**（带 entity 详情）：
 ```
 TAG_CHANGE Entity=[entityName=奥妮克希亚 id=100 zone=PLAY zonePos=0 cardId=BG22_HERO_305 player=1] tag=PLAYER_LEADERBOARD_PLACE value=7
 ```
@@ -174,181 +246,151 @@ TAG_CHANGE Entity=[entityName=奥妮克希亚 id=100 zone=PLAY zonePos=0 cardId=
 TAG_CHANGE Entity=南怀北瑾丨少头脑#5267 tag=PLAYER_LEADERBOARD_PLACE value=8
 ```
 
-### 5.2 排名行为
+### 7.2 行为
 
-**游戏中**：排名动态变化，每轮战斗结束后根据血量重排。频繁波动，不代表最终排名。
-- 实测（日志2）：第一回合内排名变化 6→5→6→5→6→5→6（多次反复）
+- 游戏中：排名动态变化，每轮战斗后重排，不代表最终排名
+- 投降时：投降者立即变为 PLACE=8
+- 正常淘汰时：PLACE 设为淘汰时的值，但可能不准
 
-**投降时**：投降者立即变为 `LEADERBOARD_PLACE=8`。
-- 不等于实际排名（投降时可能是任意排名）
-- 其他玩家也会出现最终排名
+### 7.3 记录策略
 
-**游戏结束**：`LEADERBOARD_PLACE` 不会稳定。真正的最终排名只在游戏彻底结束后由 HDT 的 `HandleGameEnd()` 写入（Power.log 中不可见）。
-
-### 5.3 关键踩坑
-
-- ❌ 不能用 LEADERBOARD_PLACE 的"最后值"判断最终排名（投降时 PLACE=8 不代表最后一名）
-- ❌ 不能用 LEADERPLACE 在游戏内判断淘汰（排名只是当前状态）
-- ✅ PLACE=8 + 投降信号 = 确定的投降事件
+- 追踪本地英雄的 PLACE 变化（通过 cardId 匹配）
+- 游戏结束时记录最后一个 PLACE 值
+- 投降：PLACE=8，确定
+- 正常淘汰：最后一个 PLACE，不确定
 
 ---
 
-## 6. 投降信号
+## 8. 投降信号
 
-投降时出现固定模式（4 个 TAG_CHANGE 连续出现）：
+投降时出现固定 4 行模式：
 
 ```
-TAG_CHANGE Entity=<玩家BattleTag> tag=3479 value=1
-TAG_CHANGE Entity=<玩家BattleTag> tag=4356 value=1
-TAG_CHANGE Entity=GameEntity tag=4302 value=1
-TAG_CHANGE Entity=[entityName=... cardId=... player=N] tag=PLAYER_LEADERBOARD_PLACE value=8
+TAG_CHANGE Entity=<玩家BattleTag> tag=3479 value=1    ← 玩家实体
+TAG_CHANGE Entity=<玩家BattleTag> tag=4356 value=1    ← 玩家实体
+TAG_CHANGE Entity=GameEntity tag=4302 value=1         ← 游戏实体
+TAG_CHANGE Entity=[entityName=... cardId=... player=N] tag=PLAYER_LEADERBOARD_PLACE value=8  ← 英雄排名变8
 ```
 
-### 6.1 tag 含义
+### tag 含义（推测）
 
-| tag | Entity | 含义（推测） |
-|-----|--------|-------------|
-| 3479 | 玩家 | 投降标记？ |
-| 4356 | 玩家 | 投降标记？ |
-| 4302 | GameEntity | 游戏结束？ |
-| PLAYER_LEADERBOARD_PLACE=8 | 投降者英雄 | 立即变为第8 |
+| tag | Entity | 含义 |
+|-----|--------|------|
+| 3479 | 玩家 | 投降标记 |
+| 4356 | 玩家 | 投降标记 |
+| 4302 | GameEntity | 游戏结束标记 |
 
-### 6.2 实测
+### 注意
 
-**日志1 Game 1 投降（第3回合后）**：
-```
-12:08:52  tag=3479/4356/4302 + 奥妮克希亚 PLACE=8
-```
-
-**日志1 Game 2 投降（第1回合后）**：
-```
-12:10:26  tag=3479/4356/4302 + 钩牙船长 PLACE=8
-```
-
-**日志2 投降（第2回合后）**：
-```
-12:30:42  tag=3479/4356/4302 → 投降
-```
-
-### 6.3 注意事项
-
-- tag 3479/4356 写在**投降者 Player 实体**上（Entity=BattleTag）
-- tag 4302 写在 **GameEntity** 上
-- PLACE=8 写在**投降者英雄**上
-- 投降后日志通常很快结束（或出现下一个 CREATE_GAME）
-- **投降者不一定是本地玩家**（但当前只处理本地玩家视角）
+- 投降和天梯投降的日志完全一样，无法区分
+- tag 3479/4356 写在玩家实体上，tag 4302 写在 GameEntity 上
+- PLACE=8 写在投降者英雄上
 
 ---
 
-## 7. 游戏结束检测
+## 9. 游戏结束检测
 
-### 7.1 可靠信号
+### 9.1 可靠信号
 
 | 信号 | 可靠性 | 说明 |
 |------|--------|------|
-| 下一个非重连 CREATE_GAME | ✅ 确定 | 旧局结束，新局开始 |
-| 投降信号（tag=3479/4356/4302） | ✅ 确定 | 当前玩家投降 |
+| 非重连 CREATE_GAME | ✅ 确定 | 旧局结束，新局开始 |
+| 投降信号（3479/4356/4302→PLACE=8） | ✅ 确定 | 当前玩家投降 |
 | 日志结束 | ⚠️ 可能 | 最后一局可能未结束 |
 
-### 7.2 不可靠的信号
+### 9.2 不可靠的信号
 
 | 信号 | 问题 |
 |------|------|
-| GameEntity TURN 值 | 不等于用户感知的回合数 |
-| LEADERBOARD_PLACE=8 | 仅在投降时有意义，游戏中排名波动无意义 |
+| GameEntity TURN 值 | 不等于回合数，重连后快进 |
+| LEADERBOARD_PLACE=8 | 只在投降时有意义 |
 | STEP=MAIN_CLEANUP | 每轮都有，不是游戏结束 |
 
-### 7.3 天梯投降 vs 联赛投降
+---
 
-在 Power.log 中，天梯投降和联赛投降的日志完全一样（同样的 tag=3479/4356/4302 模式）。
-无法通过日志区分游戏模式（天梯/联赛）——需要依赖服务端的等待组匹配。
+## 10. 断线重连
+
+### 10.1 识别
+
+CREATE_GAME 块内有 `tag=TURN` → 断线重连。
+
+### 10.2 重连后的变化
+
+- 实体 ID：实测保持不变（100→100），但不能保证
+- GAME_SEED：不变（验证是同一局）
+- 会快速过一遍所有 STEP，产生大量无意义的状态变化
+- 英雄信息在重连的 CREATE_GAME 块中重新发送
+
+### 10.3 快进数据
+
+重连后游戏会快速跳过所有中间 STEP，产生：
+- 多个 MAIN_READY/MAIN_ACTION 循环
+- 多个 LEADERBOARD_PLACE 变化
+- 这些都是快进数据，不代表真实游戏进程
 
 ---
 
-## 8. 断线重连后的状态恢复
-
-### 8.1 重连 CREATE_GAME 包含的信息
-
-重连时的 CREATE_GAME 块会包含完整的当前游戏状态：
-- 所有 Player 实体（含 HERO_ENTITY、PLAYSTATE 等）
-- GameEntity（含 TURN、STEP、NUM_TURNS_IN_PLAY 等）
-- GAME_SEED（与旧局相同）
-
-### 8.2 重连后的实体 ID 变化
-
-**实测（日志1）**：重连后本地英雄 entity_id 保持不变（100→100）。
-**注意**：不能保证所有情况下 entity_id 不变。安全做法是用 cardId+player 匹配。
-
-### 8.3 重连后的快进
-
-重连后游戏会快速过一遍所有 STEP，产生大量中间状态的 LEADERBOARD_PLACE 变化。
-这些变化是无意义的快进数据，不应触发排名更新事件。
-
----
-
-## 9. 日志时间线汇总
-
-### 日志1（2局完整对局）
+## 11. bg_parser 状态机
 
 ```
-12:06:24  Game 1 CREATE_GAME (新局)
-12:06:35  英雄选定 (奥妮克希亚)
-12:07:04  TURN=1 (第1回合)
-12:07:51  TURN=2 (第2回合，拔线)
-12:08:12  RECONNECT (CREATE_GAME, TURN=3, STATE=RUNNING)
-12:08:36  TURN=4 (快进)
-12:08:37  TURN=5 (快进)
-12:08:52  投降 (tag=3479/4356/4302 + PLACE=8)
-12:09:42  Game 2 CREATE_GAME (新局)
-12:09:54  英雄选定 (钩牙船长)
-12:10:18  TURN=1 (第1回合)
-12:10:26  投降 (tag=3479/4356/4302 + PLACE=8)
+空闲
+  ↓ [CREATE_GAME, 无TURN] → 新局开始，is_active=True
+游戏进行中
+  ↓ [CREATE_GAME, 有TURN] → 忽略（重连），继续当前局
+  ↓ [投降信号] → 标记投降，游戏结束
+  ↓ [CREATE_GAME, 无TURN] → 旧局结束，新局开始
+  ↓ [日志结束] → 标记为未完成
 ```
 
-### 日志2（1局，2回合）
+### CREATE_GAME 块处理
 
 ```
-12:28:14  CREATE_GAME (新局)
-12:28:14  BEGIN_MULLIGAN
-12:29:25  TURN=1 + MAIN_READY (第1回合采购开始)
-12:29:40  MAIN_ACTION (第1回合战斗)
-12:29:58  RECONNECT (CREATE_GAME, TURN=1, STATE=RUNNING)
-12:30:12  MAIN_END → TURN=2 (快进)
-12:30:13  TURN=3 (快进) → MAIN_READY → MAIN_ACTION (第2回合)
-12:30:42  投降 (tag=3479/4356/4302 + PLACE=8)
-```
-
----
-
-## 10. bg_parser 重写需求
-
-### 核心状态机
-
-```
-空闲 → [CREATE_GAME, 无TURN] → 游戏进行中
-游戏进行中 → [CREATE_GAME, 无TURN] → 旧局结束 + 新局开始
-游戏进行中 → [投降信号] → 当前玩家投降，游戏结束
-游戏进行中 → [CREATE_GAME, 有TURN] → 忽略（重连）
-游戏进行中 → [日志结束] → 标记为未完成
+CREATE_GAME 行 → 进入块模式
+  ↓
+块内扫描：
+  - tag=TURN → 标记为重连
+  - GameAccountId → 提取 accountIdLo
+  - GAME_SEED → 提取对局种子
+  ↓
+PowerTaskList.DebugDump() → 块结束
+  ↓
+  有TURN？ → 回滚新局，恢复旧局，标记重连
+  无TURN？ → 确认新局，旧局存档
 ```
 
 ### 需要追踪的数据
 
-- 本地玩家: BattleTag, accountIdLo
-- 本地英雄: entity_id, cardId, player_slot, heroName
-- 所有英雄: entity_id → {cardId, player_slot, heroName, placement}
-- 回合数: 通过 MAIN_READY 计数
-- 当前阶段: MAIN_READY(采购) / MAIN_ACTION(战斗)
-- 游戏状态: 活跃 / 已结束(投降) / 已结束(新局开始)
+- `player_tag` — 本地玩家 BattleTag
+- `player_display_name` — 不含 #tag 的显示名
+- `account_id_lo` — 暴雪账号唯一 ID
+- `game_seed` — 对局种子
+- `hero_entity_id` — HERO_ENTITY 选定的 entity id
+- `hero_name` / `hero_card_id` — 本地英雄信息
+- `hero_placement` — 最后一个 LEADERBOARD_PLACE 值
+- `all_heroes` — 所有英雄，用 `(cardId, playerSlot)` 去重
+- `is_active` / `reconnected` / `conceded` / `placement_confirmed`
 
-### 不需要追踪的数据（曾有 bug）
+---
 
-- ~~GameEntity TURN 值~~ — 不等于回合数，不可靠
-- ~~LEADERBOARD_PLACE 的最后值~~ — 游戏中波动无意义
-- ~~通过 IsInMenu 判断游戏结束~~ — Power.log 中无此信号
+## 12. 与 HDT 插件的对比
 
-### 输出
+| 能力 | bg_parser (Power.log) | HDT 插件 (HearthMirror) |
+|------|----------------------|-------------------------|
+| 本地玩家信息 | ✅ | ✅ |
+| 对手信息 | ❌ | ✅ |
+| gameUuid | ❌ | ✅ |
+| 准确排名 | ⚠️ 观测值 | ✅ FinalPlacement |
+| 联赛判定 | ❌ | ✅ (调 API) |
+| 实时监控 | ✅ | ✅ |
+| 跨平台 | ✅ (Python) | ❌ (Windows + HDT) |
 
-- 一局游戏一个 GameResult
-- 包含: 本地玩家信息、英雄、投降排名(8)、回合数
-- 不包含: 其他玩家的最终排名（Power.log 中不可获取）
+bg_parser 的定位：**独立于 HDT 的备选方案**，不需要安装 HDT，但数据不如插件完整。
+
+---
+
+## 13. 待验证
+
+- [ ] 正常淘汰（非投降）时 LEADERPLACE 的行为
+- [ ] 多人同轮淘汰时的排名
+- [ ] 断线重连后 entity_id 是否永远不变（目前只测了 2 个样本）
+- [ ] 不同炉石版本的日志格式变化
