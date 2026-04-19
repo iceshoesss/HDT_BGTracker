@@ -297,6 +297,10 @@ public class Parser
                     foreach (var lp in Game.LobbyPlayers)
                         Console.WriteLine($"   Lo={lp.Lo}, Hero={lp.HeroCardId}");
                 }
+                else
+                {
+                    Console.WriteLine("[HearthMirror] ⚠️ STEP 13 已触发但未获取到玩家数据");
+                }
                 return "phase_change";
             }
             return null;
