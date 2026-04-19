@@ -233,6 +233,9 @@ class Program
         parser = new Parser();
         var cgPos = FindLastCreateGamePos(filePath);
 
+        // 中途接入：从整个文件预加载 PlayerName（DebugPrintGame 可能在 CREATE_GAME 之前）
+        PreloadPlayerInfo(filePath, parser);
+
         using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
         using (var reader = new StreamReader(fs))
         {
@@ -241,6 +244,36 @@ class Program
                 parser.ProcessLine(reader.ReadLine());
             pos = fs.Position;
         }
+    }
+
+    /// <summary>
+    /// 从文件中预加载 PlayerName（用于中途接入时 DebugPrintGame 在 CREATE_GAME 之前的情况）
+    /// </summary>
+    static void PreloadPlayerInfo(string filePath, Parser parser)
+    {
+        try
+        {
+            foreach (var line in File.ReadLines(filePath))
+            {
+                if (line.Contains("DebugPrintGame()") && line.Contains("PlayerName="))
+                {
+                    var m = Regex.Match(line, @"PlayerID=(\d+),\s*PlayerName=(.+?)$");
+                    if (m.Success)
+                    {
+                        var name = m.Groups[2].Value.Trim();
+                        if (name != "古怪之德鲁伊" && name != "惊魂之武僧")
+                        {
+                            parser.Game.PlayerTag = name;
+                            parser.Game.PlayerDisplayName = name.Contains("#")
+                                ? name.Substring(0, name.LastIndexOf("#"))
+                                : name;
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+        catch { }
     }
 
     // ═══════════════════════════════════════
