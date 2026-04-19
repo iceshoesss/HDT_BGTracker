@@ -1,5 +1,7 @@
 namespace BgTool.Services;
 
+using BgTool.Parser;
+
 /// <summary>文件 tail 监控（从 Python bg_parser 移植）</summary>
 public class FileMonitor : IDisposable
 {
