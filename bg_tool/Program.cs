@@ -4,9 +4,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using BgTool;
+
+// Windows 控制台 UTF-8 输出
+Console.OutputEncoding = Encoding.UTF8;
 
 // ═══════════════════════════════════════
 //  命令行参数
