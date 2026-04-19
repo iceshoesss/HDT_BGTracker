@@ -289,15 +289,11 @@ public class Parser
         if (m.Success)
         {
             var step = m.Groups[1].Value;
-            if (step == "MAIN_READY" || step == "MAIN_ACTION")
-                return "phase_change";
             if (step == "MAIN_CLEANUP")
             {
                 if (!_loFetched)
                 {
                     _loFetched = true;
-                    // 延迟 2 秒读取，等内存中所有玩家 AccountId 就绪
-                    System.Threading.Thread.Sleep(2000);
                     Game.LobbyPlayers = HearthMirrorClient.FetchLobbyPlayers();
                     if (Game.LobbyPlayers.Count > 0)
                     {
@@ -306,7 +302,6 @@ public class Parser
                             Console.WriteLine($"   Lo={lp.Lo}, Hero={lp.HeroCardId}");
                     }
                 }
-                return "phase_change";
             }
             return null;
         }
