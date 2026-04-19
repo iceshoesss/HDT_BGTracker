@@ -17,6 +17,7 @@ import time
 import signal
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Optional
 
 
 # ═══════════════════════════════════════════════════════════
@@ -60,6 +61,67 @@ class Game:
     placement_confirmed: bool = False  # 排名是否确定（投降=true，正常淘汰=false）
     start_time: str = ""            # 日志中的第一个时间戳
     end_time: str = ""
+
+    # HearthMirror 对手信息
+    lobby_players: list = field(default_factory=list)  # [{"lo": int, "heroCardId": str}, ...]
+
+
+# ═══════════════════════════════════════════════════════════
+#  HearthMirror 集成（可选）
+# ═══════════════════════════════════════════════════════════
+
+_mirror_reflection = None
+
+def _try_init_mirror():
+    """尝试初始化 HearthMirror，成功返回 True"""
+    global _mirror_reflection
+    if _mirror_reflection is not None:
+        return True
+    try:
+        import pythonnet
+        pythonnet.set_runtime('netfx')
+        import clr
+        # 查找同级目录或 HDT 目录下的 HearthMirror.dll
+        hm_paths = [
+            os.path.join(os.path.dirname(__file__), '..', '..', 'HearthMirror.dll'),
+            os.path.join(os.path.dirname(__file__), 'HearthMirror.dll'),
+        ]
+        hm_path = None
+        for p in hm_paths:
+            if os.path.isfile(p):
+                hm_path = os.path.abspath(p)
+                break
+        if not hm_path:
+            return False
+        clr.AddReference(hm_path)
+        import HearthMirror
+        _mirror_reflection = HearthMirror.Reflection()
+        print("[HearthMirror] ✅ 已加载，可获取对手 Lo")
+        return True
+    except Exception as e:
+        print(f"[HearthMirror] ⚠️ 不可用: {e}")
+        return False
+
+
+def fetch_lobby_players() -> list:
+    """通过 HearthMirror 获取大厅 8 个玩家的 Lo + HeroCardId"""
+    global _mirror_reflection
+    if _mirror_reflection is None:
+        if not _try_init_mirror():
+            return []
+    try:
+        lobby = _mirror_reflection.GetBattlegroundsLobbyInfo()
+        if lobby is None or lobby.Players is None or lobby.Players.Count == 0:
+            return []
+        result = []
+        for p in lobby.Players:
+            lo = p.AccountId.Lo if p.AccountId else 0
+            hero = p.HeroCardId if p.HeroCardId else ""
+            result.append({"lo": lo, "heroCardId": hero})
+        return result
+    except Exception as e:
+        print(f"[HearthMirror] 读取失败: {e}")
+        return []
 
 
 # ═══════════════════════════════════════════════════════════
@@ -131,12 +193,12 @@ class Parser:
         self.games: list[Game] = []
         self._in_create_block = False
         self._create_has_turn = False
-        self._pending_new_game: Game | None = None  # 新局暂存，重连时回滚
+        self._pending_new_game: Optional[Game] = None  # 新局暂存，重连时回滚
         self._concede_pending = False
         self._concede_tag = ""
         self._last_reconnect_time = ""
 
-    def process_line(self, line: str) -> str | None:
+    def process_line(self, line: str) -> Optional[str]:
         """
         处理一行日志，返回事件类型或 None。
 
@@ -219,7 +281,7 @@ class Parser:
         self.game.end_time = datetime.now().strftime("%H:%M:%S")
         self.games.append(self.game)
 
-    def _handle_gamestate(self, line: str) -> str | None:
+    def _handle_gamestate(self, line: str) -> Optional[str]:
         """处理 GameState.DebugPrintPower 和 DebugPrintGame 行"""
 
         # GameType
@@ -284,7 +346,17 @@ class Parser:
         m = _RE_STEP.search(line)
         if m:
             step = m.group(1)
-            return 'phase_change' if step in ('MAIN_READY', 'MAIN_ACTION') else None
+            if step in ('MAIN_READY', 'MAIN_ACTION'):
+                return 'phase_change'
+            if step == 'MAIN_CLEANUP':
+                # 英雄选定完毕，尝试获取对手 Lo
+                self.game.lobby_players = fetch_lobby_players()
+                if self.game.lobby_players:
+                    print("[HearthMirror] 📋 获取到 {} 个玩家".format(len(self.game.lobby_players)))
+                    for lp in self.game.lobby_players:
+                        print("   Lo={}, Hero={}".format(lp['lo'], lp['heroCardId']))
+                return 'phase_change'
+            return None
 
         # LEADERBOARD_PLACE（追踪本地英雄排名变化）
         m = _RE_LB_ENTITY.search(line)
@@ -345,7 +417,7 @@ class Parser:
 
         return None
 
-    def _handle_powertasklist(self, line: str) -> str | None:
+    def _handle_powertasklist(self, line: str) -> Optional[str]:
         """PowerTaskList 行：只取 FULL_ENTITY"""
         m = _RE_FULL_ENTITY.search(line)
         if not m:
@@ -517,6 +589,12 @@ def print_game_result(game: Game, index: int = 0):
         print(f"\n📊 其他英雄:")
         for h in unique_others:
             print(f"   {h.hero_name} ({h.card_id})")
+
+    # HearthMirror 对手信息
+    if game.lobby_players:
+        print(f"\n🔍 HearthMirror 对手信息:")
+        for lp in game.lobby_players:
+            print("   Lo={}, Hero={}".format(lp['lo'], lp['heroCardId']))
 
     print()
 
