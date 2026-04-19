@@ -6,7 +6,8 @@ using Microsoft.Win32;
 
 #nullable enable
 
-namespace BgTool;
+namespace BgTool
+{
 
 /// <summary>
 /// 自动查找炉石 Power.log 路径
@@ -146,4 +147,5 @@ public static class LogPathFinder
         if (candidates.Count == 0) return null;
         return candidates.OrderByDescending(c => c.mtime).First().path;
     }
+}
 }

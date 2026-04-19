@@ -3,7 +3,8 @@ using System.Collections.Generic;
 
 #nullable enable
 
-namespace BgTool;
+namespace BgTool
+{
 
 /// <summary>
 /// HearthMirror 集成（直接引用，不再反射加载）
@@ -61,4 +62,5 @@ public static class HearthMirrorClient
             return new List<LobbyPlayer>();
         }
     }
+}
 }

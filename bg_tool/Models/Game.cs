@@ -2,7 +2,8 @@ using System.Collections.Generic;
 
 #nullable enable
 
-namespace BgTool;
+namespace BgTool
+{
 
 /// <summary>
 /// 一个英雄实体
@@ -45,7 +46,7 @@ public class Game
     public int HeroPlacement { get; set; }
 
     // 所有英雄，key = (cardId, playerSlot)
-    public Dictionary<(string, int), Hero> AllHeroes { get; set; } = new();
+    public Dictionary<(string, int), Hero> AllHeroes { get; set; } = new Dictionary<(string, int), Hero>();
 
     // 游戏状态
     public bool IsActive { get; set; }
@@ -56,5 +57,6 @@ public class Game
     public string EndTime { get; set; } = "";
 
     // HearthMirror 对手信息
-    public List<LobbyPlayer> LobbyPlayers { get; set; } = new();
+    public List<LobbyPlayer> LobbyPlayers { get; set; } = new List<LobbyPlayer>();
+}
 }

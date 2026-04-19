@@ -5,15 +5,16 @@ using System.Text.RegularExpressions;
 
 #nullable enable
 
-namespace BgTool;
+namespace BgTool
+{
 
 /// <summary>
 /// 状态机解析器 — 逐行解析 Power.log
 /// </summary>
 public class Parser
 {
-    public Game Game { get; private set; } = new();
-    public List<Game> Games { get; } = new();
+    public Game Game { get; private set; } = new Game();
+    public List<Game> Games { get; } = new List<Game>();
 
     // CREATE_GAME 块状态
     private bool _inCreateBlock;
@@ -37,7 +38,7 @@ public class Parser
         "BG32_HERO_", "BG33_HERO_", "BG34_HERO_", "BG35_HERO_",
     };
 
-    private static readonly HashSet<string> HeroExclude = new()
+    private static readonly HashSet<string> HeroExclude = new HashSet<string>()
     {
         "TB_BaconShop_HERO_PH"
     };
@@ -437,4 +438,5 @@ public class Parser
         }
         return null;
     }
+}
 }

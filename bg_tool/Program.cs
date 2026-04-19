@@ -9,7 +9,8 @@ using BgTool;
 
 #nullable enable
 
-namespace BgTool;
+namespace BgTool
+{
 
 class Program
 {
@@ -377,4 +378,5 @@ class Program
             Console.WriteLine("🔄 已重连");
         Console.WriteLine();
     }
+}
 }
