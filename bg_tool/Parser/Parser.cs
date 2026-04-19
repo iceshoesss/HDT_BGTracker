@@ -130,7 +130,7 @@ public class Parser
                 _createHasTurn = true;
                 if (_pendingNewGame != null)
                 {
-                    if (Games.Count > 0 && Games[^1] == Game)
+                    if (Games.Count > 0 && Games[Games.Count - 1] == Game)
                         Games.RemoveAt(Games.Count - 1);
                     Game = _pendingNewGame;
                     Game.Reconnected = true;

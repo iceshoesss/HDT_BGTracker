@@ -2,20 +2,25 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net472</TargetFramework>
     <RootNamespace>BgTool</RootNamespace>
     <AssemblyName>bg_tool</AssemblyName>
-    <LangVersion>12</LangVersion>
+    <LangVersion>8.0</LangVersion>
     <Version>1.0.0</Version>
-    <SupportedOSPlatformVersion>7.0</SupportedOSPlatformVersion>
     <Description>炉石酒馆战棋 Power.log 解析器（C# 版）</Description>
   </PropertyGroup>
 
-  <!-- HearthMirror 可选引用：设置 HDT_PATH 环境变量后生效，否则跳过 -->
-  <ItemGroup Condition="'$(HDT_PATH)' != ''">
+  <!-- HDT 引用 -->
+  <ItemGroup>
     <Reference Include="HearthMirror">
       <HintPath>$(HDT_PATH)\HearthMirror.dll</HintPath>
-      <Private>True</Private>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System.Net.Http">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System.Web.Extensions">
+      <Private>False</Private>
     </Reference>
   </ItemGroup>
 
