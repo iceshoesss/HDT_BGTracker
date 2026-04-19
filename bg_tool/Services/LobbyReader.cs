@@ -59,7 +59,7 @@ public static class LobbyReader
         try
         {
             var lobby = _reflection.GetBattlegroundsLobbyInfo();
-            if (lobby?.Players == null || lobby.Players.Count == 0)
+            if (lobby?.Players == null || lobby!.Players.Count == 0)
             {
                 Console.WriteLine("[HearthMirror] ⚠️ GetBattlegroundsLobbyInfo 返回空");
                 return [];
@@ -68,10 +68,12 @@ public static class LobbyReader
             var result = new List<LobbyPlayer>();
             foreach (var p in lobby.Players)
             {
+                dynamic? accountId = p?.AccountId;
+                string heroCardId = p?.HeroCardId ?? "";
                 result.Add(new LobbyPlayer
                 {
-                    Lo = p.AccountId?.Lo ?? 0,
-                    HeroCardId = p.HeroCardId ?? ""
+                    Lo = accountId?.Lo ?? 0,
+                    HeroCardId = heroCardId
                 });
             }
             return result;

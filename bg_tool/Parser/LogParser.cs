@@ -5,7 +5,7 @@ using BgTool.Services;
 namespace BgTool.Parser;
 
 /// <summary>Power.log 正则状态机解析器（从 Python bg_parser 移植）</summary>
-public class Parser
+public class LogParser
 {
     // ── 正则（预编译，与 Python 完全一致）────────────────
     static readonly Regex ReCreateGame = new(@"GameState\.DebugPrintPower\(\) - CREATE_GAME$", RegexOptions.Compiled);

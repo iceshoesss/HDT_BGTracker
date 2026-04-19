@@ -42,7 +42,7 @@ class Program
         Console.WriteLine($"👁 监控: {logPath}");
         Console.WriteLine("   (Ctrl+C 停止)\n");
 
-        var parser = new Parser();
+        var parser = new LogParser();
         string currentPath = logPath;
 
         try
@@ -86,7 +86,7 @@ class Program
                             Console.WriteLine("\n🔄 游戏重启，当前对局中断");
                         Console.WriteLine($"🔄 切换: {newPath}");
                         currentPath = newPath;
-                        parser = new Parser();
+                        parser = new LogParser();
                         _filePosition = 0;
                         _lineBuffer = [];
                         try
