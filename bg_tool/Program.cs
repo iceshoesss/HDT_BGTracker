@@ -188,6 +188,11 @@ class Program
 
                 Thread.Sleep(100);
             }
+            catch (IOException)
+            {
+                // 文件短暂锁定（游戏写入中），静默等待重试
+                Thread.Sleep(200);
+            }
             catch (FileNotFoundException)
             {
                 var newPath = LogPathFinder.CheckNewLogFile(currentPath);
@@ -211,8 +216,8 @@ class Program
                 }
                 else
                 {
-                    Console.WriteLine("❌ 日志消失，等待...");
-                    Thread.Sleep(3000);
+                    // 文件短暂不可访问（游戏切换），静默等待
+                    Thread.Sleep(500);
                 }
             }
             catch (Exception e)
