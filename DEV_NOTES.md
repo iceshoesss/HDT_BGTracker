@@ -500,6 +500,38 @@ HDT 的 `BattlegroundsLobbyInfo`（含对手 BattleTag + accountIdLo）来自 **
 - 本地玩家判定：entity_id 匹配 `local_hero_entity_id`，或 `player_slot == 7`
 - 断线重连时本地玩家的 HERO_ENTITY 可能不出现，通过 player_slot=7 回退识别
 
+### 8.7 HearthMirror 集成（获取对手 Lo）
+
+bg_parser 通过 pythonnet 加载 HearthMirror.dll，在 STEP 13（MAIN_CLEANUP）时读取大厅 8 个玩家的 `AccountId.Lo` + `HeroCardId`。
+
+**前置条件**：
+- **必须 32 位 Python**（HearthMirror.dll 是 x86 编译，64 位 Python 无法加载）
+- pythonnet 包
+- HearthMirror.dll 路径通过 `HDT_PATH` 环境变量指定，或放在 `bg_parser/` 同级目录
+
+```powershell
+$env:HDT_PATH = "C:\...\HDT"
+python bg_parser/bg_parser.py
+```
+
+**加载机制**：
+- `pythonnet.set_runtime('netfx')` 只能调用一次，重复调用会报 "already been loaded"
+- 解决方案：`set_runtime` 失败时 catch 异常继续执行（运行时可能已加载）
+- 用 `_mirror_init_attempted` 标志确保只尝试初始化一次，失败不再重试
+
+**读取方式**：
+- `HearthMirror.Reflection()` 实例化 → `GetBattlegroundsLobbyInfo()` → `Players`
+- 每个 Player 有 `AccountId.Lo`、`AccountId.Hi`、`HeroCardId`
+- **只有本地玩家有 `Name`**，对手 Name 为空（这是 HearthMirror 的限制）
+
+**时机验证**：
+- ❌ `game_start`（CREATE_GAME）时内存未就绪：只拿到 7 人，第 8 个 Lo=0
+- ✅ `MAIN_CLEANUP`（STEP 13）时完整获取 8 人 + 英雄信息
+
+**可选依赖设计**：
+- 导入失败不影响 bg_parser 正常运行
+- 没有 32 位 Python 或找不到 DLL 时静默降级
+
 ---
 
 ## 9. 待办与已知问题
@@ -553,6 +585,7 @@ HDT 的 `BattlegroundsLobbyInfo`（含对手 BattleTag + accountIdLo）来自 **
 - [x] 排名追踪（所有玩家 LEADERBOARD_PLACE）
 - [x] 中途接入 / 断线重连支持
 - [x] 自动切换日志文件（游戏重启）
+- [x] HearthMirror 集成：STEP 13 获取对手 Lo + HeroCardId
 - [ ] 游戏结束检测可靠性修复
 - [ ] 对接 Flask API（check-league / update-placement）
 - [ ] 多局连续追踪稳定性测试

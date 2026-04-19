@@ -14,7 +14,8 @@ HDT_BGTracker/
 │   ├── LobbyOverlay.cs     # 游戏内浮动面板（已禁用）
 │   └── HDT_BGTracker.csproj
 ├── bg_parser/              # Python 日志解析器（脱离 HDT）
-│   └── bg_parser.py        # Power.log 实时解析
+│   ├── bg_parser.py        # Power.log 实时解析（含 HearthMirror 集成）
+│   └── test_lobby_reader.py # HearthMirror 调试工具
 ├── API.md                  # 插件调用的 API 文档（与 LeagueWeb 共享）
 ├── DEV_NOTES.md            # 开发文档（踩坑记录）
 └── sync.ps1 / sync.sh      # 同步脚本（保护本地配置）
@@ -99,7 +100,7 @@ tar -a -cf HDT_BGTracker.zip HDT_BGTracker.dll
 
 ## Python 日志解析器（bg_parser）
 
-独立于 HDT 插件，直接读取游戏日志 Power.log 提取对局数据。Python 3.6+，无第三方依赖。
+独立于 HDT 插件，直接读取游戏日志 Power.log 提取对局数据。Python 3.6+，无第三方依赖（HearthMirror 为可选）。
 
 ### 用法
 
@@ -109,6 +110,10 @@ python bg_parser/bg_parser.py
 
 # 解析已有日志
 python bg_parser/bg_parser.py --parse "D:\...\Power.log"
+
+# 启用 HearthMirror 获取对手 Lo（需要 32 位 Python + pythonnet）
+$env:HDT_PATH = "C:\...\HDT"
+python bg_parser/bg_parser.py
 ```
 
 ### 功能
@@ -117,10 +122,18 @@ python bg_parser/bg_parser.py --parse "D:\...\Power.log"
 - **实时监控**：tail 模式，游戏中即时输出排名变化
 - **自动切换**：玩家重启游戏时自动检测新日志文件夹并切换
 - **可提取数据**：本地玩家 BattleTag、accountIdLo、英雄名+cardId、排名 1-8
+- **HearthMirror 集成**（可选）：STEP 13 时获取 8 个玩家的 AccountId.Lo + HeroCardId
+
+### HearthMirror 使用说明
+
+- **必须 32 位 Python**（HearthMirror.dll 是 x86 编译）
+- 需要安装 pythonnet：`pip install pythonnet`
+- 通过 `HDT_PATH` 环境变量指定 HDT 目录（包含 HearthMirror.dll）
+- 可选依赖：没有 HearthMirror 时不影响正常使用
 
 ### 已知限制
 
-- Power.log 不含对手 BattleTag/accountIdLo（需多玩家协作）
+- Power.log 不含对手 BattleTag/accountIdLo（HearthMirror 可获取 Lo，但对手 Name 为空）
 - `LEADERBOARD_PLACE` 游戏中动态重排，解析器取最后出现的值
 - 第 1 名英雄有时不在日志的初始 batch 中
 
