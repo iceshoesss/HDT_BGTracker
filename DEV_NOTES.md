@@ -548,6 +548,7 @@ python bg_parser/bg_parser.py
 ### 已修复（2026-04-19）
 
 - [x] **bg_tool 重读所有历史数据**：`FindLastCreateGamePos` 用 `GetByteCount(line) + 1` 算字节偏移，假设换行符 1 字节。但 Windows Power.log 用 CRLF（2 字节），累积偏移导致 seek 到错误位置，从头读取全部日志。修复：改用 `fs.Position`（C#）/ `f.tell()` binary mode（Python）取真实流位置。影响 bg_tool 和 bg_parser 两个版本。
+- [x] **bg_tool 切换新日志后无输出**：`ReadNewLines` 用 `fs.Position` 更新 `_position`，但 StreamReader 有内部缓冲，`fs.Position` 超前于实际消费位置。下次调用时文件长度没变短（`_reader.BaseStream.Length < _position` 不触发），直接从缓冲位置继续，跳过新写入内容。修复：去掉 `_position` 手动追踪，改为 `_lastKnownLength` 检测文件截断/重建。`ReadLine()` 天然处理增量读取。
 - [x] **bg_tool 无法获取选定英雄**：初始 `Game.IsActive = true`，CREATE_GAME 前就处理日志行，加上 seek 位置错误重读旧数据，HERO_ENTITY / FULL_ENTITY 已被处理过。修复：初始 `IsActive = false`，等 CREATE_GAME 才开始处理。
 - [x] **bg_tool 未获取 HearthMirror Lo**：`LobbyReader.GetLobbyPlayers()` 无参数，无法匹配 `heroCardId → heroName`。修复：传入 `Game` 对象，通过 `AllHeroes` 匹配英雄名；增强诊断日志输出。
 
@@ -722,6 +723,7 @@ QQ群 ↔ QQ机器人 ↔ HTTP API ↔ Flask ↔ MongoDB
 - 修复 FindLastCreateGamePos 字节偏移计算（CRLF 换行符按 1 字节算，实际 2 字节），导致重读所有历史数据
 - 修复初始 Game.IsActive = true 导致 CREATE_GAME 前处理日志行
 - 修复 LobbyReader.GetLobbyPlayers() 缺少 game 参数，无法匹配 heroCardId 到英雄名
+- 修复 FileMonitor.ReadNewLines 用 fs.Position 追踪位置，StreamReader 缓冲导致跳过新写入内容。改为自然读取模式
 - 增强 LobbyReader 诊断日志输出
 
 ### C# 插件
