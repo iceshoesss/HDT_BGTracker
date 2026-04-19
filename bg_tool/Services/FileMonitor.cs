@@ -7,7 +7,7 @@ public class FileMonitor : IDisposable
 {
     private readonly string _initialPath;
     private string _currentPath;
-    private long _position;
+    private long _lastKnownLength;
     private readonly int _fileCheckEvery;
     private int _fileCheckCounter;
     private StreamReader? _reader;
@@ -19,25 +19,47 @@ public class FileMonitor : IDisposable
         _fileCheckEvery = fileCheckEvery;
     }
 
-    /// <summary>读取所有新行</summary>
+    /// <summary>读取所有新行。依靠 StreamReader 自然读取，不做手动 position 追踪。</summary>
     public List<string> ReadNewLines()
     {
         var lines = new List<string>();
         try
         {
-            if (_reader == null || _reader.BaseStream.Length < _position)
+            // 检测文件被截断或重建（长度回退）
+            if (_reader != null)
             {
-                // 文件被截断或重新创建
-                _reader?.Dispose();
-                _reader = new StreamReader(new FileStream(_currentPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite),
+                try
+                {
+                    var currentLen = _reader.BaseStream.Length;
+                    if (currentLen < _lastKnownLength)
+                    {
+                        // 文件被截断或重建
+                        _reader.Dispose();
+                        _reader = null;
+                    }
+                    _lastKnownLength = currentLen;
+                }
+                catch
+                {
+                    _reader.Dispose();
+                    _reader = null;
+                }
+            }
+
+            if (_reader == null)
+            {
+                _reader = new StreamReader(
+                    new FileStream(_currentPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite),
                     System.Text.Encoding.UTF8);
-                _reader.BaseStream.Seek(_position, SeekOrigin.Begin);
+                _lastKnownLength = _reader.BaseStream.Length;
             }
 
             string? line;
             while ((line = _reader.ReadLine()) != null)
                 lines.Add(line);
-            _position = _reader.BaseStream.Position;
+
+            // 更新已知长度（文件可能增长了）
+            try { _lastKnownLength = _reader.BaseStream.Length; } catch { }
         }
         catch (FileNotFoundException)
         {
@@ -91,17 +113,18 @@ public class FileMonitor : IDisposable
         _reader?.Dispose();
         _reader = null;
         _currentPath = newPath;
-        _position = 0;
+        _lastKnownLength = 0;
     }
 
-    /// <summary>跳到最后一个 CREATE_GAME 位置并读取已有内容</summary>
+    /// <summary>跳到最后一个 CREATE_GAME 位置并准备读取</summary>
     public void SeekToLastCreateGame()
     {
-        _position = LogParser.FindLastCreateGamePos(_currentPath);
+        var pos = LogParser.FindLastCreateGamePos(_currentPath);
         _reader?.Dispose();
-        _reader = new StreamReader(new FileStream(_currentPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite),
-            System.Text.Encoding.UTF8);
-        _reader.BaseStream.Seek(_position, SeekOrigin.Begin);
+        var fs = new FileStream(_currentPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        _reader = new StreamReader(fs, System.Text.Encoding.UTF8);
+        _reader.BaseStream.Seek(pos, SeekOrigin.Begin);
+        _lastKnownLength = fs.Length;
     }
 
     public void Dispose()
