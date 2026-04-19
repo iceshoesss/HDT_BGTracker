@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -18,6 +19,23 @@ class Program
     {
         // Windows 控制台 UTF-8 输出
         Console.OutputEncoding = Encoding.UTF8;
+
+        // 在任何 HearthMirror 代码被 JIT 之前注册依赖解析
+        // HearthMirror.dll 依赖 untapped-scry-dotnet 等 DLL，需要从 HDT_PATH 加载
+        AppDomain.CurrentDomain.AssemblyResolve += (sender, resolveArgs) =>
+        {
+            var hdtDir = Environment.GetEnvironmentVariable("HDT_PATH");
+            if (string.IsNullOrEmpty(hdtDir)) return null;
+            var name = new AssemblyName(resolveArgs.Name).Name;
+            var path = Path.Combine(hdtDir, name + ".dll");
+            if (File.Exists(path))
+            {
+                Console.WriteLine($"[AssemblyResolve] 加载: {path}");
+                return Assembly.LoadFrom(path);
+            }
+            Console.WriteLine($"[AssemblyResolve] 未找到: {path}");
+            return null;
+        };
 
         string? customPath = null;
         bool parseMode = false;
