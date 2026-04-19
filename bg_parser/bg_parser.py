@@ -536,13 +536,20 @@ def _find_log_in_dir(logs_dir: str) -> str:
 
 
 def _find_last_create_game_pos(path: str) -> int:
-    pos = 0
     last_pos = 0
-    with open(path, 'r', encoding='utf-8', errors='replace') as f:
-        for line in f:
-            if _RE_CREATE_GAME.search(line):
+    with open(path, 'rb') as f:
+        pos = 0
+        while True:
+            line = f.readline()
+            if not line:
+                break
+            try:
+                text = line.decode('utf-8', errors='replace')
+            except Exception:
+                text = ''
+            if _RE_CREATE_GAME.search(text):
                 last_pos = pos
-            pos += len(line.encode('utf-8', errors='replace'))
+            pos = f.tell()
     return last_pos
 
 

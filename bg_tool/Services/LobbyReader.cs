@@ -23,13 +23,15 @@ public static class LobbyReader
             if (!File.Exists(dllPath))
             {
                 Console.WriteLine("[HearthMirror] ⚠️ 未找到 HearthMirror.dll");
+                Console.WriteLine($"   查找路径: {dllPath}");
                 return false;
             }
 
             // HearthMirror 需要在 32 位进程下运行
             if (Environment.Is64BitProcess)
             {
-                Console.WriteLine("[HearthMirror] ⚠️ 需要 32 位进程 (x86)");
+                Console.WriteLine("[HearthMirror] ⚠️ 需要 32 位进程 (x86)，当前为 64 位");
+                Console.WriteLine("   用法: dotnet publish -r win-x86 或设置 RuntimeIdentifier");
                 return false;
             }
 
@@ -39,6 +41,7 @@ public static class LobbyReader
             if (reflType == null)
             {
                 Console.WriteLine("[HearthMirror] ⚠️ 未找到 Reflection 类");
+                Console.WriteLine($"   程序集类型: {string.Join(", ", assembly.GetTypes().Select(t => t.FullName))}");
                 return false;
             }
 
@@ -54,8 +57,8 @@ public static class LobbyReader
         }
     }
 
-    /// <summary>获取大厅 8 个玩家的 Lo + HeroCardId</summary>
-    public static List<LobbyPlayer> GetLobbyPlayers()
+    /// <summary>获取大厅 8 个玩家的 Lo + HeroCardId，匹配到已知英雄则填入 HeroName</summary>
+    public static List<LobbyPlayer> GetLobbyPlayers(Game game)
     {
         if (!_available || _reflection == null) return [];
 
@@ -63,15 +66,42 @@ public static class LobbyReader
         {
             var lobby = _reflection.GetBattlegroundsLobbyInfo();
             if (lobby == null || lobby.Players == null || lobby.Players.Count == 0)
+            {
+                Console.WriteLine("[HearthMirror] ⚠️ GetBattlegroundsLobbyInfo 返回空");
                 return [];
+            }
 
             var result = new List<LobbyPlayer>();
-            foreach (var p in lobby.Players)
+            for (int i = 0; i < lobby.Players.Count; i++)
             {
+                var p = lobby.Players[i];
                 long lo = p.AccountId?.Lo ?? 0;
-                string hero = p.HeroCardId ?? "";
-                result.Add(new LobbyPlayer { Lo = lo, HeroCardId = hero });
+                string heroCardId = p.HeroCardId ?? "";
+                string heroName = "";
+
+                // 尝试通过 heroCardId 匹配已有英雄名
+                if (!string.IsNullOrEmpty(heroCardId))
+                {
+                    foreach (var hero in game.AllHeroes.Values)
+                    {
+                        if (hero.CardId == heroCardId)
+                        {
+                            heroName = hero.HeroName;
+                            break;
+                        }
+                    }
+                }
+
+                result.Add(new LobbyPlayer { Lo = lo, HeroCardId = heroCardId });
             }
+
+            Console.WriteLine($"[HearthMirror] 📋 获取到 {result.Count} 个玩家");
+            for (int i = 0; i < result.Count; i++)
+            {
+                var lp = result[i];
+                Console.WriteLine($"   [{i + 1}] Lo={lp.Lo}, Hero={lp.HeroCardId}");
+            }
+
             return result;
         }
         catch (Exception ex)

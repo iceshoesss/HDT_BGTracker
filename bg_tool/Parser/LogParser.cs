@@ -38,7 +38,7 @@ public class LogParser
     private static readonly HashSet<string> HeroExclude = new() { "TB_BaconShop_HERO_PH" };
 
     // ── 状态 ────────────────────────────────────────────
-    public Game Game { get; private set; } = new() { IsActive = true, StartTime = DateTime.Now.ToString("HH:mm:ss") };
+    public Game Game { get; private set; } = new();
     public List<Game> Games { get; } = [];
 
     private bool _inCreateBlock;
@@ -237,7 +237,7 @@ public class LogParser
             if (step == "MAIN_CLEANUP")
             {
                 // 英雄选定完毕，尝试获取对手 Lo
-                Game.LobbyPlayers = LobbyReader.GetLobbyPlayers();
+                Game.LobbyPlayers = LobbyReader.GetLobbyPlayers(Game);
                 if (Game.LobbyPlayers.Count > 0)
                 {
                     Console.WriteLine($"[HearthMirror] 📋 获取到 {Game.LobbyPlayers.Count} 个玩家");
@@ -345,15 +345,14 @@ public class LogParser
 
     public static long FindLastCreateGamePos(string path)
     {
-        long pos = 0;
         long lastPos = 0;
-        using var reader = new StreamReader(path, System.Text.Encoding.UTF8);
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(fs, System.Text.Encoding.UTF8);
         string? line;
         while ((line = reader.ReadLine()) != null)
         {
             if (ReCreateGame.IsMatch(line))
-                lastPos = pos;
-            pos += System.Text.Encoding.UTF8.GetByteCount(line) + 1; // +1 for newline
+                lastPos = fs.Position; // 用流真实位置，正确处理 CRLF / 多字节字符
         }
         return lastPos;
     }

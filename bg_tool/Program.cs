@@ -151,6 +151,9 @@ class Program
             case "hero_entity":
                 Console.WriteLine($"  [{ts}] 🦸 选定英雄: {(string.IsNullOrEmpty(game.HeroName) ? "(等待数据)" : game.HeroName)}");
                 break;
+            case "hero_found":
+                Console.WriteLine($"  [{ts}] 🃏 发现英雄: {game.HeroName} ({game.HeroCardId})");
+                break;
             case "concede":
                 Console.WriteLine($"  [{ts}] 🏳️ 投降");
                 break;
