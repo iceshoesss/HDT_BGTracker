@@ -88,11 +88,15 @@ def _try_init_mirror():
         except Exception:
             pass  # 运行时可能已加载，忽略
         import clr
-        # 查找同级目录或 HDT 目录下的 HearthMirror.dll
+        # 查找 HearthMirror.dll
         hm_paths = [
             os.path.join(os.path.dirname(__file__), '..', '..', 'HearthMirror.dll'),
             os.path.join(os.path.dirname(__file__), 'HearthMirror.dll'),
         ]
+        # 环境变量指定 HDT 目录
+        hdt_dir = os.environ.get('HDT_PATH')
+        if hdt_dir:
+            hm_paths.insert(0, os.path.join(hdt_dir, 'HearthMirror.dll'))
         hm_path = None
         for p in hm_paths:
             if os.path.isfile(p):
