@@ -650,11 +650,6 @@ def _log_event(event: str, game: Game):
     ts = datetime.now().strftime("%H:%M:%S")
     if event == 'game_start':
         print(f"  [{ts}] 🎮 新局开始")
-        # 游戏开始时尝试获取对手 Lo
-        if not game.lobby_players:
-            game.lobby_players = fetch_lobby_players()
-            if game.lobby_players:
-                print("  [HearthMirror] 📋 开局获取到 {} 个玩家".format(len(game.lobby_players)))
     elif event == 'reconnect':
         print(f"  [{ts}] 🔄 断线重连（忽略）")
     elif event == 'player_info':
