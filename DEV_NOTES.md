@@ -600,6 +600,7 @@ Python 原型（bg_parser）功能已完善，C# 重写版（bg_tool）已完成
 
 ### C# net472 兼容性踩坑
 
+- ❌ **HearthMirror.dll 必须 x86 进程加载**：csproj 需 `<PlatformTarget>x86</PlatformTarget>`，否则 AnyCPU 在 64 位系统以 64 位运行，报"试图加载格式不正确的程序"
 - ❌ `namespace BgTool;`（文件作用域）→ 需要 `namespace BgTool { }`（C# 10 语法）
 - ❌ `new(...)`（目标类型 new）→ 需要 `new Regex(...)` 等显式类型（C# 9）
 - ❌ `cardId[prefix.Length..]`（范围语法）→ 需要 `cardId.Substring(prefix.Length)`（需 System.Range）
@@ -695,6 +696,8 @@ QQ群 ↔ QQ机器人 ↔ HTTP API ↔ Flask ↔ MongoDB
 #### v0.1.1 (2026-04-19)
 - 修复 HearthMirror Lo 获取：Reflection 实例改为单例缓存，对齐 Python 全局变量模式
 - 修复中途启动无法使用：PreloadPlayerInfo 扩展为预加载 PlayerName + AccountIdLo + HeroEntityId
+- STEP 13 无数据时不再静默，输出警告日志
+- csproj 添加 PlatformTarget x86（HearthMirror.dll 是 32 位程序集，AnyCPU 64 位进程无法加载）
 
 #### v0.1.0 (2026-04-19)
 - C# 重写 Python bg_parser，net472 + HearthMirror 直接引用
