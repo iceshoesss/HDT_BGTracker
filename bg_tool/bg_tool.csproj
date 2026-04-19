@@ -15,14 +15,23 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <!-- HearthMirror + HearthDb：从 HDT 目录拷贝到输出 -->
+  <!-- HearthMirror + HearthDb：从 HDT 目录或本地拷贝 -->
   <ItemGroup>
-    <Reference Include="HearthMirror">
+    <Reference Include="HearthMirror" Condition="Exists('$(HDT_PATH)\HearthMirror.dll')">
       <HintPath>$(HDT_PATH)\HearthMirror.dll</HintPath>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Reference>
-    <Reference Include="HearthDb">
+    <Reference Include="HearthDb" Condition="Exists('$(HDT_PATH)\HearthDb.dll')">
       <HintPath>$(HDT_PATH)\HearthDb.dll</HintPath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Reference>
+    <!-- 兜底：本地 dll -->
+    <Reference Include="HearthMirror" Condition="Exists('HearthMirror.dll') And !Exists('$(HDT_PATH)\HearthMirror.dll')">
+      <HintPath>HearthMirror.dll</HintPath>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Reference>
+    <Reference Include="HearthDb" Condition="Exists('HearthDb.dll') And !Exists('$(HDT_PATH)\HearthDb.dll')">
+      <HintPath>HearthDb.dll</HintPath>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Reference>
   </ItemGroup>
