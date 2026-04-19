@@ -30,7 +30,13 @@ public static class HearthMirrorClient
             if (string.IsNullOrEmpty(hdtDir)) return null;
             var name = new AssemblyName(args.Name).Name;
             var path = Path.Combine(hdtDir, name + ".dll");
-            return File.Exists(path) ? Assembly.LoadFrom(path) : null;
+            if (File.Exists(path))
+            {
+                Console.WriteLine($"[AssemblyResolve] 加载: {path}");
+                return Assembly.LoadFrom(path);
+            }
+            Console.WriteLine($"[AssemblyResolve] 未找到: {path}");
+            return null;
         };
     }
 
