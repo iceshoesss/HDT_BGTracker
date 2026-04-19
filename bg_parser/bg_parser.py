@@ -602,11 +602,7 @@ def print_game_result(game: Game, index: int = 0):
         for h in unique_others:
             print(f"   {h.hero_name} ({h.card_id})")
 
-    # HearthMirror 对手信息
-    if game.lobby_players:
-        print(f"\n🔍 HearthMirror 对手信息:")
-        for lp in game.lobby_players:
-            print("   Lo={}, Hero={}".format(lp['lo'], lp['heroCardId']))
+    # HearthMirror 对手信息（对局结果中不显示）
 
     print()
 
@@ -744,6 +740,7 @@ def tail_log(log_path: str):
                 if event:
                     if event in ('game_end', 'concede') and not parser.game.is_active:
                         print_game_result(parser.games[-1])
+                        print("   等待下一局开始...\n")
                     else:
                         _log_event(event, parser.game)
 
