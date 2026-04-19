@@ -13,7 +13,13 @@ HDT_BGTracker/
 │   ├── RatingTracker.cs    # 核心逻辑（联赛匹配 + 排名上传）
 │   ├── LobbyOverlay.cs     # 游戏内浮动面板（已禁用）
 │   └── HDT_BGTracker.csproj
-├── bg_parser/              # Python 日志解析器（脱离 HDT）
+├── bg_tool/                # C# 日志解析器（独立可执行程序，替代 bg_parser）
+│   ├── Program.cs          # 入口：批量解析 + 实时监控
+│   ├── Parser/Parser.cs    # 核心状态机（预编译正则）
+│   ├── Models/Game.cs      # 数据模型
+│   ├── Services/           # 日志路径查找 + HearthMirror 集成
+│   └── bg_tool.csproj
+├── bg_parser/              # Python 日志解析器（参考实现）
 │   ├── bg_parser.py        # Power.log 实时解析（含 HearthMirror 集成）
 │   └── test_lobby_reader.py # HearthMirror 调试工具
 ├── API.md                  # 插件调用的 API 文档（与 LeagueWeb 共享）
@@ -98,22 +104,29 @@ tar -a -cf HDT_BGTracker.zip HDT_BGTracker.dll
 - 点击插件设置中的「测试连接」按钮可验证 API 连接
 - 日志在 `%AppData%\HearthstoneDeckTracker\BGTracker\tracker.log`
 
-## Python 日志解析器（bg_parser）
+## C# 日志解析器（bg_tool）
 
-独立于 HDT 插件，直接读取游戏日志 Power.log 提取对局数据。Python 3.6+，无第三方依赖（HearthMirror 为可选）。
+独立可执行程序，直接读取游戏日志 Power.log 提取对局数据。替代 Python bg_parser，用户只需运行一个程序。
+
+### 编译
+
+```powershell
+cd bg_tool
+$env:HDT_PATH = "你的HDT安装路径"  # 可选，启用 HearthMirror 获取对手 Lo
+dotnet build -c Release
+```
 
 ### 用法
 
-```bash
+```powershell
 # 实时监控模式（默认）
-python bg_parser/bg_parser.py
+.\bin\Release\net472\bg_tool.exe
 
 # 解析已有日志
-python bg_parser/bg_parser.py --parse "D:\...\Power.log"
+.\bin\Release\net472\bg_tool.exe --parse "D:\...\Power.log"
 
-# 启用 HearthMirror 获取对手 Lo（需要 32 位 Python + pythonnet）
-$env:HDT_PATH = "C:\...\HDT"
-python bg_parser/bg_parser.py
+# 指定日志路径
+.\bin\Release\net472\bg_tool.exe "D:\...\Power.log"
 ```
 
 ### 功能
@@ -121,21 +134,19 @@ python bg_parser/bg_parser.py
 - **自动查找日志**：Windows 注册表 → 常见安装路径 → Logs 目录下最新文件夹
 - **实时监控**：tail 模式，游戏中即时输出排名变化
 - **自动切换**：玩家重启游戏时自动检测新日志文件夹并切换
+- **中途接入**：游戏中启动脚本可显示已选英雄和玩家信息
+- **断线重连**：自动识别并恢复对局状态
 - **可提取数据**：本地玩家 BattleTag、accountIdLo、英雄名+cardId、排名 1-8
-- **HearthMirror 集成**（可选）：STEP 13 时获取 8 个玩家的 AccountId.Lo + HeroCardId
+- **HearthMirror 集成**（需设置 `HDT_PATH`）：STEP 13 时获取 8 个玩家的 AccountId.Lo + HeroCardId
 
-### HearthMirror 使用说明
+### Python 日志解析器（bg_parser）
 
-- **必须 32 位 Python**（HearthMirror.dll 是 x86 编译）
-- 需要安装 pythonnet：`pip install pythonnet`
-- 通过 `HDT_PATH` 环境变量指定 HDT 目录（包含 HearthMirror.dll）
-- 可选依赖：没有 HearthMirror 时不影响正常使用
+bg_parser 是 Python 参考实现，bg_tool 基于它 1:1 翻译为 C#。功能完全一致，保留用于对比调试。
 
-### 已知限制
-
-- Power.log 不含对手 BattleTag/accountIdLo（HearthMirror 可获取 Lo，但对手 Name 为空）
-- `LEADERBOARD_PLACE` 游戏中动态重排，解析器取最后出现的值
-- 第 1 名英雄有时不在日志的初始 batch 中
+```bash
+python bg_parser/bg_parser.py              # 实时监控
+python bg_parser/bg_parser.py --parse log  # 解析已有日志
+```
 
 ## 数据结构
 
@@ -160,15 +171,20 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 ## 当前开发状态
 
-### Web v0.4.1 (2026-04-17)
-- 后台清理线程独立运行（webhook 通知不依赖页面访问触发）
-- abandoned 通知只通知未提交排名的玩家
+### bg_tool v1.0.0 (2026-04-19)
+- C# 重写 Python bg_parser，net472 + HearthMirror 直接引用
+- 实时监控、中途接入、断线重连、自动切换日志
+- 批量解析 `--parse` 模式
+
+### Web v0.4.2 (2026-04-17)
+- 使用指南页面、管理员删除对局
 
 ### QQ Bot v0.1.1 (2026-04-17)
 - 排行榜、选手查询、队列状态、最近对局、QQ 绑定/解绑
 - 帮助命令、webhook 接收并转发到群通知
 
 ### 进行中
+- bg_tool 对接 Flask API（check-league / update-placement）
 - QQ 机器人更多命令（报名/退出队列、管理员命令）
 - bg_parser 游戏结束检测修复
 - ELO 评分系统（feature/elo 分支，待上线）

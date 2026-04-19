@@ -551,87 +551,59 @@ python bg_parser/bg_parser.py
 
 ---
 
-## 10. 独立可执行程序开发计划
+## 10. 独立可执行程序（bg_tool）
 
-### 目标
+### 状态
 
-脱离 HDT 依赖，做一个独立运行的可执行文件，实现原 HDT 插件的全部功能：
-- 自动查找并监控 Power.log
-- 实时解析对局数据（玩家信息、英雄、排名）
-- 自动上传联赛数据到 Flask API
-- 支持断线重连、中途启动、多局连续追踪
-- 单文件可执行，体积尽量小
+Python 原型（bg_parser）功能已完善，C# 重写版（bg_tool）已完成基础功能。
 
-### 技术选型
+**技术选型：C# net472**（而非 Go/.NET 8）
+- 原因：需要直接引用 HearthMirror.dll（.NET Framework 程序集），Go 和 .NET 8 无法加载
+- bg_tool 与 HDT 插件共享同一框架（net472），用户只需一个可执行文件
 
-| 方案 | 可执行体积 | 开发效率 | 与现有代码复用 | 备注 |
-|------|-----------|---------|--------------|------|
-| Python + PyInstaller | 50~100MB | 高 | 100%（直接复用 bg_parser） | 体积大，启动慢 |
-| Python + Nuitka | 30~60MB | 高 | 100% | 编译型打包，比 PyInstaller 小 |
-| **Go** | **3~5MB** | 中 | 需重写 | 原生二进制，零运行时依赖，交叉编译方便 |
-| C# .NET 8 self-contained | 10~15MB | 中 | 可复用插件代码 | 运行时体积大 |
-| C# .NET 8 framework-dependent | <1MB | 中 | 同上 | 需用户装 .NET 运行时 |
-| Rust | 1~3MB | 低 | 需重写 | 体积最小，但开发周期长 |
+### 已完成
 
-**当前方案：Python 原型阶段，用于验证功能和调试。**
-
-**目标方案：Go 或 C#，待定。**
-- **Go**：3~5MB 单文件，标准库覆盖全部需求（regexp、net/http、os），交叉编译一行命令
-- **C#**：现有 HDT 插件代码可复用（HTTP 客户端、HeroDb 等），但 self-contained 体积较大
-- Python 原型验证完成后，根据实际需求选择最终方案
-
-### 实现阶段
-
-#### Phase 1 — Python 原型（当前）
 - [x] Power.log 实时监控 + 自动查找日志路径
-- [x] 对局检测（CREATE_GAME → STEP → game_end）
-- [x] 玩家信息提取（BattleTag、accountIdLo、英雄）
-- [x] 排名追踪（所有玩家 LEADERBOARD_PLACE）
-- [x] 中途接入 / 断线重连支持
+- [x] CREATE_GAME / STEP / LEADERBOARD_PLACE 状态机解析
+- [x] 玩家信息提取（BattleTag、accountIdLo、英雄名+cardId）
+- [x] 排名追踪
+- [x] 投降检测
+- [x] 断线重连检测与恢复
+- [x] 中途接入预加载玩家信息
 - [x] 自动切换日志文件（游戏重启）
-- [x] HearthMirror 集成：STEP 13 获取对手 Lo + HeroCardId
-- [ ] 游戏结束检测可靠性修复
+- [x] HearthMirror 直接引用：STEP 13 获取对手 Lo + HeroCardId
+- [x] 批量解析 `--parse` 模式
+- [x] Ctrl+C 优雅退出
+
+### 待办
+
 - [ ] 对接 Flask API（check-league / update-placement）
+- [ ] 游戏结束检测可靠性修复
 - [ ] 多局连续追踪稳定性测试
-
-#### Phase 2 — 重构为可执行程序（Go 或 C#）
-- [ ] 选定最终语言（待 Python 原型验证完成后决定）
-- [ ] 项目搭建 + 构建配置
-- [ ] 日志路径查找（Windows 注册表 + 常见路径）
-- [ ] Power.log 解析引擎（移植 bg_parser 正则逻辑）
-- [ ] 实时监控 + 自动切换日志文件
-- [ ] HTTP 客户端（对接 `/api/plugin/*` 端点）
-- [ ] 控制台 UI（状态显示）
-- [ ] 打包为单文件可执行
-
-#### Phase 3 — 功能完善
-- [ ] 系统托盘运行模式（可选，后台常驻）
-- [ ] 自动更新检查
-- [ ] 错误报告与日志
+- [ ] LEADERBOARD_PLACE 动态排名追踪（所有玩家）
 - [ ] 配置文件（API 地址、token 等）
 
-### Python → Go / C# 迁移映射
+### Python → C# 迁移对照
 
-| Python 组件 | Go 对应 | C# 对应 | 说明 |
-|-------------|---------|---------|------|
-| `re.compile()` | `regexp.MustCompile()` | `Regex` 静态字段 | 预编译正则 |
-| `open().readlines()` | `os.Open` + `bufio.Scanner` | `StreamReader` + `FileSystemWatcher` | 文件读取 |
-| `requests.post()` | `http.Post` | `HttpClient` | HTTP 请求 |
-| `dataclass GameResult` | `struct` | `record` 或 `class` | 数据模型 |
-| `signal.SIGINT` | `signal.Notify` | `Console.CancelKeyPress` | 信号处理 |
-| `os.path` + `winreg` | `os` + `golang.org/x/sys/windows/registry` | `Registry` + `Path` | 日志路径查找 |
-| `time.sleep` 轮询 | `fsnotify` / `syscall` | `FileSystemWatcher` | 文件监控 |
-| `print()` | `fmt.Println` | `Console.WriteLine` | 控制台输出 |
+| Python bg_parser | C# bg_tool | 说明 |
+|------------------|-----------|------|
+| `re.compile()` | `static readonly Regex(..., Compiled)` | 预编译正则 |
+| `dataclass Game` | `class Game` | 同字段 |
+| `dataclass Hero` | `class Hero` | 同字段 |
+| `class Parser` | `class Parser` | 同状态机逻辑 |
+| `fetch_lobby_players()` | `HearthMirrorClient.FetchLobbyPlayers()` | 直接引用 DLL |
+| `find_latest_power_log()` | `LogPathFinder.Find()` | 含注册表查找 |
+| `signal.SIGINT` | `Console.CancelKeyPress` | 优雅退出 |
+| `time.sleep(0.1)` | `Thread.Sleep(100)` | 轮询间隔 |
 
-### 已有代码可复用
+### C# net472 兼容性踩坑
 
-**C# 方案**：HDT 插件代码可直接迁移
-- `RatingTracker.cs`：HTTP 请求逻辑（PostJson、重试、认证）
-- `BGTrackerPlugin.cs`：游戏状态检测（STEP、IsInMenu）
-- HeroDb 英雄名查找（`GetHeroName()`）
-
-**Go 方案**：Python bg_parser 正则可直接移植
-- 所有预编译正则（RE_CREATE_GAME、RE_LB_ENTITY 等）
+- ❌ `namespace BgTool;`（文件作用域）→ 需要 `namespace BgTool { }`（C# 10 语法）
+- ❌ `new(...)`（目标类型 new）→ 需要 `new Regex(...)` 等显式类型（C# 9）
+- ❌ `cardId[prefix.Length..]`（范围语法）→ 需要 `cardId.Substring(prefix.Length)`（需 System.Range）
+- ❌ `step is "A" or "B"`（模式组合）→ 需要 `step == "A" || step == "B"`（C# 9）
+- ❌ `name.Contains('#')`（char 重载）→ 需要 `name.Contains("#")`（.NET Core 才有）
+- ❌ `[^1]`（从末尾索引）→ 需要 `list[list.Count - 1]`（需 System.Index）
 - GameResult 数据结构
 - process_line 状态机逻辑
 - tail_log 文件监控逻辑
@@ -716,7 +688,22 @@ QQ群 ↔ QQ机器人 ↔ HTTP API ↔ Flask ↔ MongoDB
 
 ### C# 插件
 
-#### C# 插件
+### bg_tool
+
+#### v1.0.0 (2026-04-19)
+- C# 重写 Python bg_parser，net472 + HearthMirror 直接引用
+- Power.log 实时监控 + 自动查找日志路径（注册表 + 常见路径兜底）
+- CREATE_GAME / STEP / LEADERBOARD_PLACE 状态机解析
+- 玩家信息提取（BattleTag、accountIdLo、英雄名+cardId）
+- 投降检测、断线重连检测与恢复
+- 中途接入：PreloadPlayerInfo 预加载 PlayerName
+- 自动切换日志文件（游戏重启检测）
+- HearthMirror 集成：直接引用 DLL，STEP 13 获取对手 Lo + HeroCardId
+- 批量解析 --parse 模式
+- Ctrl+C 优雅退出
+- 静默处理文件短暂不可访问（IOException）
+
+### C# 插件
 
 #### v0.5.7 (2026-04-18)
 - 修复日志刷屏：GetPlayerId/GetAccountIdLo 未找到时加 1 秒日志节流，避免 OnUpdate 每 100ms 写一条重复日志
