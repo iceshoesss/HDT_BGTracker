@@ -448,7 +448,7 @@ class Parser:
             return 'hero_found'
         return None
 
-    def _find_hero_by_entity(self, entity_id: int) -> Hero | None:
+    def _find_hero_by_entity(self, entity_id: int) -> Optional[Hero]:
         """通过 entity_id 查找英雄（仅限当前活跃的 entity_id）"""
         for hero in self.game.all_heroes.values():
             if hero.entity_id == entity_id:
