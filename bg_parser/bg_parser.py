@@ -41,10 +41,14 @@ class Game:
     player_display_name: str = ""   # 南怀北瑾丨少头脑
     account_id_lo: int = 0          # 1708070391
 
+    # 对局标识
+    game_seed: int = 0              # GAME_SEED（暴雪内部种子，非 UUID）
+
     # 英雄信息
     hero_entity_id: int = 0         # HERO_ENTITY 选定的 entity id
     hero_name: str = ""
     hero_card_id: str = ""
+    hero_placement: int = 0         # 最终 LEADERBOARD_PLACE（投降=8，正常淘汰=观测值）
 
     # 所有英雄（用 (card_id, player_slot) 去重）
     all_heroes: dict = field(default_factory=dict)  # (card_id, slot) → Hero
@@ -53,6 +57,7 @@ class Game:
     is_active: bool = False
     reconnected: bool = False
     conceded: bool = False
+    placement_confirmed: bool = False  # 排名是否确定（投降=true，正常淘汰=false）
     start_time: str = ""            # 日志中的第一个时间戳
     end_time: str = ""
 
@@ -88,6 +93,7 @@ def is_hero_card(card_id: str) -> bool:
 
 _RE_CREATE_GAME = re.compile(r'GameState\.DebugPrintPower\(\) - CREATE_GAME$')
 _RE_GAME_TYPE = re.compile(r'GameType=(\w+)')
+_RE_GAME_SEED = re.compile(r'tag=GAME_SEED value=(\d+)')
 _RE_PLAYER_NAME = re.compile(r'PlayerID=(\d+),\s*PlayerName=(.+?)$')
 _RE_ACCOUNT_ID = re.compile(r'GameAccountId=\[hi=\d+ lo=(\d+)\]')
 _RE_HERO_ENTITY = re.compile(r'TAG_CHANGE Entity=(.+?) tag=HERO_ENTITY value=(\d+)')
@@ -166,6 +172,11 @@ class Parser:
                     lo = int(m.group(1))
                     if lo != 0 and not self.game.account_id_lo:
                         self.game.account_id_lo = lo
+            # GAME_SEED
+            if 'GAME_SEED' in line:
+                m = _RE_GAME_SEED.search(line)
+                if m:
+                    self.game.game_seed = int(m.group(1))
             if 'PowerTaskList.DebugDump()' in line:
                 self._in_create_block = False
                 # 如果是新局（非重连），旧局已经在 _reset_game 时被暂存
@@ -274,7 +285,43 @@ class Parser:
             step = m.group(1)
             return 'phase_change' if step in ('MAIN_READY', 'MAIN_ACTION') else None
 
-        # 投降：tag=3479/4356
+        # LEADERBOARD_PLACE（追踪本地英雄排名变化）
+        m = _RE_LB_ENTITY.search(line)
+        if m:
+            entity_id = int(m.group(2))
+            card_id = m.group(3)
+            player_slot = int(m.group(4))
+            placement = int(m.group(5))
+            if is_hero_card(card_id):
+                # 用 cardId+playerSlot 匹配本地英雄
+                if self.game.hero_card_id and card_id == self.game.hero_card_id:
+                    self.game.hero_placement = placement
+            # 投降检测：PLACE=8 且投降信号已触发
+            if self._concede_pending and placement == 8:
+                self.game.conceded = True
+                self.game.placement_confirmed = True
+                self.game.hero_placement = 8
+                self._end_game()
+                return 'concede'
+            return None
+
+        # LEADERBOARD_PLACE 简写格式（仅 BattleTag）
+        m = _RE_LB_TAG.search(line)
+        if m:
+            tag = m.group(1).strip()
+            placement = int(m.group(2))
+            if tag == self.game.player_tag:
+                self.game.hero_placement = placement
+            # 投降检测
+            if self._concede_pending and placement == 8:
+                self.game.conceded = True
+                self.game.placement_confirmed = True
+                self.game.hero_placement = 8
+                self._end_game()
+                return 'concede'
+            return None
+
+        # 投降信号前兆：tag=3479/4356
         if _RE_CONCEDE_PLAYER_TAG.search(line):
             tag_match = re.search(r'Entity=(.+?) tag=(?:3479|4356)', line)
             if tag_match:
@@ -282,23 +329,9 @@ class Parser:
             self._concede_pending = True
             return None
 
-        # 投降：tag=4302
+        # 投降信号：tag=4302
         if self._concede_pending and _RE_CONCEDE_GAME_TAG.search(line):
             return None
-
-        # 投降：PLACE=8 确认
-        if self._concede_pending:
-            m = _RE_LB_ENTITY.search(line)
-            if m and int(m.group(5)) == 8:
-                self.game.conceded = True
-                self._end_game()
-                return 'concede'
-
-            m = _RE_LB_TAG.search(line)
-            if m and int(m.group(2)) == 8:
-                self.game.conceded = True
-                self._end_game()
-                return 'concede'
 
         return None
 
@@ -432,18 +465,29 @@ def print_game_result(game: Game, index: int = 0):
         print(f"👤 {game.player_tag}")
     if game.account_id_lo:
         print(f"   账号ID: {game.account_id_lo}")
+    if game.game_seed:
+        print(f"   GAME_SEED: {game.game_seed}")
     if game.hero_name:
         print(f"🦸 英雄: {game.hero_name} ({game.hero_card_id})")
 
+    # 排名
+    if game.placement_confirmed:
+        print(f"🏆 排名: 第 {game.hero_placement} 名（确定）")
+    elif game.hero_placement > 0:
+        print(f"🏆 排名: 第 {game.hero_placement} 名（不确定，游戏内最终观测值）")
+    else:
+        print(f"🏆 排名: 未知（未观测到最终排名）")
+
+    # 状态
     events = []
     if game.reconnected:
         events.append("断线重连")
     if game.conceded:
-        events.append("投降 (第8名)")
+        events.append("投降")
     if not game.end_time and not game.conceded:
         events.append("未正常结束")
-    status = " + ".join(events) if events else "正常结束"
-    print(f"📊 {status}")
+    if events:
+        print(f"📊 {' + '.join(events)}")
 
     # 显示其他英雄
     my_key = (game.hero_card_id, None) if game.hero_card_id else None
