@@ -24,6 +24,7 @@ public class LobbyPlayer
 {
     public ulong Lo { get; set; }
     public string HeroCardId { get; set; } = "";
+    public string HeroName { get; set; } = "";
 }
 
 /// <summary>
