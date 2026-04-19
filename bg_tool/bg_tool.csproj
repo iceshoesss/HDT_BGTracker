@@ -6,7 +6,7 @@
     <RootNamespace>BgTool</RootNamespace>
     <AssemblyName>bg_tool</AssemblyName>
     <LangVersion>8.0</LangVersion>
-    <Version>1.0.0</Version>
+    <Version>0.1.0</Version>
     <Description>炉石酒馆战棋 Power.log 解析器（C# 版）</Description>
   </PropertyGroup>
 

@@ -690,7 +690,7 @@ QQ群 ↔ QQ机器人 ↔ HTTP API ↔ Flask ↔ MongoDB
 
 ### bg_tool
 
-#### v1.0.0 (2026-04-19)
+#### v0.1.0 (2026-04-19)
 - C# 重写 Python bg_parser，net472 + HearthMirror 直接引用
 - Power.log 实时监控 + 自动查找日志路径（注册表 + 常见路径兜底）
 - CREATE_GAME / STEP / LEADERBOARD_PLACE 状态机解析
