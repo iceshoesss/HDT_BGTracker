@@ -119,6 +119,47 @@ public class LogParser
         return HandleGameState(line);
     }
 
+    // ── 扫描已有内容（对齐 Python scan_existing）────────────
+
+    /// <summary>从最后一行 CREATE_GAME 开始扫描，逐行处理事件</summary>
+    public List<string> ScanFromLastCreateGame(string path)
+    {
+        var allLines = ReadAllLines(path);
+        var startIdx = FindLastCreateGameIndex(allLines);
+        var events = new List<string>();
+        for (int i = startIdx; i < allLines.Count; i++)
+        {
+            var ev = ProcessLine(allLines[i]);
+            if (ev != null) events.Add(ev);
+        }
+        return events;
+    }
+
+    /// <summary>读取文件所有行</summary>
+    private static List<string> ReadAllLines(string path)
+    {
+        var lines = new List<string>();
+        using var sr = new StreamReader(
+            new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite),
+            System.Text.Encoding.UTF8);
+        string? line;
+        while ((line = sr.ReadLine()) != null)
+            lines.Add(line);
+        return lines;
+    }
+
+    /// <summary>找到最后一个 CREATE_GAME 的行索引</summary>
+    private static int FindLastCreateGameIndex(List<string> lines)
+    {
+        int lastIdx = 0;
+        for (int i = 0; i < lines.Count; i++)
+        {
+            if (ReCreateGame.IsMatch(lines[i]))
+                lastIdx = i;
+        }
+        return lastIdx;
+    }
+
     // ── 内部处理 ────────────────────────────────────────
 
     private void ResetGame()
@@ -213,7 +254,6 @@ public class LogParser
                         EntityId = entityId, HeroName = heroName,
                         CardId = cardId, PlayerSlot = playerSlot
                     };
-                    // 回填本地英雄：entityId 匹配 或 cardId 匹配
                     if (entityId == Game.HeroEntityId || (!string.IsNullOrEmpty(Game.HeroCardId) && cardId == Game.HeroCardId))
                     {
                         Game.HeroName = heroName;
@@ -238,7 +278,6 @@ public class LogParser
                 return "phase_change";
             if (step == "MAIN_CLEANUP")
             {
-                // 英雄选定完毕，尝试获取对手 Lo
                 Game.LobbyPlayers = LobbyReader.GetLobbyPlayers(Game);
                 if (Game.LobbyPlayers.Count > 0)
                 {
@@ -333,7 +372,6 @@ public class LogParser
                 EntityId = entityId, HeroName = heroName,
                 CardId = cardId, PlayerSlot = playerSlot
             };
-            // 回填本地英雄：entityId 匹配 或 cardId 匹配
             if (entityId == Game.HeroEntityId || (!string.IsNullOrEmpty(Game.HeroCardId) && cardId == Game.HeroCardId))
             {
                 Game.HeroName = heroName;
@@ -342,21 +380,5 @@ public class LogParser
             return "hero_found";
         }
         return null;
-    }
-
-    // ── 工具方法 ────────────────────────────────────────
-
-    public static long FindLastCreateGamePos(string path)
-    {
-        long lastPos = 0;
-        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var reader = new StreamReader(fs, System.Text.Encoding.UTF8);
-        string? line;
-        while ((line = reader.ReadLine()) != null)
-        {
-            if (ReCreateGame.IsMatch(line))
-                lastPos = fs.Position; // 用流真实位置，正确处理 CRLF / 多字节字符
-        }
-        return lastPos;
     }
 }

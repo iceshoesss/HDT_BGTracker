@@ -39,26 +39,6 @@ class Program
         Console.WriteLine($"👁 监控: {logPath}");
         Console.WriteLine("   (Ctrl+C 停止)\n");
 
-        // 扫描已有内容（对齐 Python scan_existing）
-        using var monitor = new FileMonitor(logPath);
-        var parser = new LogParser();
-
-        try
-        {
-            ScanExisting(monitor, parser);
-            if (parser.Game.IsActive)
-                PrintMidGame(parser.Game);
-            else
-            {
-                monitor.SwitchTo(logPath);
-                Console.WriteLine("   等待游戏开始...");
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"⚠️ 首次扫描失败: {ex.Message}");
-        }
-
         // Ctrl+C 处理
         Console.CancelKeyPress += (_, e) =>
         {
@@ -67,52 +47,89 @@ class Program
             Environment.Exit(0);
         };
 
-        // 实时监控循环（对齐 Python tail_log）
+        // 启动：扫描已有内容（对齐 Python scan_existing）
+        var parser = new LogParser();
+        string currentPath = logPath;
+
+        try
+        {
+            var events = parser.ScanFromLastCreateGame(currentPath);
+            foreach (var ev in events)
+                LogEvent(ev, parser.Game);
+
+            if (parser.Game.IsActive)
+                PrintMidGame(parser.Game);
+            else
+                Console.WriteLine("   等待游戏开始...");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ 首次扫描失败: {ex.Message}");
+            Console.WriteLine("   等待游戏开始...");
+        }
+
+        // 实时监控（对齐 Python tail_log）
+        var lastMtime = GetMtime(currentPath);
+        int fileCheckCounter = 0;
+        const int fileCheckEvery = 100; // 100ms × 100 = 每 10 秒检查一次
+
         while (true)
         {
             try
             {
-                // 检查新日志文件
-                var newPath = monitor.CheckNewLogFile();
-                if (newPath != null)
+                // 定期检查新日志文件
+                fileCheckCounter++;
+                if (fileCheckCounter >= fileCheckEvery)
                 {
-                    if (parser.Game.IsActive)
-                        Console.WriteLine("\n🔄 游戏重启，当前对局中断");
-                    Console.WriteLine($"🔄 切换: {newPath}");
-                    monitor.SwitchTo(newPath);
-                    parser = new LogParser();
-                    try
+                    fileCheckCounter = 0;
+                    var newPath = CheckNewLogFile(currentPath);
+                    if (newPath != null)
                     {
-                        ScanExisting(monitor, parser);
                         if (parser.Game.IsActive)
-                            PrintMidGame(parser.Game);
-                        else
+                            Console.WriteLine("\n🔄 游戏重启，当前对局中断");
+                        Console.WriteLine($"🔄 切换: {newPath}");
+                        currentPath = newPath;
+                        parser = new LogParser();
+                        try
                         {
-                            monitor.SwitchTo(newPath);
-                            Console.WriteLine("   等待游戏开始...");
+                            var evts = parser.ScanFromLastCreateGame(currentPath);
+                            foreach (var ev in evts)
+                                LogEvent(ev, parser.Game);
+                            if (parser.Game.IsActive)
+                                PrintMidGame(parser.Game);
+                            else
+                                Console.WriteLine("   等待游戏开始...");
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"⚠️ 扫描失败: {ex.Message}");
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"⚠️ 扫描失败: {ex.Message}");
+                        }
+                        lastMtime = GetMtime(currentPath);
+                        continue;
                     }
                 }
 
-                // 读取新行（对齐 Python 实时处理）
-                var newLines = monitor.ReadNewLines();
-                foreach (var line in newLines)
+                // 检查文件是否有新内容（mtime 变化）
+                var mtime = GetMtime(currentPath);
+                if (mtime > lastMtime)
                 {
-                    var ev = parser.ProcessLine(line);
-                    if (ev != null)
+                    lastMtime = mtime;
+                    // 读取新增行
+                    var newLines = ReadNewLines(currentPath);
+                    foreach (var line in newLines)
                     {
-                        if ((ev == "game_end" || ev == "concede") && !parser.Game.IsActive && parser.Games.Count > 0)
+                        var ev = parser.ProcessLine(line);
+                        if (ev != null)
                         {
-                            PrintGameResult(parser.Games[^1]);
-                            Console.WriteLine("   等待下一局开始...\n");
-                        }
-                        else
-                        {
-                            LogEvent(ev, parser.Game);
+                            if ((ev == "game_end" || ev == "concede") && !parser.Game.IsActive && parser.Games.Count > 0)
+                            {
+                                PrintGameResult(parser.Games[^1]);
+                                Console.WriteLine("   等待下一局开始...\n");
+                            }
+                            else
+                            {
+                                LogEvent(ev, parser.Game);
+                            }
                         }
                     }
                 }
@@ -132,18 +149,65 @@ class Program
         }
     }
 
-    /// <summary>扫描已有内容（对齐 Python scan_existing）：SeekToLastCreateGame + 逐行处理事件</summary>
-    static void ScanExisting(FileMonitor monitor, LogParser parser)
+    // ── 增量读取（简易实现）────────────────────────────
+
+    private static long _readPosition;
+
+    /// <summary>读取文件新增行（从上次位置继续）</summary>
+    static List<string> ReadNewLines(string path)
     {
-        monitor.SeekToLastCreateGame();
-        var lines = monitor.ReadNewLines();
-        foreach (var line in lines)
+        var lines = new List<string>();
+        try
         {
-            var ev = parser.ProcessLine(line);
-            if (ev != null)
-                LogEvent(ev, parser.Game);
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            if (fs.Length < _readPosition)
+                _readPosition = 0; // 文件重建
+            fs.Seek(_readPosition, SeekOrigin.Begin);
+            using var sr = new StreamReader(fs, System.Text.Encoding.UTF8);
+            string? line;
+            while ((line = sr.ReadLine()) != null)
+                lines.Add(line);
+            _readPosition = fs.Position;
         }
+        catch { }
+        return lines;
     }
+
+    // ── 文件检查 ──────────────────────────────────────
+
+    static DateTime GetMtime(string path)
+    {
+        try { return File.GetLastWriteTime(path); } catch { return DateTime.MinValue; }
+    }
+
+    static string? CheckNewLogFile(string currentPath)
+    {
+        var currentDir = Path.GetDirectoryName(currentPath)!;
+        var parent = Path.GetDirectoryName(currentDir);
+        var basename = Path.GetFileName(currentDir);
+        var logsDir = basename.StartsWith("Hearthstone_") ? parent! : currentDir;
+
+        if (!Directory.Exists(logsDir)) return null;
+
+        string? newestPath = null;
+        DateTime newestMtime = DateTime.MinValue;
+
+        try { newestMtime = File.GetLastWriteTime(currentPath); } catch { }
+
+        foreach (var folder in Directory.GetDirectories(logsDir, "Hearthstone_*"))
+        {
+            var p = Path.Combine(folder, "Power.log");
+            if (File.Exists(p) && Path.GetFullPath(p) != Path.GetFullPath(currentPath))
+            {
+                var mtime = File.GetLastWriteTime(p);
+                if (mtime > newestMtime) { newestMtime = mtime; newestPath = p; }
+            }
+        }
+
+        return newestPath;
+    }
+
+    // ── 输出 ─────────────────────────────────────────
 
     static void LogEvent(string ev, Game game)
     {
@@ -208,7 +272,6 @@ class Program
         else
             Console.WriteLine("🏆 排名: 未知（未观测到最终排名）");
 
-        // 状态
         var events = new List<string>();
         if (game.Reconnected) events.Add("断线重连");
         if (game.Conceded) events.Add("投降");
@@ -216,7 +279,6 @@ class Program
         if (events.Count > 0)
             Console.WriteLine($"📊 {string.Join(" + ", events)}");
 
-        // 其他英雄
         var seen = new HashSet<string>();
         var others = game.AllHeroes.Values
             .Where(h => !string.IsNullOrEmpty(h.HeroName) && h.HeroName != game.HeroName)
