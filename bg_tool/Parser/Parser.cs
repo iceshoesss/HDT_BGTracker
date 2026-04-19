@@ -197,7 +197,9 @@ public class Parser
 
     private string? HandleGameState(string line)
     {
-        // GameType
+        string? result = null;
+
+        // GameType（不 return，同一行可能还有 PlayerName）
         var m = ReGameType.Match(line);
         if (m.Success && line.Contains("DebugPrintGame()"))
         {
@@ -206,7 +208,6 @@ public class Parser
                 EndGame();
                 return "not_bg";
             }
-            return null;
         }
 
         // PlayerName
@@ -215,7 +216,7 @@ public class Parser
         {
             var name = m.Groups[2].Value.Trim();
             if (name == "古怪之德鲁伊" || name == "惊魂之武僧")
-                return null;
+                return result;
             Game.PlayerTag = name;
             Game.PlayerDisplayName = name.Contains("#")
                 ? name.Substring(0, name.LastIndexOf("#"))
