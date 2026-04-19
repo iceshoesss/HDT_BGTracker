@@ -698,6 +698,7 @@ QQ群 ↔ QQ机器人 ↔ HTTP API ↔ Flask ↔ MongoDB
 - 修复中途启动无法使用：PreloadPlayerInfo 扩展为预加载 PlayerName + AccountIdLo + HeroEntityId
 - STEP 13 无数据时不再静默，输出警告日志
 - csproj 添加 PlatformTarget x86（HearthMirror.dll 是 32 位程序集，AnyCPU 64 位进程无法加载）
+- 添加 AssemblyResolve 事件，从 HDT_PATH 自动加载 HearthMirror 的依赖 DLL（如 untapped-scry-dotnet.dll）
 
 #### v0.1.0 (2026-04-19)
 - C# 重写 Python bg_parser，net472 + HearthMirror 直接引用
