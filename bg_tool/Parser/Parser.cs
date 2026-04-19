@@ -217,8 +217,8 @@ public class Parser
             if (name == "古怪之德鲁伊" || name == "惊魂之武僧")
                 return null;
             Game.PlayerTag = name;
-            Game.PlayerDisplayName = name.Contains('#')
-                ? name.Substring(0, name.LastIndexOf('#'))
+            Game.PlayerDisplayName = name.Contains("#")
+                ? name.Substring(0, name.LastIndexOf("#"))
                 : name;
             return "player_info";
         }
