@@ -49,7 +49,7 @@ public class Parser
         foreach (var prefix in HeroPrefixes)
         {
             if (!cardId.StartsWith(prefix)) continue;
-            var suffix = cardId[prefix.Length..];
+            var suffix = cardId.Substring(prefix.Length);
             return int.TryParse(suffix, out _);
         }
         return false;
@@ -60,46 +60,46 @@ public class Parser
     // ═══════════════════════════════════════
 
     private static readonly Regex ReCreateGame =
-        new(@"GameState\.DebugPrintPower\(\) - CREATE_GAME$", RegexOptions.Compiled);
+        new Regex(@"GameState\.DebugPrintPower\(\) - CREATE_GAME$", RegexOptions.Compiled);
 
     private static readonly Regex ReGameType =
-        new(@"GameType=(\w+)", RegexOptions.Compiled);
+        new Regex(@"GameType=(\w+)", RegexOptions.Compiled);
 
     private static readonly Regex ReGameSeed =
-        new(@"tag=GAME_SEED value=(\d+)", RegexOptions.Compiled);
+        new Regex(@"tag=GAME_SEED value=(\d+)", RegexOptions.Compiled);
 
     private static readonly Regex RePlayerName =
-        new(@"PlayerID=(\d+),\s*PlayerName=(.+?)$", RegexOptions.Compiled);
+        new Regex(@"PlayerID=(\d+),\s*PlayerName=(.+?)$", RegexOptions.Compiled);
 
     private static readonly Regex ReAccountId =
-        new(@"GameAccountId=\[hi=\d+ lo=(\d+)\]", RegexOptions.Compiled);
+        new Regex(@"GameAccountId=\[hi=\d+ lo=(\d+)\]", RegexOptions.Compiled);
 
     private static readonly Regex ReHeroEntity =
-        new(@"TAG_CHANGE Entity=(.+?) tag=HERO_ENTITY value=(\d+)", RegexOptions.Compiled);
+        new Regex(@"TAG_CHANGE Entity=(.+?) tag=HERO_ENTITY value=(\d+)", RegexOptions.Compiled);
 
     private static readonly Regex ReFullEntity =
-        new(@"FULL_ENTITY - (?:Creating|Updating)\s+\[?entityName=(.+?)\s+id=(\d+)\s+zone=\w+(?:\s+zonePos=\d+)?"
+        new Regex(@"FULL_ENTITY - (?:Creating|Updating)\s+\[?entityName=(.+?)\s+id=(\d+)\s+zone=\w+(?:\s+zonePos=\d+)?"
             + @".*?cardId=(\w+).*?player=(\d+)\]?", RegexOptions.Compiled);
 
     private static readonly Regex ReLbEntity =
-        new(@"TAG_CHANGE Entity=\[entityName=(.+?) id=(\d+) zone=\w+(?:\s+zonePos=\d+)?"
+        new Regex(@"TAG_CHANGE Entity=\[entityName=(.+?) id=(\d+) zone=\w+(?:\s+zonePos=\d+)?"
             + @".*?cardId=(\w+).*?player=(\d+)\]\s+tag=PLAYER_LEADERBOARD_PLACE value=(\d+)",
             RegexOptions.Compiled);
 
     private static readonly Regex ReLbTag =
-        new(@"TAG_CHANGE Entity=(.+?) tag=PLAYER_LEADERBOARD_PLACE value=(\d+)\s*$", RegexOptions.Compiled);
+        new Regex(@"TAG_CHANGE Entity=(.+?) tag=PLAYER_LEADERBOARD_PLACE value=(\d+)\s*$", RegexOptions.Compiled);
 
     private static readonly Regex ReStep =
-        new(@"TAG_CHANGE Entity=GameEntity tag=STEP value=(\w+)", RegexOptions.Compiled);
+        new Regex(@"TAG_CHANGE Entity=GameEntity tag=STEP value=(\w+)", RegexOptions.Compiled);
 
     private static readonly Regex ReConcedePlayerTag =
-        new(@"TAG_CHANGE Entity=.+? tag=(3479|4356) value=1", RegexOptions.Compiled);
+        new Regex(@"TAG_CHANGE Entity=.+? tag=(3479|4356) value=1", RegexOptions.Compiled);
 
     private static readonly Regex ReConcedeGameTag =
-        new(@"TAG_CHANGE Entity=GameEntity tag=4302 value=1", RegexOptions.Compiled);
+        new Regex(@"TAG_CHANGE Entity=GameEntity tag=4302 value=1", RegexOptions.Compiled);
 
     private static readonly Regex ReGameStateComplete =
-        new(@"TAG_CHANGE Entity=GameEntity tag=STATE value=COMPLETE", RegexOptions.Compiled);
+        new Regex(@"TAG_CHANGE Entity=GameEntity tag=STATE value=COMPLETE", RegexOptions.Compiled);
 
     // ═══════════════════════════════════════
     //  核心方法
@@ -214,11 +214,11 @@ public class Parser
         if (m.Success && line.Contains("DebugPrintGame()") && string.IsNullOrEmpty(Game.PlayerTag))
         {
             var name = m.Groups[2].Value.Trim();
-            if (name is "古怪之德鲁伊" or "惊魂之武僧")
+            if (name == "古怪之德鲁伊" || name == "惊魂之武僧")
                 return null;
             Game.PlayerTag = name;
             Game.PlayerDisplayName = name.Contains('#')
-                ? name[..name.LastIndexOf('#')]
+                ? name.Substring(0, name.LastIndexOf('#'))
                 : name;
             return "player_info";
         }
@@ -285,7 +285,7 @@ public class Parser
         if (m.Success)
         {
             var step = m.Groups[1].Value;
-            if (step is "MAIN_READY" or "MAIN_ACTION")
+            if (step == "MAIN_READY" || step == "MAIN_ACTION")
                 return "phase_change";
             if (step == "MAIN_CLEANUP")
             {
