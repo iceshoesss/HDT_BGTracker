@@ -10,7 +10,7 @@
     <LangVersion>12.0</LangVersion>
     <RootNamespace>BgTool</RootNamespace>
     <AssemblyName>bg_tool</AssemblyName>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
