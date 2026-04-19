@@ -1,3 +1,7 @@
+using System.Collections.Generic;
+
+#nullable enable
+
 namespace BgTool;
 
 /// <summary>

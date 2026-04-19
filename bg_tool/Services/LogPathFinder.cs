@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using Microsoft.Win32;
 
+#nullable enable
+
 namespace BgTool;
 
 /// <summary>

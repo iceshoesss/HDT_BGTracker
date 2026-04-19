@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 
+#nullable enable
+
 namespace BgTool;
 
 /// <summary>
