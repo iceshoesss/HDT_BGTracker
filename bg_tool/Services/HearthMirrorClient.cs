@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
 
 #nullable enable
 
@@ -15,6 +17,22 @@ public static class HearthMirrorClient
     private static bool _initAttempted;
     private static bool _available;
     private static HearthMirror.Reflection? _reflection;
+
+    /// <summary>
+    /// 注册 AssemblyResolve，从 HDT 目录加载 HearthMirror 的依赖 DLL
+    /// （如 untapped-scry-dotnet.dll）
+    /// </summary>
+    static HearthMirrorClient()
+    {
+        AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
+        {
+            var hdtDir = Environment.GetEnvironmentVariable("HDT_PATH");
+            if (string.IsNullOrEmpty(hdtDir)) return null;
+            var name = new AssemblyName(args.Name).Name;
+            var path = Path.Combine(hdtDir, name + ".dll");
+            return File.Exists(path) ? Assembly.LoadFrom(path) : null;
+        };
+    }
 
     public static bool TryInit()
     {
