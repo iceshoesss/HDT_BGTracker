@@ -548,6 +548,8 @@ python bg_parser/bg_parser.py
 ### 已修复（2026-04-19）
 
 - [x] **bg_parser 字节偏移计算**：`FindLastCreateGamePos` 用 `GetByteCount(line) + 1` 算字节偏移，假设换行符 1 字节。但 Windows Power.log 用 CRLF（2 字节），累积偏移导致 seek 到错误位置，从头读取全部日志。修复：改用 `f.tell()` binary mode 取真实流位置。
+- [x] **bg_tool HearthMirror Lo 获取失败**：`HearthMirrorClient` 每次调用 `FetchLobbyPlayers()` 都 `new HearthMirror.Reflection()`，而 Python 版用全局单例。创建新实例无法维持游戏内存连接。修复：缓存单例 `_reflection` 实例。
+- [x] **bg_tool 中途启动无法使用**：`PreloadPlayerInfo` 只预加载 `PlayerTag`，未加载 `AccountIdLo` 和 `HeroEntityId`。中途启动时若 PlayerTag 为空，HERO_ENTITY 匹配永远失败 → HeroEntityId 为 0 → 英雄无法追踪 → 排名无输出。修复：扩展预加载为三个字段，全部找到后提前退出。
 
 ---
 
@@ -689,6 +691,10 @@ QQ群 ↔ QQ机器人 ↔ HTTP API ↔ Flask ↔ MongoDB
 ### C# 插件
 
 ### bg_tool
+
+#### v0.1.1 (2026-04-19)
+- 修复 HearthMirror Lo 获取：Reflection 实例改为单例缓存，对齐 Python 全局变量模式
+- 修复中途启动无法使用：PreloadPlayerInfo 扩展为预加载 PlayerName + AccountIdLo + HeroEntityId
 
 #### v0.1.0 (2026-04-19)
 - C# 重写 Python bg_parser，net472 + HearthMirror 直接引用

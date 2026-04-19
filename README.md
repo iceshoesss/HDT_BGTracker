@@ -171,7 +171,7 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 ## 当前开发状态
 
-### bg_tool v0.1.0 (2026-04-19)
+### bg_tool v0.1.1 (2026-04-19)
 - C# 重写 Python bg_parser，net472 + HearthMirror 直接引用
 - 实时监控、中途接入、断线重连、自动切换日志
 - 批量解析 `--parse` 模式

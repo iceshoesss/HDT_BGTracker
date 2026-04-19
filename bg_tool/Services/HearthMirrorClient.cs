@@ -7,12 +7,14 @@ namespace BgTool
 {
 
 /// <summary>
-/// HearthMirror 集成（直接引用，不再反射加载）
+/// HearthMirror 集成（直接引用，单例 Reflection 实例）
+/// 对齐 Python bg_parser 的 _mirror_reflection 全局单例模式
 /// </summary>
 public static class HearthMirrorClient
 {
     private static bool _initAttempted;
     private static bool _available;
+    private static HearthMirror.Reflection? _reflection;
 
     public static bool TryInit()
     {
@@ -22,8 +24,7 @@ public static class HearthMirrorClient
 
         try
         {
-            // 尝试实例化验证 DLL 可用
-            var r = new HearthMirror.Reflection();
+            _reflection = new HearthMirror.Reflection();
             _available = true;
             Console.WriteLine("[HearthMirror] ✅ 已加载，可获取对手 Lo");
             return true;
@@ -37,13 +38,12 @@ public static class HearthMirrorClient
 
     public static List<LobbyPlayer> FetchLobbyPlayers()
     {
-        if (!TryInit())
+        if (!TryInit() || _reflection == null)
             return new List<LobbyPlayer>();
 
         try
         {
-            var r = new HearthMirror.Reflection();
-            var lobby = r.GetBattlegroundsLobbyInfo();
+            var lobby = _reflection.GetBattlegroundsLobbyInfo();
             if (lobby?.Players == null || lobby.Players.Count == 0)
                 return new List<LobbyPlayer>();
 

@@ -247,15 +247,21 @@ class Program
     }
 
     /// <summary>
-    /// 从文件中预加载 PlayerName（用于中途接入时 DebugPrintGame 在 CREATE_GAME 之前的情况）
+    /// 从文件中预加载玩家信息（用于中途接入时关键行在 CREATE_GAME 之前的情况）
+    /// 加载 PlayerName、AccountIdLo、HeroEntityId
     /// </summary>
     static void PreloadPlayerInfo(string filePath, Parser parser)
     {
         try
         {
+            bool foundName = false;
+            bool foundLo = false;
+            bool foundHero = false;
+
             foreach (var line in File.ReadLines(filePath))
             {
-                if (line.Contains("DebugPrintGame()") && line.Contains("PlayerName="))
+                // PlayerName
+                if (!foundName && line.Contains("DebugPrintGame()") && line.Contains("PlayerName="))
                 {
                     var m = Regex.Match(line, @"PlayerID=(\d+),\s*PlayerName=(.+?)$");
                     if (m.Success)
@@ -267,10 +273,39 @@ class Program
                             parser.Game.PlayerDisplayName = name.Contains("#")
                                 ? name.Substring(0, name.LastIndexOf("#"))
                                 : name;
-                            return;
+                            foundName = true;
                         }
                     }
                 }
+
+                // AccountIdLo（CREATE_GAME 块内的 GameAccountId）
+                if (!foundLo && line.Contains("GameAccountId="))
+                {
+                    var m = Regex.Match(line, @"GameAccountId=\[hi=\d+ lo=(\d+)\]");
+                    if (m.Success)
+                    {
+                        var lo = ulong.Parse(m.Groups[1].Value);
+                        if (lo != 0)
+                        {
+                            parser.Game.AccountIdLo = lo;
+                            foundLo = true;
+                        }
+                    }
+                }
+
+                // HeroEntityId（TAG_CHANGE ... tag=HERO_ENTITY）
+                if (!foundHero && line.Contains("HERO_ENTITY") && !string.IsNullOrEmpty(parser.Game.PlayerTag))
+                {
+                    var m = Regex.Match(line, @"TAG_CHANGE Entity=(.+?) tag=HERO_ENTITY value=(\d+)");
+                    if (m.Success && m.Groups[1].Value.Trim() == parser.Game.PlayerTag)
+                    {
+                        parser.Game.HeroEntityId = int.Parse(m.Groups[2].Value);
+                        foundHero = true;
+                    }
+                }
+
+                if (foundName && foundLo && foundHero)
+                    break;
             }
         }
         catch { }
