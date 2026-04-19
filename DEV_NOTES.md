@@ -720,11 +720,16 @@ QQ群 ↔ QQ机器人 ↔ HTTP API ↔ Flask ↔ MongoDB
 ### bg_tool
 
 #### v0.1.1 (2026-04-19)
-- 修复 FindLastCreateGamePos 字节偏移计算（CRLF 换行符按 1 字节算，实际 2 字节），导致重读所有历史数据
+- 重构 bg_tool 核心架构，抛弃字节位置追踪（FileMonitor），改用全文读取 + 行索引定位，与 Python bg_parser 完全对齐
+- 修复 FindLastCreateGamePos 字节偏移计算（CRLF 换行符按 1 字节算，实际 2 字节）
 - 修复初始 Game.IsActive = true 导致 CREATE_GAME 前处理日志行
 - 修复 LobbyReader.GetLobbyPlayers() 缺少 game 参数，无法匹配 heroCardId 到英雄名
-- 修复 FileMonitor.ReadNewLines 用 fs.Position 追踪位置，StreamReader 缓冲导致跳过新写入内容。改为自然读取模式
+- 修复 FULL_ENTITY 正则（增加 zonePos 可选匹配、末尾 ] 可选）
+- 修复 HERO_ENTITY 对所有玩家触发事件（只应触发本地玩家）
+- 修复英雄名回填增加 cardId 匹配（HeroEntityId 未设置时）
+- 抑制 hero_found 输出，对齐 Python 静默处理
 - 增强 LobbyReader 诊断日志输出
+- 删除 FileMonitor.cs（逻辑内联到 LogParser.ScanFromLastCreateGame + Program 增量读取）
 
 ### C# 插件
 
