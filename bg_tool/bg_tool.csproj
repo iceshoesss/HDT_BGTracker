@@ -11,6 +11,8 @@
     <RootNamespace>BgTool</RootNamespace>
     <AssemblyName>bg_tool</AssemblyName>
     <Version>0.1.0</Version>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <!-- HearthMirror + HearthDb：从 HDT 目录拷贝到输出 -->
