@@ -174,13 +174,13 @@ _RE_HERO_ENTITY = re.compile(r'TAG_CHANGE Entity=(.+?) tag=HERO_ENTITY value=(\d
 
 _RE_FULL_ENTITY = re.compile(
     r'FULL_ENTITY - (?:Creating|Updating)\s+'
-    r'\[?entityName=(.+?)\s+id=(\d+)\s+zone=\w+.*?'
-    r'cardId=(\w+)\s+player=(\d+)\]'
+    r'\[?entityName=(.+?)\s+id=(\d+)\s+zone=\w+(?:\s+zonePos=\d+)?'
+    r'.*?cardId=(\w+).*?player=(\d+)\]?'
 )
 
 _RE_LB_ENTITY = re.compile(
-    r'TAG_CHANGE Entity=\[entityName=(.+?) id=(\d+) zone=\w+.*?'
-    r'cardId=(\w+).*?player=(\d+)\]\s+tag=PLAYER_LEADERBOARD_PLACE value=(\d+)'
+    r'TAG_CHANGE Entity=\[entityName=(.+?) id=(\d+) zone=\w+(?:\s+zonePos=\d+)?'
+    r'.*?cardId=(\w+).*?player=(\d+)\]\s+tag=PLAYER_LEADERBOARD_PLACE value=(\d+)'
 )
 
 _RE_LB_TAG = re.compile(r'TAG_CHANGE Entity=(.+?) tag=PLAYER_LEADERBOARD_PLACE value=(\d+)\s*$')

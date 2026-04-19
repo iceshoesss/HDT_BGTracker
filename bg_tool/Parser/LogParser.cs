@@ -15,10 +15,10 @@ public class LogParser
     private static readonly Regex ReAccountId = new(@"GameAccountId=\[hi=\d+ lo=(\d+)\]", RegexOptions.Compiled);
     private static readonly Regex ReHeroEntity = new(@"TAG_CHANGE Entity=(.+?) tag=HERO_ENTITY value=(\d+)", RegexOptions.Compiled);
     private static readonly Regex ReFullEntity = new(
-        @"FULL_ENTITY - (?:Creating|Updating)\s+\[?entityName=(.+?)\s+id=(\d+)\s+zone=\w+.*?cardId=(\w+)\s+player=(\d+)\]",
+        @"FULL_ENTITY - (?:Creating|Updating)\s+\[?entityName=(.+?)\s+id=(\d+)\s+zone=\w+(?:\s+zonePos=\d+)?.*?cardId=(\w+).*?player=(\d+)\]?",
         RegexOptions.Compiled);
     private static readonly Regex ReLbEntity = new(
-        @"TAG_CHANGE Entity=\[entityName=(.+?) id=(\d+) zone=\w+.*?cardId=(\w+).*?player=(\d+)\]\s+tag=PLAYER_LEADERBOARD_PLACE value=(\d+)",
+        @"TAG_CHANGE Entity=\[entityName=(.+?) id=(\d+) zone=\w+(?:\s+zonePos=\d+)?.*?cardId=(\w+).*?player=(\d+)\]\s+tag=PLAYER_LEADERBOARD_PLACE value=(\d+)",
         RegexOptions.Compiled);
     private static readonly Regex ReLbTag = new(@"TAG_CHANGE Entity=(.+?) tag=PLAYER_LEADERBOARD_PLACE value=(\d+)\s*$", RegexOptions.Compiled);
     private static readonly Regex ReStep = new(@"TAG_CHANGE Entity=GameEntity tag=STEP value=(\w+)", RegexOptions.Compiled);
@@ -190,8 +190,9 @@ public class LogParser
                     Game.HeroName = hero.HeroName;
                     Game.HeroCardId = hero.CardId;
                 }
+                return "hero_entity";
             }
-            return "hero_entity";
+            return null;
         }
 
         // FULL_ENTITY
@@ -212,13 +213,14 @@ public class LogParser
                         EntityId = entityId, HeroName = heroName,
                         CardId = cardId, PlayerSlot = playerSlot
                     };
-                    if (entityId == Game.HeroEntityId)
+                    // 回填本地英雄：entityId 匹配 或 cardId 匹配
+                    if (entityId == Game.HeroEntityId || (!string.IsNullOrEmpty(Game.HeroCardId) && cardId == Game.HeroCardId))
                     {
                         Game.HeroName = heroName;
                         Game.HeroCardId = cardId;
                     }
                 }
-                else if (entityId == Game.HeroEntityId && string.IsNullOrEmpty(Game.HeroName))
+                else if ((entityId == Game.HeroEntityId || (!string.IsNullOrEmpty(Game.HeroCardId) && cardId == Game.HeroCardId)) && string.IsNullOrEmpty(Game.HeroName))
                 {
                     Game.HeroName = Game.AllHeroes[key].HeroName;
                     Game.HeroCardId = Game.AllHeroes[key].CardId;
@@ -331,7 +333,8 @@ public class LogParser
                 EntityId = entityId, HeroName = heroName,
                 CardId = cardId, PlayerSlot = playerSlot
             };
-            if (entityId == Game.HeroEntityId)
+            // 回填本地英雄：entityId 匹配 或 cardId 匹配
+            if (entityId == Game.HeroEntityId || (!string.IsNullOrEmpty(Game.HeroCardId) && cardId == Game.HeroCardId))
             {
                 Game.HeroName = heroName;
                 Game.HeroCardId = cardId;
