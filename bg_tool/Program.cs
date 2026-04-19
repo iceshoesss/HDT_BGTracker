@@ -29,11 +29,7 @@ class Program
             var name = new AssemblyName(resolveArgs.Name).Name;
             var path = Path.Combine(hdtDir, name + ".dll");
             if (File.Exists(path))
-            {
-                Console.WriteLine($"[AssemblyResolve] 加载: {path}");
                 return Assembly.LoadFrom(path);
-            }
-            Console.WriteLine($"[AssemblyResolve] 未找到: {path}");
             return null;
         };
 

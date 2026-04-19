@@ -25,6 +25,9 @@ public class Parser
     private bool _concedePending;
     private string _concedeTag = "";
 
+    // HearthMirror 只取一次
+    private bool _loFetched;
+
     // ═══════════════════════════════════════
     //  英雄卡牌过滤
     // ═══════════════════════════════════════
@@ -290,16 +293,16 @@ public class Parser
                 return "phase_change";
             if (step == "MAIN_CLEANUP")
             {
-                Game.LobbyPlayers = HearthMirrorClient.FetchLobbyPlayers();
-                if (Game.LobbyPlayers.Count > 0)
+                if (!_loFetched)
                 {
-                    Console.WriteLine($"[HearthMirror] 📋 获取到 {Game.LobbyPlayers.Count} 个玩家");
-                    foreach (var lp in Game.LobbyPlayers)
-                        Console.WriteLine($"   Lo={lp.Lo}, Hero={lp.HeroCardId}");
-                }
-                else
-                {
-                    Console.WriteLine("[HearthMirror] ⚠️ STEP 13 已触发但未获取到玩家数据");
+                    _loFetched = true;
+                    Game.LobbyPlayers = HearthMirrorClient.FetchLobbyPlayers();
+                    if (Game.LobbyPlayers.Count > 0)
+                    {
+                        Console.WriteLine($"[HearthMirror] 📋 获取到 {Game.LobbyPlayers.Count} 个玩家");
+                        foreach (var lp in Game.LobbyPlayers)
+                            Console.WriteLine($"   Lo={lp.Lo}, Hero={lp.HeroCardId}");
+                    }
                 }
                 return "phase_change";
             }
@@ -425,6 +428,7 @@ public class Parser
         };
         _concedePending = false;
         _concedeTag = "";
+        _loFetched = false;
     }
 
     private void EndGame()
