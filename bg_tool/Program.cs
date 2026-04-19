@@ -39,17 +39,13 @@ class Program
         Console.WriteLine($"👁 监控: {logPath}");
         Console.WriteLine("   (Ctrl+C 停止)\n");
 
-        // 扫描已有内容
+        // 扫描已有内容（对齐 Python scan_existing）
         using var monitor = new FileMonitor(logPath);
         var parser = new LogParser();
 
         try
         {
-            monitor.SeekToLastCreateGame();
-            var existingLines = monitor.ReadNewLines();
-            foreach (var line in existingLines)
-                parser.ProcessLine(line);
-
+            ScanExisting(monitor, parser);
             if (parser.Game.IsActive)
                 PrintMidGame(parser.Game);
             else
@@ -71,7 +67,7 @@ class Program
             Environment.Exit(0);
         };
 
-        // 实时监控循环
+        // 实时监控循环（对齐 Python tail_log）
         while (true)
         {
             try
@@ -87,12 +83,14 @@ class Program
                     parser = new LogParser();
                     try
                     {
-                        monitor.SeekToLastCreateGame();
-                        var lines = monitor.ReadNewLines();
-                        foreach (var line in lines)
-                            parser.ProcessLine(line);
+                        ScanExisting(monitor, parser);
                         if (parser.Game.IsActive)
                             PrintMidGame(parser.Game);
+                        else
+                        {
+                            monitor.SwitchTo(newPath);
+                            Console.WriteLine("   等待游戏开始...");
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -100,7 +98,7 @@ class Program
                     }
                 }
 
-                // 读取新行
+                // 读取新行（对齐 Python 实时处理）
                 var newLines = monitor.ReadNewLines();
                 foreach (var line in newLines)
                 {
@@ -131,6 +129,19 @@ class Program
                 Console.WriteLine($"⚠️ 错误: {ex.Message}");
                 Thread.Sleep(1000);
             }
+        }
+    }
+
+    /// <summary>扫描已有内容（对齐 Python scan_existing）：SeekToLastCreateGame + 逐行处理事件</summary>
+    static void ScanExisting(FileMonitor monitor, LogParser parser)
+    {
+        monitor.SeekToLastCreateGame();
+        var lines = monitor.ReadNewLines();
+        foreach (var line in lines)
+        {
+            var ev = parser.ProcessLine(line);
+            if (ev != null)
+                LogEvent(ev, parser.Game);
         }
     }
 
