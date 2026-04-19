@@ -441,8 +441,48 @@ STATE=COMPLETE    ← 最终信号，100% 可靠
 
 ---
 
-## 14. 待验证
+## 14. pythonnet + HearthMirror 测试记录（2026-04-19）
+
+> 目标：用 Python 直接读取炉石进程内存获取 BG 大厅 8 人信息（含对手 accountIdLo）。
+
+### 14.1 方案
+
+通过 pythonnet 加载 HearthMirror.dll，从 Python 调用 `Reflection.BattlegroundsLobbyInfo` 读取大厅玩家信息。
+
+### 14.2 遇到的问题
+
+**问题 1：64 位 Python 无法加载 32 位 DLL**
+- HearthMirror.dll 是 x86（32 位）
+- Anaconda 默认 Python 是 64 位
+- 错误：`试图加载格式不正确的程序`
+- 解决：创建 32 位 conda 环境 `conda create -n py32 python=3.10`
+
+**问题 2：pythonnet 3.x 默认用 .NET Core 运行时**
+- pythonnet 3.0.5 默认加载 .NET Core CLR
+- HearthMirror 是 .NET Framework 4.7.2 程序集
+- 32 位 Python + .NET Core 仍然无法加载
+- 错误：`试图加载格式不正确的程序`（同一个错误，但根因不同）
+- 待解决：需要用 `pythonnet.set_runtime('netfx')` 切换到 .NET Framework 运行时
+
+### 14.3 下一步
+
+- [ ] 确认 `pythonnet.set_runtime('netfx')` 或 `set_runtime_from_env()` 能否正确切换运行时
+- [ ] 如果 netfx 不行，尝试 pythonnet 2.x（原生 .NET Framework 支持）
+- [ ] 成功读取大厅玩家信息后，集成到 bg_parser
+
+### 14.4 最终目标
+
+无论用 Go/C#/Python 编译，最终客户端只需要：
+- HearthMirror.dll（MIT 协议，可单独打包）
+- 炉石客户端运行中
+- .NET Framework 4.7.2（Win10/11 自带）
+- **不需要安装 HDT**
+
+---
+
+## 15. 待验证
 
 - [ ] 多人同轮淘汰时的排名
 - [ ] 断线重连后 entity_id 是否永远不变（目前只测了 2 个样本）
 - [ ] 不同炉石版本的日志格式变化
+- [ ] pythonnet + HearthMirror 能否成功读取对手信息
