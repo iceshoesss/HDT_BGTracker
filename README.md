@@ -112,14 +112,19 @@ tar -a -cf HDT_BGTracker.zip HDT_BGTracker.dll
 
 ```powershell
 cd bg_tool
-$env:HDT_PATH = "你的HDT安装路径"  # 可选，启用 HearthMirror 获取对手 Lo
+$env:HDT_PATH = "C:\...\HDT"  # HDT 安装目录，启用 HearthMirror 获取对手 Lo
 dotnet build -c Release
 ```
+
+编译产物：`bin\Release\net472\bg_tool.exe`（x86 32 位）
+
+> **注意**：HearthMirror.dll 是 32 位程序集，bg_tool 必须以 x86 运行（csproj 已配置 `PlatformTarget=x86`）。
 
 ### 用法
 
 ```powershell
 # 实时监控模式（默认）
+$env:HDT_PATH = "C:\...\HDT"
 .\bin\Release\net472\bg_tool.exe
 
 # 解析已有日志
@@ -136,8 +141,30 @@ dotnet build -c Release
 - **自动切换**：玩家重启游戏时自动检测新日志文件夹并切换
 - **中途接入**：游戏中启动脚本可显示已选英雄和玩家信息
 - **断线重连**：自动识别并恢复对局状态
+- **投降检测**：检测投降行为并记录排名
 - **可提取数据**：本地玩家 BattleTag、accountIdLo、英雄名+cardId、排名 1-8
-- **HearthMirror 集成**（需设置 `HDT_PATH`）：STEP 13 时获取 8 个玩家的 AccountId.Lo + HeroCardId
+- **HearthMirror 集成**（需设置 `HDT_PATH`）：第一轮战斗结束时获取 8 个玩家的 AccountId.Lo + HeroCardId
+
+### 输出示例
+
+```
+👁 监控: D:\Battle.net\Hearthstone\Logs\Hearthstone_2026_04_19\Power.log
+   (Ctrl+C 停止)
+   等待游戏开始...
+  [21:29:19] 👤 南怀北瑾丨少头脑#5267
+  [21:29:19] 🎮 新局开始
+  [21:29:29] 🦸 选定英雄: 风暴之王托里姆
+[HearthMirror] 📋 获取到 8 个玩家
+   Lo=155147517, Hero=BG32_HERO_002
+   Lo=80547085, Hero=BG34_HERO_004
+   ...
+──────────────────────────────────────────────────
+🎮 对局
+👤 南怀北瑾丨少头脑#5267
+   账号ID: 1708070391
+🦸 英雄: 风暴之王托里姆 (BG27_HERO_801)
+🏆 排名: 第 3 名（不确定，游戏内最终观测值）
+```
 
 ### Python 日志解析器（bg_parser）
 
@@ -172,9 +199,10 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 ## 当前开发状态
 
 ### bg_tool v0.1.1 (2026-04-19)
-- C# 重写 Python bg_parser，net472 + HearthMirror 直接引用
 - 实时监控、中途接入、断线重连、自动切换日志
+- HearthMirror 集成获取 8 个玩家 Lo + HeroCardId（每局仅首次）
 - 批量解析 `--parse` 模式
+- x86 编译、AssemblyResolve 自动加载依赖 DLL
 
 ### Web v0.4.2 (2026-04-17)
 - 使用指南页面、管理员删除对局
