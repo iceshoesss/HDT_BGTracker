@@ -282,16 +282,30 @@ class Program
 
     static long FindLastCreateGamePos(string path)
     {
+        // 用 FileStream 逐字节读取，避免 StreamReader 缓冲导致位置偏移
+        // 对齐 Python bg_parser 的 open(path, 'rb') + f.tell() 方式
         long lastPos = 0;
         using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-        using (var reader = new StreamReader(fs))
         {
-            while (!reader.EndOfStream)
+            var lineStart = 0L;
+            var sb = new System.Text.StringBuilder();
+            int b;
+            while ((b = fs.ReadByte()) != -1)
             {
-                var pos = fs.Position;
-                var line = reader.ReadLine();
-                if (line != null && Regex.IsMatch(line, @"GameState\.DebugPrintPower\(\) - CREATE_GAME$"))
-                    lastPos = pos;
+                if (b == '\n')
+                {
+                    var line = sb.ToString();
+                    if (line.Length > 0 && line[line.Length - 1] == '\r')
+                        line = line.Substring(0, line.Length - 1);
+                    if (Regex.IsMatch(line, @"GameState\.DebugPrintPower\(\) - CREATE_GAME$"))
+                        lastPos = lineStart;
+                    sb.Clear();
+                    lineStart = fs.Position;
+                }
+                else
+                {
+                    sb.Append((char)b);
+                }
             }
         }
         return lastPos;
