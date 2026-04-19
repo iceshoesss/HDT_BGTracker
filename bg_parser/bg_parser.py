@@ -598,7 +598,7 @@ def tail_log(log_path: str):
             for line in lines:
                 event = parser.process_line(line)
                 if event:
-                    if event == 'game_end' and not parser.game.is_active:
+                    if event in ('game_end', 'concede') and not parser.game.is_active:
                         print_game_result(parser.games[-1])
                     else:
                         _log_event(event, parser.game)
