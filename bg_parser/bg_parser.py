@@ -83,7 +83,10 @@ def _try_init_mirror():
     _mirror_init_attempted = True
     try:
         import pythonnet
-        pythonnet.set_runtime('netfx')
+        try:
+            pythonnet.set_runtime('netfx')
+        except Exception:
+            pass  # 运行时可能已加载，忽略
         import clr
         # 查找同级目录或 HDT 目录下的 HearthMirror.dll
         hm_paths = [
