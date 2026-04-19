@@ -173,8 +173,8 @@ public class Parser
                 return _createHasTurn ? "reconnect" : "game_start";
             }
 
-            // 块内其他行跳过（等待块结束）
-            if (!line.Contains("PowerTaskList.DebugPrintPower()"))
+            // 块内跳过 PowerTaskList 行（DebugPrintPower 除外），其他行继续处理
+            if (line.Contains("PowerTaskList.") && !line.Contains("PowerTaskList.DebugPrintPower()"))
                 return null;
         }
 
