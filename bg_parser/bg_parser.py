@@ -71,12 +71,16 @@ class Game:
 # ═══════════════════════════════════════════════════════════
 
 _mirror_reflection = None
+_mirror_init_attempted = False
 
 def _try_init_mirror():
     """尝试初始化 HearthMirror，成功返回 True"""
-    global _mirror_reflection
+    global _mirror_reflection, _mirror_init_attempted
     if _mirror_reflection is not None:
         return True
+    if _mirror_init_attempted:
+        return False  # 已经尝试过，不再重试（避免 set_runtime 重复调用）
+    _mirror_init_attempted = True
     try:
         import pythonnet
         pythonnet.set_runtime('netfx')
@@ -92,6 +96,7 @@ def _try_init_mirror():
                 hm_path = os.path.abspath(p)
                 break
         if not hm_path:
+            print("[HearthMirror] ⚠️ 未找到 HearthMirror.dll")
             return False
         clr.AddReference(hm_path)
         import HearthMirror
@@ -99,7 +104,7 @@ def _try_init_mirror():
         print("[HearthMirror] ✅ 已加载，可获取对手 Lo")
         return True
     except Exception as e:
-        print(f"[HearthMirror] ⚠️ 不可用: {e}")
+        print("[HearthMirror] ⚠️ 不可用: {}".format(e))
         return False
 
 
