@@ -113,6 +113,7 @@ _RE_LB_TAG = re.compile(r'TAG_CHANGE Entity=(.+?) tag=PLAYER_LEADERBOARD_PLACE v
 _RE_STEP = re.compile(r'TAG_CHANGE Entity=GameEntity tag=STEP value=(\w+)')
 _RE_CONCEDE_PLAYER_TAG = re.compile(r'TAG_CHANGE Entity=.+? tag=(3479|4356) value=1')
 _RE_CONCEDE_GAME_TAG = re.compile(r'TAG_CHANGE Entity=GameEntity tag=4302 value=1')
+_RE_GAME_STATE_COMPLETE = re.compile(r'TAG_CHANGE Entity=GameEntity tag=STATE value=COMPLETE')
 
 # 提取日志时间戳
 _RE_TIMESTAMP = re.compile(r'^[DIWE] (\d{2}:\d{2}:\d{2})\.(\d+)')
@@ -333,6 +334,15 @@ class Parser:
         if self._concede_pending and _RE_CONCEDE_GAME_TAG.search(line):
             return None
 
+        # 游戏结束：STATE=COMPLETE（自然淘汰 / 胜利 / 投降兜底）
+        if _RE_GAME_STATE_COMPLETE.search(line):
+            # 投降已有单独处理，这里兜底
+            if not self.game.conceded:
+                if self.game.hero_placement > 0:
+                    self.game.placement_confirmed = True
+            self._end_game()
+            return 'game_end'
+
         return None
 
     def _handle_powertasklist(self, line: str) -> str | None:
@@ -484,7 +494,7 @@ def print_game_result(game: Game, index: int = 0):
         events.append("断线重连")
     if game.conceded:
         events.append("投降")
-    if not game.end_time and not game.conceded:
+    elif not game.end_time:
         events.append("未正常结束")
     if events:
         print(f"📊 {' + '.join(events)}")

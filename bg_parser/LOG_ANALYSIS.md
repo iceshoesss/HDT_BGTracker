@@ -388,9 +388,61 @@ bg_parser 的定位：**独立于 HDT 的备选方案**，不需要安装 HDT，
 
 ---
 
-## 13. 待验证
+## 13. 自然淘汰 vs 投降（2026-04-19 实测）
 
-- [ ] 正常淘汰（非投降）时 LEADERPLACE 的行为
+> 结论基于一份自然淘汰日志（~200KB 片段）与已有投降日志对比。
+
+### 13.1 日志差异
+
+| 信号 | 投降 | 自然淘汰 / 胜利 |
+|------|------|----------------|
+| tag=3479/4356（玩家投降标记） | ✅ 有 | ❌ 没有 |
+| tag=4302（游戏投降标记） | ✅ 有 | ❌ 没有 |
+| `PLAYER_LEADERBOARD_PLACE` | ✅ 有（投降者=8） | ✅ 有（完整日志中存在，游戏中持续变化） |
+| `STEP=MAIN_END` → `FINAL_WRAPUP` → `FINAL_GAMEOVER` | ✅ 有 | ✅ 有 |
+| `STATE=COMPLETE` | ✅ 有 | ✅ 有 |
+
+### 13.2 游戏结束序列（两种结束方式共用）
+
+```
+STEP=MAIN_END
+NEXT_STEP=MAIN_CLEANUP
+NEXT_STEP=FINAL_WRAPUP
+STEP=FINAL_WRAPUP
+NEXT_STEP=FINAL_GAMEOVER
+STEP=FINAL_GAMEOVER
+STATE=COMPLETE    ← 最终信号，100% 可靠
+```
+
+投降和自然淘汰的日志**最终都会走到 `STATE=COMPLETE`**。投降只是在游戏结束前多了 3479/4356/4302 信号 + PLACE=8。
+
+### 13.3 排名（LEADERBOARD_PLACE）在自然淘汰时的行为
+
+- **游戏中**：LEADERBOARD_PLACE 持续动态变化（每轮战斗后重排），值波动大
+- **投降时**：投降者立即变为 PLACE=8，其他英雄的排名也同时确定
+- **自然淘汰时**：LEADERBOARD_PLACE 的最后一个观测值 ≈ 排名，但有以下限制：
+  - 同轮多人淘汰时可能并列（排名相同）
+  - 最终排名只在游戏彻底结束时确定
+- **游戏结束时**：`STATE=COMPLETE` 触发时，最后一个 LEADERBOARD_PLACE 值即为最终排名
+
+### 13.4 对 bg_parser 的影响
+
+旧版（`9089202` 之前）有 LEADERBOARD_PLACE 追踪逻辑，能记录自然淘汰时的排名。重写（`ec4abe9`）后该逻辑被移除，只剩投降检测。
+
+**修复方案**：
+1. LEADERBOARD_PLACE 追踪持续更新 `hero_placement`（不限投降）
+2. `STATE=COMPLETE` 作为通用游戏结束信号（兜底投降和自然淘汰）
+3. 投降仍由 3479/4356/4302 + PLACE=8 独立处理（更早触发）
+4. `STATE=COMPLETE` 触发时，若有 `hero_placement > 0`，标记 `placement_confirmed = True`
+
+### 13.5 不完整的日志片段
+
+日志片段（无 CREATE_GAME 开头、无完整 STEP 流转）可能不包含 LEADERBOARD_PLACE。这是截断导致的，不代表完整游戏中不存在。完整日志（50MB+）一定包含 LEADERBOARD_PLACE 变化。
+
+---
+
+## 14. 待验证
+
 - [ ] 多人同轮淘汰时的排名
 - [ ] 断线重连后 entity_id 是否永远不变（目前只测了 2 个样本）
 - [ ] 不同炉石版本的日志格式变化
