@@ -52,7 +52,6 @@ public class MainForm : Form
     AppState _state = AppState.Waiting;
     string _playerTag = "";
     string _verifyCode = "待接入";
-    List<Game> _games = new List<Game>();
     Parser? _parser;
     Config _config = null!;
     bool _leagueChecked = false; // 当前对局是否已调过 check-league
@@ -76,6 +75,7 @@ public class MainForm : Form
         // 加载配置并初始化 API
         _config = Config.Load();
         ApiClient.Init(_config.ApiBaseUrl, _config.ApiKey);
+        GameStore.Init();
 
         BuildUI();
         UpdateUI();
@@ -317,18 +317,17 @@ public class MainForm : Form
                 break;
         }
 
-        // 最近战绩
+        // 最近战绩（从持久化文件读取）
         pnlRecent.Controls.Clear();
-        var recent = _games.Where(g => !g.IsActive).Reverse().Take(5).ToList();
+        var recent = GameStore.GetRecent(5);
         for (int i = 0; i < recent.Count; i++)
         {
-            var g = recent[i];
+            var r = recent[i];
             var y = i * 28;
-            var placement = g.HeroPlacement > 0 ? g.HeroPlacement.ToString() : "?";
-            var heroName = string.IsNullOrEmpty(g.HeroName) ? "(未知英雄)" : g.HeroName;
-            var points = GetPoints(g.HeroPlacement);
-            var ptsText = points > 0 ? $"+{points}" : points.ToString();
-            var ptsColor = points >= 0 ? C_GREEN : C_RED;
+            var placement = r.Placement > 0 ? r.Placement.ToString() : "?";
+            var heroName = string.IsNullOrEmpty(r.HeroName) ? "(未知英雄)" : r.HeroName;
+            var ptsText = r.Points > 0 ? $"+{r.Points}" : r.Points.ToString();
+            var ptsColor = r.Points >= 0 ? C_GREEN : C_RED;
 
             var badge = new Label
             {
@@ -336,11 +335,10 @@ public class MainForm : Form
                 Location = new Point(0, y),
                 Size = new Size(22, 22),
                 Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Bold),
-                ForeColor = g.HeroPlacement == 1 ? C_BG : C_TEXT_DIM,
-                BackColor = GetPlacementColor(g.HeroPlacement),
+                ForeColor = r.Placement == 1 ? C_BG : C_TEXT_DIM,
+                BackColor = GetPlacementColor(r.Placement),
                 TextAlign = ContentAlignment.MiddleCenter,
             };
-            // 圆形 badge（用 Region 模拟）
             var path = new System.Drawing.Drawing2D.GraphicsPath();
             path.AddEllipse(0, 0, 22, 22);
             badge.Region = new Region(path);
@@ -367,13 +365,13 @@ public class MainForm : Form
             pnlRecent.Controls.AddRange(new Control[] { badge, hero, pts });
         }
 
-        // 今日统计
-        var today = _games.Where(g => !g.IsActive && IsToday(g)).ToList();
+        // 今日统计（从持久化文件读取）
+        var today = GameStore.GetToday();
         int totalToday = today.Count;
-        int topFour = today.Count(g => g.HeroPlacement > 0 && g.HeroPlacement <= 4);
+        int topFour = today.Count(r => r.Placement > 0 && r.Placement <= 4);
         double winRate = totalToday > 0 ? (double)topFour / totalToday * 100 : 0;
-        double avgPlace = today.Count > 0 ? today.Where(g => g.HeroPlacement > 0).Average(g => g.HeroPlacement) : 0;
-        int totalPoints = today.Sum(g => GetPoints(g.HeroPlacement));
+        double avgPlace = today.Count > 0 ? today.Where(r => r.Placement > 0).Average(r => r.Placement) : 0;
+        int totalPoints = today.Sum(r => r.Points);
 
         SetStatValue(lblStatGames, totalToday.ToString());
         SetStatValue(lblStatWinRate, totalToday > 0 ? $"{winRate:F0}%" : "0%");
@@ -396,18 +394,7 @@ public class MainForm : Form
         }
     }
 
-    static int GetPoints(int placement)
-    {
-        if (placement <= 0) return 0;
-        return placement == 1 ? 9 : Math.Max(1, 9 - placement);
-    }
 
-    static bool IsToday(Game g)
-    {
-        // 用 StartTime 判断（HH:mm:ss 格式，无法判断日期）
-        // Demo 中假设所有对局都是今天的
-        return true;
-    }
 
     // ═══════════════════════════════════════
     //  日志监控（后台线程）
@@ -447,8 +434,6 @@ public class MainForm : Form
                 _state = AppState.InGame;
                 _playerTag = _parser.Game.PlayerTag;
             }
-
-            _games = new List<Game>(_parser.Games);
         }
         catch
         {
@@ -577,10 +562,23 @@ public class MainForm : Form
                                 Task.Run(async () =>
                                 {
                                     var ok = await ApiClient.UpdatePlacementAsync(gameUuid, playerTag, accountIdLo, placement);
+                                    if (ok)
+                                    {
+                                        var points = placement == 1 ? 9 : Math.Max(1, 9 - placement);
+                                        GameStore.Save(new GameRecord
+                                        {
+                                            BattleTag = playerTag,
+                                            HeroName = game.HeroName,
+                                            HeroCardId = game.HeroCardId,
+                                            Placement = placement,
+                                            Points = points,
+                                            GameUuid = gameUuid,
+                                            Timestamp = DateTime.UtcNow.ToString("o"),
+                                        });
+                                    }
                                     BeginInvoke(new Action(() =>
                                     {
                                         _state = ok ? AppState.Uploaded : AppState.Waiting;
-                                        _games = new List<Game>(_parser.Games);
                                         UpdateUI();
                                     }));
                                 });
@@ -588,7 +586,6 @@ public class MainForm : Form
                             else
                             {
                                 _state = AppState.Waiting;
-                                _games = new List<Game>(_parser.Games);
                                 uiChanged = true;
                             }
                             break;
