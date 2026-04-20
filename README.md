@@ -134,6 +134,39 @@ $env:HDT_PATH = "C:\...\HDT"
 .\bin\Release\net472\bg_tool.exe "D:\...\Power.log"
 ```
 
+### 配置（config.json）
+
+编译后在 exe 同目录创建 `config.json`：
+
+```json
+{
+  "apiBaseUrl": "http://localhost:5000",
+  "apiKey": "",
+  "region": "CN",
+  "mode": "solo",
+  "testMode": true
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `apiBaseUrl` | Flask API 地址 |
+| `apiKey` | PLUGIN_API_KEY（可选，留空则不发送 Authorization header） |
+| `region` | 服务器区域（bg_tool 无法从游戏获取，需手动配置） |
+| `mode` | 游戏模式（bg_tool 无法从游戏获取，需手动配置） |
+| `testMode` | 测试模式：跳过 check-league 判定，所有对局强制标记为联赛 |
+
+### 调试（mock_server.py）
+
+用 mock 服务器验证 bg_tool 上报数据，不需要 MongoDB：
+
+```bash
+python bg_tool/mock_server.py       # 启动 mock 服务器（默认 5000 端口）
+python bg_tool/mock_server.py 8080  # 指定端口
+```
+
+config.json 中 `apiBaseUrl` 设为 `http://localhost:5000`，打一局后 mock 服务器会打印完整请求数据。请求记录同时保存到 `mock_requests.log`。
+
 ### 功能
 
 - **自动查找日志**：Windows 注册表 → 常见安装路径 → Logs 目录下最新文件夹

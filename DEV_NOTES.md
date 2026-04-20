@@ -809,8 +809,15 @@ HearthMirror 的 `Reflection.GetBattlegroundsLobbyInfo()` 返回 `HearthMirror.O
 **HDT 插件获取 Region/Mode 的方式：** 不是来自 HearthMirror，而是 HDT 自身 API：
 - Region：`Core.Game.CurrentRegion.ToString()` → "CN"/"US"/"EU"
 - Mode：`Core.Game.IsBattlegroundsDuosMatch ? "duo" : "solo"`
+- 这些是 HDT 框架（Hearthstone Deck Tracker）的内置能力，通过拦截 Battle.net 客户端启动参数和游戏元数据获取
 - bg_tool 作为独立程序没有 `Core.Game`，无法获取
 - **临时方案**：硬编码 region="CN", mode="solo"
+
+**详细发现过程（2026-04-21）：**
+1. 起初怀疑 Region/Mode 来自 HearthMirror 的 LobbyInfo → 用反射 dump 验证 → LobbyInfo 只有 GameUuid + Players，**无 Region/GameMode**
+2. 查看 HDT 插件 `RatingTracker.cs` → `GetRegion()` 调用 `Core.Game.CurrentRegion`，`GetMode()` 用 `Core.Game.IsBattlegroundsDuosMatch`
+3. `Core.Game` 是 HDT 的 `GameV2` 类，Region 来自 Battle.net 客户端的区域配置（不是游戏内存），Mode 来自 HDT 对游戏实体标签的解析
+4. 结论：bg_tool 无法绕过 HDT 框架获取这两项，必须硬编码或从外部配置
 
 #### v0.1.1 (2026-04-19)
 - 修复 HearthMirror Lo 获取：Reflection 实例改为单例缓存，对齐 Python 全局变量模式
