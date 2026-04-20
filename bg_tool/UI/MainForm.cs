@@ -549,32 +549,30 @@ public class MainForm : Form
                                 var game = _parser.Game;
                                 _currentGameUuid = !string.IsNullOrEmpty(game.GameUuid) ? game.GameUuid : Guid.NewGuid().ToString();
 
-                                if (_config.TestMode)
+                                Task.Run(async () =>
                                 {
-                                    // 测试模式：跳过 check-league，直接标记为联赛
-                                    _state = AppState.LeagueGame;
-                                    Console.WriteLine("[API] [TEST] 跳过 check-league，强制标记为联赛对局");
-                                    uiChanged = true;
-                                }
-                                else
-                                {
-                                    Task.Run(async () =>
+                                    var isLeague = await ApiClient.CheckLeagueAsync(
+                                        _currentGameUuid,
+                                        game.PlayerTag,
+                                        game.AccountIdLo,
+                                        game.LobbyPlayers,
+                                        _config.Region,
+                                        _config.Mode);
+
+                                    if (_config.TestMode)
                                     {
-                                        var isLeague = await ApiClient.CheckLeagueAsync(
-                                            _currentGameUuid,
-                                            game.PlayerTag,
-                                            game.AccountIdLo,
-                                            game.LobbyPlayers,
-                                            _config.Region,
-                                            _config.Mode);
-                                        if (isLeague)
-                                        {
-                                            _state = AppState.LeagueGame;
-                                            _verifyCode = ApiClient.VerificationCode;
-                                        }
-                                        BeginInvoke(new Action(UpdateUI));
-                                    });
-                                }
+                                        // 测试模式：无论服务端返回什么，都强制标记为联赛
+                                        isLeague = true;
+                                        Console.WriteLine("[API] [TEST] 强制标记为联赛对局（忽略 isLeague=false）");
+                                    }
+
+                                    if (isLeague)
+                                    {
+                                        _state = AppState.LeagueGame;
+                                        _verifyCode = ApiClient.VerificationCode;
+                                    }
+                                    BeginInvoke(new Action(UpdateUI));
+                                });
                             }
                             break;
                         case "game_end":
