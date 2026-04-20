@@ -548,22 +548,33 @@ public class MainForm : Form
                                 _leagueChecked = true;
                                 var game = _parser.Game;
                                 _currentGameUuid = !string.IsNullOrEmpty(game.GameUuid) ? game.GameUuid : Guid.NewGuid().ToString();
-                                Task.Run(async () =>
+
+                                if (_config.TestMode)
                                 {
-                                    var isLeague = await ApiClient.CheckLeagueAsync(
-                                        _currentGameUuid,
-                                        game.PlayerTag,
-                                        game.AccountIdLo,
-                                        game.LobbyPlayers,
-                                        _config.Region,
-                                        _config.Mode);
-                                    if (isLeague)
+                                    // 测试模式：跳过 check-league，直接标记为联赛
+                                    _state = AppState.LeagueGame;
+                                    Console.WriteLine("[API] [TEST] 跳过 check-league，强制标记为联赛对局");
+                                    uiChanged = true;
+                                }
+                                else
+                                {
+                                    Task.Run(async () =>
                                     {
-                                        _state = AppState.LeagueGame;
-                                        _verifyCode = ApiClient.VerificationCode;
-                                    }
-                                    BeginInvoke(new Action(UpdateUI));
-                                });
+                                        var isLeague = await ApiClient.CheckLeagueAsync(
+                                            _currentGameUuid,
+                                            game.PlayerTag,
+                                            game.AccountIdLo,
+                                            game.LobbyPlayers,
+                                            _config.Region,
+                                            _config.Mode);
+                                        if (isLeague)
+                                        {
+                                            _state = AppState.LeagueGame;
+                                            _verifyCode = ApiClient.VerificationCode;
+                                        }
+                                        BeginInvoke(new Action(UpdateUI));
+                                    });
+                                }
                             }
                             break;
                         case "game_end":

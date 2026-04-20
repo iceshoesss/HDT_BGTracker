@@ -15,6 +15,7 @@ public class Config
     public string ApiKey { get; set; } = "";
     public string Region { get; set; } = "CN";
     public string Mode { get; set; } = "solo";
+    public bool TestMode { get; set; } = false;
 
     /// <summary>
     /// 从 exe 同目录的 config.json 读取，不存在则返回默认值
@@ -53,6 +54,7 @@ public class Config
                         case "apiKey": cfg.ApiKey = val; break;
                         case "region": cfg.Region = val; break;
                         case "mode": cfg.Mode = val; break;
+                        case "testMode": cfg.TestMode = val.Trim().ToLower() == "true"; break;
                     }
                 }
             }
