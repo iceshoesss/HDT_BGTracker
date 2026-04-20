@@ -37,6 +37,27 @@ public static class ApiClient
     }
 
     /// <summary>
+    /// 测试与服务器的连通性
+    /// </summary>
+    public static async Task<bool> PingAsync()
+    {
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, _baseUrl + "/");
+            request.Headers.Add("X-HDT-Plugin", _pluginVersion);
+            if (!string.IsNullOrEmpty(_apiKey))
+                request.Headers.Add("Authorization", $"Bearer {_apiKey}");
+
+            var response = await _http.SendAsync(request);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// 英雄选定后调用，检查是否为联赛对局
     /// </summary>
     public static async Task<bool> CheckLeagueAsync(

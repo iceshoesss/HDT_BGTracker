@@ -80,6 +80,25 @@ public class MainForm : Form
         BuildUI();
         UpdateUI();
 
+        // 异步测试 API 连通性
+        Task.Run(async () =>
+        {
+            var ok = await ApiClient.PingAsync();
+            BeginInvoke(new Action(() =>
+            {
+                if (ok)
+                {
+                    lblStatus.Text = "● 已连接";
+                    lblStatus.ForeColor = C_GREEN;
+                }
+                else
+                {
+                    lblStatus.Text = "○ 未连接";
+                    lblStatus.ForeColor = C_RED;
+                }
+            }));
+        });
+
         // 后台线程启动日志监控
         var thread = new Thread(LogMonitorLoop) { IsBackground = true, Name = "LogMonitor" };
         thread.Start();
@@ -107,7 +126,7 @@ public class MainForm : Form
             }
         };
 
-        lblStatus = MakeLabel("● 已连接", 320, 16, 100, 20, 9f, FontStyle.Bold, C_GREEN);
+        lblStatus = MakeLabel("○ 连接中...", 320, 16, 110, 20, 9f, FontStyle.Bold, C_TEXT_MUTED);
         lblStatus.TextAlign = ContentAlignment.MiddleRight;
 
         pnlHeader.Controls.AddRange(new Control[] { lblTitle, lblPlayerName, lblStatus });
@@ -410,8 +429,6 @@ public class MainForm : Form
             if (logPath == null)
                 Thread.Sleep(3000);
         }
-
-        BeginInvoke(new Action(() => lblStatus.Text = "● 已连接"));
 
         _parser = new Parser();
         long pos;
