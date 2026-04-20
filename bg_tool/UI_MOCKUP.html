@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>酒馆战棋联赛工具</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    width: 420px;
+    min-height: 480px;
+    overflow: hidden;
+  }
+
+  /* ── 顶部栏 ── */
+  .header {
+    padding: 14px 20px 10px;
+    border-bottom: 1px solid #1e293b;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  .header-left {}
+  .app-title { font-size: 14px; font-weight: 600; color: #f1f5f9; }
+  .player-name {
+    font-size: 13px; color: #94a3b8; margin-top: 2px;
+    cursor: pointer; text-decoration: none;
+    transition: color .15s;
+  }
+  .player-name:hover { color: #38bdf8; text-decoration: underline; }
+  .status-badge {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: #94a3b8;
+    background: #1e293b; padding: 4px 10px; border-radius: 12px;
+    border: 1px solid #334155;
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #22c55e; box-shadow: 0 0 6px #22c55e88;
+    animation: pulse 2s infinite;
+  }
+  .dot.offline { background: #ef4444; box-shadow: 0 0 6px #ef444488; animation: none; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+  /* ── 对局状态 ── */
+  .game-area {
+    padding: 24px 20px;
+    text-align: center;
+    border-bottom: 1px solid #1e293b;
+  }
+  .game-icon { font-size: 32px; margin-bottom: 6px; }
+  .game-text { font-size: 15px; color: #94a3b8; font-weight: 500; }
+  .game-sub { font-size: 12px; color: #64748b; margin-top: 4px; }
+
+  /* ── 战绩 + 统计 ── */
+  .split {
+    display: flex;
+    border-bottom: 1px solid #1e293b;
+  }
+  .split-left {
+    flex: 1;
+    padding: 12px 16px;
+    border-right: 1px solid #1e293b;
+  }
+  .split-right {
+    width: 130px;
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .label {
+    font-size: 11px; color: #64748b; margin-bottom: 6px;
+    font-weight: 500; text-transform: uppercase; letter-spacing: .5px;
+  }
+  .match {
+    display: flex; align-items: center;
+    padding: 4px 0; font-size: 13px;
+  }
+  .badge {
+    width: 22px; height: 22px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 11px; margin-right: 8px; flex-shrink: 0;
+  }
+  .badge.p1 { background: #f59e0b; color: #0f172a; }
+  .badge.p2 { background: #94a3b8; color: #0f172a; }
+  .badge.p3 { background: #a16207; color: #fef3c7; }
+  .badge.p4 { background: #334155; color: #94a3b8; }
+  .badge.p5 { background: #334155; color: #94a3b8; }
+  .badge.p6 { background: #334155; color: #94a3b8; }
+  .badge.p7 { background: #334155; color: #64748b; }
+  .badge.p8 { background: #334155; color: #64748b; }
+  .hero { flex: 1; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pts { font-weight: 600; font-family: "Consolas", monospace; margin-left: 6px; flex-shrink: 0; }
+  .pts.pos { color: #22c55e; }
+  .pts.neg { color: #ef4444; }
+  .stat-row {
+    display: flex; justify-content: space-between;
+    padding: 4px 0; font-size: 12px;
+  }
+  .stat-row .k { color: #64748b; }
+  .stat-row .v { color: #e2e8f0; font-weight: 600; }
+
+  /* ── 验证码 ── */
+  .verify {
+    padding: 10px 20px;
+    border-bottom: 1px solid #1e293b;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .verify-label { font-size: 11px; color: #64748b; }
+  .verify-code {
+    font-size: 16px; font-weight: 700; color: #38bdf8;
+    letter-spacing: 3px; font-family: "Consolas", monospace;
+    margin-top: 1px;
+  }
+  .copy-btn {
+    background: #334155; border: none; color: #94a3b8;
+    padding: 5px 10px; border-radius: 6px; cursor: pointer;
+    font-size: 12px; transition: all .15s;
+  }
+  .copy-btn:hover { background: #475569; color: #e2e8f0; }
+  .copy-btn.copied { background: #166534; color: #86efac; }
+
+  /* ── 底部错误 ── */
+  .error-bar {
+    background: linear-gradient(90deg, #7f1d1d22, #7f1d1d11);
+    border-top: 1px solid #991b1b44;
+    padding: 10px 20px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .error-bar.hidden { display: none; }
+  .error-msg { flex: 1; font-size: 12px; color: #fca5a5; }
+  .error-btn {
+    font-size: 11px; color: #f87171; background: none;
+    border: 1px solid #f8717144; padding: 3px 8px;
+    border-radius: 4px; cursor: pointer; white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+
+  <!-- 顶部 -->
+  <div class="header">
+    <div class="header-left">
+      <div class="app-title">🍺 酒馆战棋联赛工具</div>
+      <a class="player-name" href="javascript:void(0)" onclick="openPlayer()">南怀北瑾丨少头脑#5267</a>
+    </div>
+    <div class="status-badge">
+      <div class="dot"></div>
+      <span>已连接</span>
+    </div>
+  </div>
+
+  <!-- 对局状态 -->
+  <div class="game-area">
+    <div class="game-icon">⏳</div>
+    <div class="game-text">等待对局中...</div>
+    <div class="game-sub">联赛模式已启用</div>
+  </div>
+
+  <!-- 战绩 + 统计 -->
+  <div class="split">
+    <div class="split-left">
+      <div class="label">最近战绩</div>
+      <div class="match">
+        <div class="badge p1">1</div>
+        <div class="hero">风暴之王托里姆</div>
+        <div class="pts pos">+9</div>
+      </div>
+      <div class="match">
+        <div class="badge p4">4</div>
+        <div class="hero">阿莱克丝塔萨</div>
+        <div class="pts pos">+5</div>
+      </div>
+      <div class="match">
+        <div class="badge p7">7</div>
+        <div class="hero">巫妖王</div>
+        <div class="pts neg">−2</div>
+      </div>
+      <div class="match">
+        <div class="badge p2">2</div>
+        <div class="hero">米尔豪斯·法力风暴</div>
+        <div class="pts pos">+7</div>
+      </div>
+      <div class="match">
+        <div class="badge p6">6</div>
+        <div class="hero">拉卡尼休</div>
+        <div class="pts neg">−3</div>
+      </div>
+    </div>
+    <div class="split-right">
+      <div class="label">今日统计</div>
+      <div class="stat-row"><span class="k">总局数</span><span class="v">5</span></div>
+      <div class="stat-row"><span class="k">前四</span><span class="v">60%</span></div>
+      <div class="stat-row"><span class="k">场均排名</span><span class="v">3.2</span></div>
+      <div class="stat-row"><span class="k">积分变动</span><span class="v" style="color:#22c55e">+23</span></div>
+    </div>
+  </div>
+
+  <!-- 验证码 -->
+  <div class="verify">
+    <div>
+      <div class="verify-label">验证码</div>
+      <div class="verify-code">A1B2C3</div>
+    </div>
+    <button class="copy-btn" onclick="copyCode(this)">📋 复制</button>
+  </div>
+
+  <!-- 错误横幅 -->
+  <div class="error-bar">
+    <span>⚠️</span>
+    <span class="error-msg">上次上传失败，将在下局重试</span>
+    <button class="error-btn">详情</button>
+  </div>
+
+<script>
+function copyCode(btn) {
+  const code = document.querySelector('.verify-code').textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    btn.textContent = '✅ 已复制';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '📋 复制'; btn.classList.remove('copied'); }, 1500);
+  });
+}
+function openPlayer() {
+  // WinForms 层会拦截这个，用 Shell.Open 打开浏览器
+  alert('打开 player 页面');
+}
+</script>
+</body>
+</html>

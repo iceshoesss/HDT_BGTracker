@@ -1,14 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net472</TargetFramework>
     <PlatformTarget>x86</PlatformTarget>
     <RootNamespace>BgTool</RootNamespace>
     <AssemblyName>bg_tool</AssemblyName>
     <LangVersion>8.0</LangVersion>
-    <Version>0.1.0</Version>
-    <Description>炉石酒馆战棋 Power.log 解析器（C# 版）</Description>
+    <Version>0.2.0</Version>
+    <Description>炉石酒馆战棋联赛工具（WinForms 版）</Description>
   </PropertyGroup>
 
   <!-- HDT 引用 -->
@@ -21,6 +21,12 @@
       <Private>False</Private>
     </Reference>
     <Reference Include="System.Web.Extensions">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System.Windows.Forms">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System.Drawing">
       <Private>False</Private>
     </Reference>
   </ItemGroup>
