@@ -61,7 +61,55 @@ class Program
         if (parseMode)
             ParseFile(logPath);
         else
+        {
+            if (!WaitForHearthstone()) return;
             TailLog(logPath);
+        }
+    }
+
+    /// <summary>
+    /// 检查炉石客户端进程是否在运行
+    /// </summary>
+    static bool IsHearthstoneRunning()
+    {
+        try
+        {
+            return System.Diagnostics.Process.GetProcessesByName("Hearthstone").Length > 0;
+        }
+        catch
+        {
+            return true; // 权限不足时放行
+        }
+    }
+
+    /// <summary>
+    /// 等待炉石启动，返回 false 表示用户取消
+    /// </summary>
+    static bool WaitForHearthstone()
+    {
+        if (IsHearthstoneRunning()) return true;
+        Console.WriteLine("⏳ 炉石传说未运行，等待启动...");
+        Console.WriteLine("   (Ctrl+C 取消)\n");
+
+        var running = true;
+        Console.CancelKeyPress += (sender, e) =>
+        {
+            e.Cancel = true;
+            running = false;
+        };
+
+        while (running)
+        {
+            Thread.Sleep(3000);
+            if (IsHearthstoneRunning())
+            {
+                Console.WriteLine("✅ 炉石传说已启动\n");
+                return true;
+            }
+        }
+
+        Console.WriteLine("⏹ 已取消");
+        return false;
     }
 
     // ═══════════════════════════════════════
@@ -139,6 +187,27 @@ class Program
 
         while (running)
         {
+            // 炉石未运行时等待
+            if (!IsHearthstoneRunning())
+            {
+                Console.WriteLine("⏳ 炉石传说已关闭，等待重新启动...");
+                while (running && !IsHearthstoneRunning())
+                    Thread.Sleep(3000);
+                if (!running) break;
+                Console.WriteLine("✅ 炉石传说已重新启动\n");
+                // 重置状态，等待新日志
+                parser = new Parser();
+                pos = 0;
+                // 重新查找日志路径（游戏重启可能生成新日志目录）
+                var newPath = LogPathFinder.Find(null);
+                if (newPath != null)
+                    currentPath = newPath;
+                try { pos = GetFileEnd(currentPath); }
+                catch { }
+                Console.WriteLine($"👁 监控: {currentPath}\n   等待游戏开始...\n");
+                continue;
+            }
+
             try
             {
                 fileCheckCounter++;
@@ -257,6 +326,24 @@ class Program
             while (!reader.EndOfStream)
                 parser.ProcessLine(reader.ReadLine());
             pos = fs.Position;
+        }
+
+        // 兜底：最后一次尝试解析未关联的英雄
+        if (parser.Game.IsActive)
+            parser.ResolveUnlinkedHero();
+
+        // ── 旧数据兜底 ──
+        // 上局游戏未正常结束（无 STATE=COMPLETE），工具启动时从最后一个 CREATE_GAME
+        // 扫描会把旧数据当成"进行中"。如果扫描完所有现有数据后对局仍标记为 active，
+        // 但没有任何有意义的游戏进展（无英雄、无 PlayerTag），视为旧数据，跳过。
+        if (parser.Game.IsActive
+            && string.IsNullOrEmpty(parser.Game.HeroName)
+            && string.IsNullOrEmpty(parser.Game.PlayerTag)
+            && parser.Game.AccountIdLo == 0
+            && parser.Game.AllHeroes.Count == 0)
+        {
+            parser.Game.IsActive = false;
+            pos = GetFileEnd(filePath);
         }
     }
 
