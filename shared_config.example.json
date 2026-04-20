@@ -1,0 +1,9 @@
+{
+  "apiBaseUrl": "https://你的域名.com",
+  "pluginApiKey": "",
+  "region": "CN",
+  "mode": "solo",
+  "testMode": true,
+  "mongoUrl": "mongodb://mongo:27017",
+  "flaskSecretKey": "changeme-in-production"
+}
