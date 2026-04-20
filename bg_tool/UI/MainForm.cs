@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 #nullable enable
@@ -49,13 +50,16 @@ public class MainForm : Form
     Button btnErrorDetail = null!;
 
     // ── 状态 ──
-    enum AppState { Waiting, InGame, Uploaded }
+    enum AppState { Waiting, InGame, LeagueGame, Uploaded }
     AppState _state = AppState.Waiting;
     string _playerTag = "";
     string _verifyCode = "待接入";
     string _lastError = "";
     List<Game> _games = new List<Game>();
     Parser? _parser;
+    Config _config = null!;
+    bool _leagueChecked = false; // 当前对局是否已调过 check-league
+    string _currentGameUuid = "";
 
     // ═══════════════════════════════════════
     //  构造
@@ -71,6 +75,10 @@ public class MainForm : Form
         BackColor = C_BG;
         ForeColor = C_TEXT;
         Font = new Font("Microsoft YaHei UI", 9f);
+
+        // 加载配置并初始化 API
+        _config = Config.Load();
+        ApiClient.Init(_config.ApiBaseUrl, _config.ApiKey);
 
         BuildUI();
         UpdateUI();
@@ -294,12 +302,13 @@ public class MainForm : Form
                 lblGameSub.Text = "联赛模式已启用";
                 break;
             case AppState.InGame:
+            case AppState.LeagueGame:
                 var game = _parser?.Game;
                 if (game != null && !string.IsNullOrEmpty(game.HeroName))
                 {
-                    lblGameIcon.Text = "🎮";
+                    lblGameIcon.Text = _state == AppState.LeagueGame ? "⚔️" : "🎮";
                     lblGameText.Text = $"{game.HeroName}";
-                    lblGameSub.Text = "8 人联赛 · 等待结算";
+                    lblGameSub.Text = _state == AppState.LeagueGame ? "🏆 联赛对局 · 等待结算" : "对局进行中";
                 }
                 else
                 {
@@ -522,6 +531,7 @@ public class MainForm : Form
                     {
                         case "game_start":
                             _state = AppState.InGame;
+                            _leagueChecked = false;
                             uiChanged = true;
                             break;
                         case "player_info":
@@ -532,11 +542,57 @@ public class MainForm : Form
                         case "hero_found":
                             uiChanged = true;
                             break;
+                        case "check_league":
+                            if (!_leagueChecked)
+                            {
+                                _leagueChecked = true;
+                                var game = _parser.Game;
+                                _currentGameUuid = !string.IsNullOrEmpty(game.GameUuid) ? game.GameUuid : Guid.NewGuid().ToString();
+                                Task.Run(async () =>
+                                {
+                                    var isLeague = await ApiClient.CheckLeagueAsync(
+                                        _currentGameUuid,
+                                        game.PlayerTag,
+                                        game.AccountIdLo,
+                                        game.LobbyPlayers,
+                                        _config.Region,
+                                        _config.Mode);
+                                    if (isLeague)
+                                    {
+                                        _state = AppState.LeagueGame;
+                                        _verifyCode = ApiClient.VerificationCode;
+                                    }
+                                    BeginInvoke(new Action(UpdateUI));
+                                });
+                            }
+                            break;
                         case "game_end":
                         case "concede":
-                            _state = AppState.Waiting;
-                            _games = new List<Game>(_parser.Games);
-                            uiChanged = true;
+                            // 如果是联赛对局，上报排名
+                            if (_state == AppState.LeagueGame && _parser.Game.HeroPlacement > 0)
+                            {
+                                var game = _parser.Game;
+                                var placement = game.HeroPlacement;
+                                var gameUuid = _currentGameUuid;
+                                var playerTag = game.PlayerTag;
+                                var accountIdLo = game.AccountIdLo;
+                                Task.Run(async () =>
+                                {
+                                    var ok = await ApiClient.UpdatePlacementAsync(gameUuid, playerTag, accountIdLo, placement);
+                                    BeginInvoke(new Action(() =>
+                                    {
+                                        _state = ok ? AppState.Uploaded : AppState.Waiting;
+                                        _games = new List<Game>(_parser.Games);
+                                        UpdateUI();
+                                    }));
+                                });
+                            }
+                            else
+                            {
+                                _state = AppState.Waiting;
+                                _games = new List<Game>(_parser.Games);
+                                uiChanged = true;
+                            }
                             break;
                     }
                 }

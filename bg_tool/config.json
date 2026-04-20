@@ -1,0 +1,6 @@
+{
+  "apiBaseUrl": "http://localhost:5000",
+  "apiKey": "",
+  "region": "CN",
+  "mode": "solo"
+}

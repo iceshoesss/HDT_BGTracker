@@ -38,6 +38,7 @@ public class Game
 
     // 对局标识
     public long GameSeed { get; set; }
+    public string GameUuid { get; set; } = "";   // HearthMirror 提供
 
     // 英雄信息
     public int HeroEntityId { get; set; }

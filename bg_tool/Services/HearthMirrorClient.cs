@@ -16,6 +16,11 @@ public static class HearthMirrorClient
     private static bool _available;
     private static HearthMirror.Reflection? _reflection;
 
+    /// <summary>
+    /// 最后一次获取到的 GameUuid
+    /// </summary>
+    public static string LastGameUuid { get; private set; } = "";
+
     public static bool TryInit()
     {
         if (_available) return true;
@@ -52,7 +57,10 @@ public static class HearthMirrorClient
             {
                 var gameUuid = lobby.GameUuid;
                 if (!string.IsNullOrEmpty(gameUuid))
+                {
+                    LastGameUuid = gameUuid;
                     Console.WriteLine($"[HearthMirror] GameUuid: {gameUuid}");
+                }
                 else
                     Console.WriteLine("[HearthMirror] GameUuid: (null)");
             }
