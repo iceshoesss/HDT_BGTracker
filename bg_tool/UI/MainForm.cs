@@ -523,6 +523,7 @@ public class MainForm : Form
                         case "game_start":
                             _state = AppState.InGame;
                             uiChanged = true;
+                            HearthMirrorClient.ResetDumpFlag();
                             break;
                         case "player_info":
                             _playerTag = _parser.Game.PlayerTag;
