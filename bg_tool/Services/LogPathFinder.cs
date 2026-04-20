@@ -120,10 +120,13 @@ public static class LogPathFinder
 
     private static string? FindHsInstallDir()
     {
+        // x86 进程在 64 位 Windows 下访问注册表会被自动重定向到 WOW6432Node，
+        // 导致显式指定 WOW6432Node 的路径读不到。需要用 RegistryView.Registry64
+        // 强制读 64 位注册表视图。
         try
         {
-            using var key = Registry.LocalMachine.OpenSubKey(
-                @"SOFTWARE\WOW6432Node\Blizzard Entertainment\Hearthstone");
+            using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
+            using var key = baseKey.OpenSubKey(@"SOFTWARE\WOW6432Node\Blizzard Entertainment\Hearthstone");
             var p = key?.GetValue("InstallPath") as string;
             if (!string.IsNullOrEmpty(p) && Directory.Exists(p)) return p;
         }
@@ -131,8 +134,8 @@ public static class LogPathFinder
 
         try
         {
-            using var key = Registry.LocalMachine.OpenSubKey(
-                @"SOFTWARE\Blizzard Entertainment\Hearthstone");
+            using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
+            using var key = baseKey.OpenSubKey(@"SOFTWARE\Blizzard Entertainment\Hearthstone");
             var p = key?.GetValue("InstallPath") as string;
             if (!string.IsNullOrEmpty(p) && Directory.Exists(p)) return p;
         }
@@ -140,8 +143,8 @@ public static class LogPathFinder
 
         try
         {
-            using var key = Registry.CurrentUser.OpenSubKey(
-                @"SOFTWARE\Blizzard Entertainment\Hearthstone");
+            using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Registry64);
+            using var key = baseKey.OpenSubKey(@"SOFTWARE\Blizzard Entertainment\Hearthstone");
             var p = key?.GetValue("InstallPath") as string;
             if (!string.IsNullOrEmpty(p) && Directory.Exists(p)) return p;
         }
