@@ -241,8 +241,10 @@ public class Parser
                 {
                     Game.HeroName = hero.HeroName;
                     Game.HeroCardId = hero.CardId;
+                    return "hero_entity";
                 }
-                return "hero_entity";
+                // HERO_ENTITY 先于 FULL_ENTITY 出现，暂不播报，等 FULL_ENTITY 补上
+                return null;
             }
         }
 
@@ -258,7 +260,8 @@ public class Parser
             if (IsHeroCard(cardId))
             {
                 var key = (cardId, playerSlot);
-                if (!Game.AllHeroes.ContainsKey(key))
+                var isNew = !Game.AllHeroes.ContainsKey(key);
+                if (isNew)
                 {
                     var hero = new Hero
                     {
@@ -268,17 +271,15 @@ public class Parser
                         PlayerSlot = playerSlot,
                     };
                     Game.AllHeroes[key] = hero;
-                    if (entityId == Game.HeroEntityId)
-                    {
-                        Game.HeroName = heroName;
-                        Game.HeroCardId = cardId;
-                    }
                 }
-                else if (entityId == Game.HeroEntityId && string.IsNullOrEmpty(Game.HeroName))
+
+                // 匹配本地英雄 EntityId，补上之前 HERO_ENTITY 未找到的英雄
+                if (entityId == Game.HeroEntityId && string.IsNullOrEmpty(Game.HeroName))
                 {
-                    var existing = Game.AllHeroes[key];
-                    Game.HeroName = existing.HeroName;
-                    Game.HeroCardId = existing.CardId;
+                    var h = Game.AllHeroes[key];
+                    Game.HeroName = h.HeroName;
+                    Game.HeroCardId = h.CardId;
+                    return "hero_entity";
                 }
             }
             return null;
@@ -289,6 +290,20 @@ public class Parser
         if (m.Success)
         {
             var step = m.Groups[1].Value;
+            if (step == "MAIN_START" || step == "MAIN_CLEANUP")
+            {
+                // 主动重试：HERO_ENTITY 可能先到，此时 AllHeroes 还没数据
+                // 在 MAIN_START / MAIN_CLEANUP 时重试匹配，兜底遗漏
+                if (Game.HeroEntityId > 0 && string.IsNullOrEmpty(Game.HeroName))
+                {
+                    var hero = FindHeroByEntity(Game.HeroEntityId);
+                    if (hero != null)
+                    {
+                        Game.HeroName = hero.HeroName;
+                        Game.HeroCardId = hero.CardId;
+                    }
+                }
+            }
             if (step == "MAIN_CLEANUP")
             {
                 if (!_loFetched)
@@ -310,10 +325,18 @@ public class Parser
         m = ReLbEntity.Match(line);
         if (m.Success)
         {
+            var entityId = int.Parse(m.Groups[2].Value);
             var cardId = m.Groups[3].Value;
             var placement = int.Parse(m.Groups[5].Value);
 
-            if (IsHeroCard(cardId) && !string.IsNullOrEmpty(Game.HeroCardId) && cardId == Game.HeroCardId)
+            // 匹配本地英雄：优先用 HeroCardId，fallback 用 HeroEntityId
+            var matched = false;
+            if (!string.IsNullOrEmpty(Game.HeroCardId) && cardId == Game.HeroCardId)
+                matched = true;
+            else if (Game.HeroEntityId > 0 && entityId == Game.HeroEntityId)
+                matched = true;
+
+            if (matched)
                 Game.HeroPlacement = placement;
 
             // 投降检测
@@ -407,7 +430,7 @@ public class Parser
         {
             Game.HeroName = heroName;
             Game.HeroCardId = cardId;
-            return "hero_found";
+            return "hero_entity";
         }
         return null;
     }
