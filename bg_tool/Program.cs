@@ -126,7 +126,18 @@ class Program
         try
         {
             ScanExisting(currentPath, out parser, out pos);
-            if (parser.Game.IsActive)
+            // 扫描后如果是 active 但无任何游戏数据，判定为旧数据（上局未正常结束）
+            if (parser.Game.IsActive
+                && string.IsNullOrEmpty(parser.Game.HeroName)
+                && string.IsNullOrEmpty(parser.Game.PlayerTag)
+                && parser.Game.AccountIdLo == 0)
+            {
+                parser.Game.IsActive = false;
+                pos = GetFileEnd(currentPath);
+                Console.WriteLine("   检测到残留旧数据，已跳过");
+                Console.WriteLine("   等待游戏开始...");
+            }
+            else if (parser.Game.IsActive)
                 PrintMidGame(parser.Game);
             else
             {
@@ -159,7 +170,17 @@ class Program
                         try
                         {
                             ScanExisting(currentPath, out parser, out pos);
-                            if (parser.Game.IsActive)
+                            if (parser.Game.IsActive
+                                && string.IsNullOrEmpty(parser.Game.HeroName)
+                                && string.IsNullOrEmpty(parser.Game.PlayerTag)
+                                && parser.Game.AccountIdLo == 0)
+                            {
+                                parser.Game.IsActive = false;
+                                pos = GetFileEnd(currentPath);
+                                Console.WriteLine("   检测到残留旧数据，已跳过");
+                                Console.WriteLine("   等待游戏开始...");
+                            }
+                            else if (parser.Game.IsActive)
                                 PrintMidGame(parser.Game);
                             else
                             {
@@ -216,7 +237,16 @@ class Program
                     {
                         ScanExisting(currentPath, out parser, out pos);
                         Console.WriteLine($"🔄 日志切换: {currentPath}");
-                        if (parser.Game.IsActive)
+                        if (parser.Game.IsActive
+                            && string.IsNullOrEmpty(parser.Game.HeroName)
+                            && string.IsNullOrEmpty(parser.Game.PlayerTag)
+                            && parser.Game.AccountIdLo == 0)
+                        {
+                            parser.Game.IsActive = false;
+                            pos = GetFileEnd(currentPath);
+                            Console.WriteLine("   检测到残留旧数据，已跳过");
+                        }
+                        else if (parser.Game.IsActive)
                             PrintMidGame(parser.Game);
                         else
                             pos = GetFileEnd(currentPath);

@@ -539,8 +539,8 @@ python bg_parser/bg_parser.py
 ### 已知问题
 
 - [ ] **bg_tool x86 注册表重定向问题**（2026-04-20）：bg_tool 编译为 x86（因 HearthMirror.dll 是 32 位），64 位 Windows 下 x86 进程访问注册表会被自动重定向。`Registry.LocalMachine.OpenSubKey("SOFTWARE\WOW6432Node\...")` 读不到正确的键值。Python bg_parser（64 位）不受影响。**已尝试**：`RegistryKey.OpenBaseKey(..., RegistryView.Registry64)` 显式读 64 位视图，未解决。**根因待查**。
-- [ ] **bg_tool 英雄解析失败**（2026-04-20）：`HERO_ENTITY` 在 Power.log 中有时出现在 `FULL_ENTITY` 之前，导致 `FindHeroByEntity` 返回 null → 英雄名显示"(等待数据)"，后续 LEADERBOARD_PLACE 也因 `Game.HeroCardId` 为空无法匹配排名。修复方案：`ResolveUnlinkedHero()` 在 CREATE_GAME 块结束和 STEP MAIN_START/MAIN_CLEANUP 时按 HeroEntityId 重试匹配 AllHeroes。**注意**：playerSlot 不能作为本地玩家标识（实际日志中本地英雄 player=1，Python parser 也不使用 playerSlot）。
-- [ ] **bg_tool 启动读取旧数据**（2026-04-20）：上局游戏未正常结束（无 STATE=COMPLETE），工具启动时 `FindLastCreateGamePos` 定位到最后一个 CREATE_GAME 并扫描旧数据，误认为"进行中"。修复方案：ScanExisting 后检测 active 但无任何游戏数据（无英雄/PlayerTag/AccountIdLo）时，判定为旧数据，跳到文件尾等待新游戏。
+- [x] **bg_tool 英雄解析失败**（2026-04-20）：`HERO_ENTITY` 在 Power.log 中有时出现在 `FULL_ENTITY` 之前，导致 `FindHeroByEntity` 返回 null → 英雄名显示"(等待数据)"，后续 LEADERBOARD_PLACE 也因 `Game.HeroCardId` 为空无法匹配排名。修复方案：HERO_ENTITY 找不到英雄时不播报事件，等 FULL_ENTITY 补上后播报；STEP MAIN_START/MAIN_CLEANUP 时主动重试 `FindHeroByEntity`；LEADERBOARD_PLACE 增加 EntityId 匹配 fallback。已修复。**注意**：playerSlot 不能作为本地玩家标识（实际日志中本地英雄 player=1，Python parser 也不使用 playerSlot）。
+- [x] **bg_tool 启动读取旧数据**（2026-04-20）：上局游戏未正常结束（无 STATE=COMPLETE），工具启动时 `FindLastCreateGamePos` 定位到最后一个 CREATE_GAME 并扫描旧数据，误认为"进行中"。修复方案：ScanExisting 后检测 active 但无任何游戏数据（无英雄/PlayerTag/AccountIdLo）时，判定为旧数据，跳到文件尾等待新游戏。已修复。**已知边界场景**：玩家断线重连回同一局时，bg_tool 从重连的 CREATE_GAME 开始扫描，`_pendingNewGame` 为 null（全新 Parser），重连数据无法恢复旧局状态，Game 为空壳。该场景不常见，暂不处理。
 - [ ] **bg_tool 闪退无报错**（2026-04-20）：双击 .exe 启动后窗口立即关闭。修复方案：Main 入口加 try-catch 包住逻辑，退出前等待回车。
 - [ ] **bg_tool 缺少 HearthDb.csproj 引用**（2026-04-20）：`HearthMirrorClient.ResolveHeroName()` 使用 `HearthDb.Cards.All`，但 csproj 未引用 `HearthDb.dll`。此功能仅用于诊断日志显示英雄中文名，核心数据从 Power.log 读取，不依赖 HearthDb。建议移除依赖。
 - [ ] **bg_parser 游戏结束检测不完全可靠**（2026-04-16）：最后一局已结束但脚本仍显示"进行中"。初步判断 BattleTag 格式的 LEADERBOARD_PLACE 行可能未出现在日志中。待采集更多 log 样本分析。
