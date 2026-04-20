@@ -778,6 +778,15 @@ QQ群 ↔ QQ机器人 ↔ HTTP API ↔ Flask ↔ MongoDB
 
 ### bg_tool
 
+#### 2026-04-21 bg_tool 对接 Flask API
+- 新增 `ApiClient.cs`：极简 HTTP 客户端，无第三方 JSON 库依赖，手写序列化
+- 新增 `Config.cs` + `config.json`：API 地址、Key、Region/Mode 配置
+- 流程：英雄选定（STEP=MAIN_CLEANUP）→ check-league → 游戏结束 → update-placement
+- 服务端版本兼容：`X-HDT-Plugin` header 硬编 `0.5.7`（bg_tool 内部版本保持独立）
+- check-league 获取 GameUuid：来自 HearthMirror 的 `BattlegroundsLobbyInfo.GameUuid`
+- update-placement 失败重试 3 次（2 秒间隔）
+- config.json 编译时自动复制到输出目录
+
 #### 2026-04-21 BattlegroundsLobbyInfo 结构（已验证）
 
 HearthMirror 的 `Reflection.GetBattlegroundsLobbyInfo()` 返回 `HearthMirror.Objects.BattlegroundsLobbyInfo`：

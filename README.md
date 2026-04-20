@@ -212,7 +212,7 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 - 帮助命令、webhook 接收并转发到群通知
 
 ### 进行中
-- bg_tool 对接 Flask API（check-league / update-placement）
+- bg_tool API 集成测试（check-league / update-placement 已实现，待实测）
 - QQ 机器人更多命令（报名/退出队列、管理员命令）
 - bg_parser 游戏结束检测修复
 - ELO 评分系统（feature/elo 分支，待上线）
