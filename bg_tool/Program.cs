@@ -13,6 +13,14 @@ class Program
     [STAThread]
     static void Main(string[] args)
     {
+        // 日志文件（WinExe 没有控制台，Console 输出写入 bg_tool.log）
+        var logDir = AppDomain.CurrentDomain.BaseDirectory;
+        var logPath = Path.Combine(logDir, "bg_tool.log");
+        var logWriter = new StreamWriter(logPath, append: true) { AutoFlush = true };
+        Console.SetOut(logWriter);
+        Console.SetError(logWriter);
+        Console.WriteLine($"\n=== bg_tool 启动 {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
+
         // HearthMirror 依赖解析
         AppDomain.CurrentDomain.AssemblyResolve += (sender, resolveArgs) =>
         {
