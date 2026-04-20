@@ -817,6 +817,17 @@ HearthMirror 的 `Reflection.GetBattlegroundsLobbyInfo()` 返回 `HearthMirror.O
 3. `Core.Game` 是 HDT 的 `GameV2` 类，Region 来自 Battle.net 客户端的区域配置（不是游戏内存），Mode 来自 HDT 对游戏实体标签的解析
 4. 结论：bg_tool 无法绕过 HDT 框架获取这两项，必须硬编码或从外部配置
 
+#### v0.2.0 (2026-04-21)
+- WinForms 桌面应用：深色主题 UI，对局状态/最近战绩/今日统计/验证码复制
+- 对接 Flask API：check-league（STEP 13）+ update-placement（游戏结束），失败重试 3 次
+- testMode：仍调用 check-league 创建对局记录，强制标记为联赛
+- 联赛对局持久化到 games.json，最近战绩和今日统计从文件读取，重启不丢失
+- 启动时 Ping API 服务器，状态栏显示服务正常/异常
+- 日志面板：Console 输出同步显示到 UI + bg_tool.log 文件
+- 统一配置：bg_tool 和 HDT 插件都从 shared_config.json 读取（向上逐级查找）
+- config.json 不再进 git，改用 config.json.example + shared_config.example.json 模板
+- mock_server.py 支持状态追踪：随机验证码、对局记录、update-placement 校验
+
 #### v0.1.1 (2026-04-19)
 - 修复 HearthMirror Lo 获取：Reflection 实例改为单例缓存，对齐 Python 全局变量模式
 - 修复中途启动无法使用：PreloadPlayerInfo 扩展为预加载 PlayerName + AccountIdLo + HeroEntityId

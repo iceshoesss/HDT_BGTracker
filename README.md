@@ -231,11 +231,15 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 ## 当前开发状态
 
-### bg_tool v0.1.1 (2026-04-19)
+### bg_tool v0.2.0 (2026-04-21)
+- WinForms 桌面应用（深色主题 UI）
+- 对接 Flask API（check-league + update-placement）
+- 联赛对局持久化到 games.json
+- 启动 Ping 服务检测、日志面板
+- 统一配置 shared_config.json
 - 实时监控、中途接入、断线重连、自动切换日志
-- HearthMirror 集成获取 8 个玩家 Lo + HeroCardId（每局仅首次）
-- 批量解析 `--parse` 模式
-- x86 编译、AssemblyResolve 自动加载依赖 DLL
+- HearthMirror 集成获取 8 个玩家 Lo + HeroCardId
+- 批量解析 `--parse` 模式、mock_server.py 调试
 
 ### Web v0.4.2 (2026-04-17)
 - 使用指南页面、管理员删除对局
@@ -245,7 +249,7 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 - 帮助命令、webhook 接收并转发到群通知
 
 ### 进行中
-- bg_tool API 集成测试（check-league / update-placement 已实现，待实测）
+- bg_tool WinForms UI 细节优化
 - QQ 机器人更多命令（报名/退出队列、管理员命令）
 - bg_parser 游戏结束检测修复
 - ELO 评分系统（feature/elo 分支，待上线）
@@ -253,6 +257,14 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 ## 更新日志
 
 > Web 端更新日志已迁移至 [LeagueWeb](https://github.com/iceshoesss/LeagueWeb) 仓库。
+
+### v0.2.0 (2026-04-21)
+- WinForms 桌面应用（深色主题 UI）
+- 对接 Flask API（check-league + update-placement）
+- 联赛对局持久化到 games.json
+- 启动 Ping 服务检测、日志面板
+- 统一配置 shared_config.json
+- mock_server.py 支持状态追踪
 
 ### v0.5.7 (2026-04-18)
 - 修复日志刷屏：GetPlayerId/GetAccountIdLo 未找到时加 1 秒日志节流，避免 OnUpdate 每 100ms 写一条重复日志
