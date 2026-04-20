@@ -151,14 +151,14 @@ public static class HearthMirrorClient
             // 逐个 Player 的详细属性
             try
             {
-                var players = lobby.Players;
+                var playersProp = lobby.GetType().GetProperty("Players");
+                var players = playersProp?.GetValue(lobby) as System.Collections.IEnumerable;
                 if (players != null)
                 {
-                    sw.WriteLine($"\n  [Players] Count = {players.Count}");
-                    for (int i = 0; i < players.Count; i++)
+                    int idx = 0;
+                    foreach (var p in players)
                     {
-                        var p = players[i];
-                        sw.WriteLine($"\n  --- Player[{i}] Type = {p.GetType().FullName}");
+                        sw.WriteLine($"\n  --- Player[{idx}] Type = {p.GetType().FullName}");
                         foreach (var prop in p.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
                         {
                             try
@@ -172,6 +172,8 @@ public static class HearthMirrorClient
                                 sw.WriteLine($"    {prop.Name} ({prop.PropertyType.Name}) = [读取失败: {ex.Message}]");
                             }
                         }
+                        idx++;
+                        if (idx > 20) break;
                     }
                 }
             }
