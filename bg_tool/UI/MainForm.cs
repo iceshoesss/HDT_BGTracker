@@ -48,6 +48,7 @@ public class MainForm : Form
     Panel pnlError        = null!;
     Label lblErrorMsg     = null!;
     Button btnErrorDetail = null!;
+    RichTextBox rtbLog    = null!;
 
     // ── 状态 ──
     enum AppState { Waiting, InGame, LeagueGame, Uploaded }
@@ -68,7 +69,7 @@ public class MainForm : Form
     public MainForm()
     {
         Text = "🍺 酒馆战棋联赛工具";
-        Size = new Size(440, 520);
+        Size = new Size(440, 640);
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -240,6 +241,32 @@ public class MainForm : Form
 
         pnlError.Controls.AddRange(new Control[] { lblErrIcon, lblErrorMsg, btnErrorDetail });
         Controls.Add(pnlError);
+
+        // ── 日志面板 ──
+        var pnlLog = MakePanel(0, 396, 440, 220);
+        pnlLog.BorderStyle = BorderStyle.FixedSingle;
+
+        var lblLogTitle = MakeLabel("日志", 16, 4, 40, 14, 8f, FontStyle.Bold, C_TEXT_MUTED);
+        pnlLog.Controls.Add(lblLogTitle);
+
+        rtbLog = new RichTextBox
+        {
+            Location = new Point(0, 20),
+            Size = new Size(440, 200),
+            BackColor = Color.FromArgb(10, 15, 25),
+            ForeColor = Color.FromArgb(148, 163, 184),
+            Font = new Font("Consolas", 8f),
+            ReadOnly = true,
+            BorderStyle = BorderStyle.None,
+            ScrollBars = RichTextBoxScrollBars.Vertical,
+            WordWrap = false,
+        };
+        pnlLog.Controls.Add(rtbLog);
+        Controls.Add(pnlLog);
+
+        // 重定向 Console 输出到日志面板 + 文件
+        var fileWriter = Console.Out; // Program.cs 已经重定向到文件
+        Console.SetOut(new UiTextWriter(rtbLog, fileWriter));
     }
 
     // ── 辅助：创建 Label ──
@@ -727,6 +754,63 @@ public class MainForm : Form
                 return fs.Length;
         }
         catch { return 0; }
+    }
+}
+
+/// <summary>
+/// 双写 TextWriter：同时写入 RichTextBox（UI 线程安全）和底层文件 writer
+/// </summary>
+class UiTextWriter : TextWriter
+{
+    private readonly RichTextBox _rtb;
+    private readonly TextWriter _inner;
+    private readonly int _maxLines = 200;
+
+    public UiTextWriter(RichTextBox rtb, TextWriter inner)
+    {
+        _rtb = rtb;
+        _inner = inner;
+    }
+
+    public override Encoding Encoding => Encoding.UTF8;
+
+    public override void WriteLine(string? value)
+    {
+        _inner.WriteLine(value); // 写文件（后台线程安全）
+        AppendToUi(value ?? "");
+    }
+
+    public override void Write(string? value)
+    {
+        _inner.Write(value);
+        if (!string.IsNullOrEmpty(value) && value.Contains('\n'))
+            AppendToUi(value);
+    }
+
+    private void AppendToUi(string text)
+    {
+        if (_rtb.IsDisposed) return;
+        try
+        {
+            if (_rtb.InvokeRequired)
+                _rtb.BeginInvoke(new Action<string>(AppendToUi), text);
+            else
+            {
+                // 自动裁剪：超过 maxLines 删前半
+                if (_rtb.Lines.Length > _maxLines)
+                {
+                    var keep = _maxLines / 2;
+                    var lines = _rtb.Lines;
+                    var sb = new StringBuilder();
+                    for (int i = lines.Length - keep; i < lines.Length; i++)
+                        sb.AppendLine(lines[i]);
+                    _rtb.Text = sb.ToString();
+                }
+                _rtb.AppendText(text + "\n");
+                _rtb.ScrollToCaret();
+            }
+        }
+        catch { }
     }
 }
 
