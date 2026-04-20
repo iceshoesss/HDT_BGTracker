@@ -449,6 +449,8 @@ public class MainForm : Form
                 _state = AppState.InGame;
                 _playerTag = _parser.Game.PlayerTag;
             }
+
+            _games = new List<Game>(_parser.Games);
         }
         catch
         {
@@ -533,6 +535,7 @@ public class MainForm : Form
                         case "game_end":
                         case "concede":
                             _state = AppState.Waiting;
+                            _games = new List<Game>(_parser.Games);
                             uiChanged = true;
                             break;
                     }
