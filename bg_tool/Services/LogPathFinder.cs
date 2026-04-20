@@ -34,7 +34,15 @@ public static class LogPathFinder
             if (logPath != null) return logPath;
         }
 
-        // HDT_PATH 环境变量
+        // Battle.net 配置文件查找
+        installDir = FindHsFromBattleNetConfig();
+        if (installDir != null)
+        {
+            var logPath = FindLogInDir(Path.Combine(installDir, "Logs"));
+            if (logPath != null) return logPath;
+        }
+
+        // HDT_PATH 环境变量（编译时设置，运行时不一定有）
         var hdtPath = Environment.GetEnvironmentVariable("HDT_PATH");
         if (!string.IsNullOrEmpty(hdtPath))
         {
@@ -147,6 +155,37 @@ public static class LogPathFinder
             using var key = baseKey.OpenSubKey(@"SOFTWARE\Blizzard Entertainment\Hearthstone");
             var p = key?.GetValue("InstallPath") as string;
             if (!string.IsNullOrEmpty(p) && Directory.Exists(p)) return p;
+        }
+        catch { }
+
+        return null;
+    }
+
+    private static string? FindHsFromBattleNetConfig()
+    {
+        // Battle.net 在 ProgramData 下存储产品配置，从中可以找到游戏安装路径
+        var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+        var agentDir = Path.Combine(programData, "Battle.net", "Agent");
+
+        if (!Directory.Exists(agentDir)) return null;
+
+        try
+        {
+            foreach (var file in Directory.GetFiles(agentDir, "*.*", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    var content = File.ReadAllText(file);
+                    if (content.IndexOf("Hearthstone", StringComparison.OrdinalIgnoreCase) < 0) continue;
+
+                    var match = System.Text.RegularExpressions.Regex.Match(content,
+                        @"[A-Z]:\\[^""\s\\]+(?:\\[^""\s\\]+)*\\Hearthstone[^""\s\\]*",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (match.Success && Directory.Exists(match.Value))
+                        return match.Value;
+                }
+                catch { }
+            }
         }
         catch { }
 
