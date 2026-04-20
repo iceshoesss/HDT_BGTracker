@@ -53,9 +53,13 @@ class Program
         var logPath = LogPathFinder.Find(customPath);
         if (logPath == null)
         {
-            Console.WriteLine("❌ 未找到 Power.log");
-            Console.WriteLine("用法: bg_tool [--parse] [Power.log路径]");
-            return;
+            Console.WriteLine("⏳ 未找到 Power.log，等待游戏启动...");
+            Console.WriteLine("   (Ctrl+C 退出)\n");
+            while (logPath == null)
+            {
+                Thread.Sleep(3000);
+                logPath = LogPathFinder.Find(customPath);
+            }
         }
 
         if (parseMode)
