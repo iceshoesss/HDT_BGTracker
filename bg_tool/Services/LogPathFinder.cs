@@ -34,6 +34,18 @@ public static class LogPathFinder
             if (logPath != null) return logPath;
         }
 
+        // HDT_PATH 环境变量
+        var hdtPath = Environment.GetEnvironmentVariable("HDT_PATH");
+        if (!string.IsNullOrEmpty(hdtPath))
+        {
+            var hdtLogs = Path.Combine(hdtPath, "Logs");
+            if (Directory.Exists(hdtLogs))
+            {
+                var logPath = FindLogInDir(hdtLogs);
+                if (logPath != null) return logPath;
+            }
+        }
+
         // 常见路径兜底
         foreach (var logsDir in new[]
         {
@@ -46,6 +58,17 @@ public static class LogPathFinder
             var logPath = FindLogInDir(logsDir);
             if (logPath != null) return logPath;
         }
+
+        // 诊断输出
+        Console.WriteLine("搜索路径:");
+        if (installDir != null)
+            Console.WriteLine($"  注册表: {Path.Combine(installDir, "Logs")} {(Directory.Exists(Path.Combine(installDir, "Logs")) ? "（目录存在，无 Power.log）" : "（目录不存在）")}");
+        else
+            Console.WriteLine("  注册表: 未找到炉石安装路径");
+        if (!string.IsNullOrEmpty(hdtPath))
+            Console.WriteLine($"  HDT_PATH: {Path.Combine(hdtPath, "Logs")} {(Directory.Exists(Path.Combine(hdtPath, "Logs")) ? "（目录存在，无 Power.log）" : "（目录不存在）")}");
+        else
+            Console.WriteLine("  HDT_PATH: 未设置");
 
         return null;
     }
