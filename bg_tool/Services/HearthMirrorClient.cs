@@ -57,14 +57,9 @@ public static class HearthMirrorClient
             {
                 var gameUuid = lobby.GameUuid;
                 if (!string.IsNullOrEmpty(gameUuid))
-                {
                     LastGameUuid = gameUuid;
-                    Console.WriteLine($"[HearthMirror] GameUuid: {gameUuid}");
-                }
-                else
-                    Console.WriteLine("[HearthMirror] GameUuid: (null)");
             }
-            catch { Console.WriteLine("[HearthMirror] GameUuid: (不可访问)"); }
+            catch { }
 
             var result = new List<LobbyPlayer>();
             for (int i = 0; i < lobby.Players.Count; i++)
@@ -76,10 +71,7 @@ public static class HearthMirrorClient
                 // 诊断：Lo=0 时输出更多信息
                 if (lo == 0)
                 {
-                    var accountIdNull = p.AccountId == null;
-                    var hi = p.AccountId?.Hi ?? 0;
-                    var name = p.Name ?? "(null)";
-                    Console.WriteLine($"[HearthMirror] ⚠️ Lo=0 诊断: index={i}, name=\"{name}\", AccountId is null={accountIdNull}, Hi={hi}, Hero={heroCardId}");
+                    Console.WriteLine($"[HearthMirror] ⚠️ index={i} Lo=0, Hero={heroCardId}");
                 }
 
                 result.Add(new LobbyPlayer { Lo = lo, HeroCardId = heroCardId });

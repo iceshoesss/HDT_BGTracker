@@ -314,8 +314,6 @@ public class Parser
                     if (Game.LobbyPlayers.Count > 0)
                     {
                         Console.WriteLine($"[HearthMirror] 📋 获取到 {Game.LobbyPlayers.Count} 个玩家");
-                        foreach (var lp in Game.LobbyPlayers)
-                            Console.WriteLine($"   Lo={lp.Lo}, Hero={lp.HeroCardId}");
                         return "check_league";
                     }
                 }

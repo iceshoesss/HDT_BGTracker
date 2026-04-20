@@ -45,9 +45,6 @@ public class MainForm : Form
     Label lblStatPoints   = null!;
     Label lblVerifyCode   = null!;
     Button btnCopyCode    = null!;
-    Panel pnlError        = null!;
-    Label lblErrorMsg     = null!;
-    Button btnErrorDetail = null!;
     RichTextBox rtbLog    = null!;
 
     // ── 状态 ──
@@ -55,7 +52,6 @@ public class MainForm : Form
     AppState _state = AppState.Waiting;
     string _playerTag = "";
     string _verifyCode = "待接入";
-    string _lastError = "";
     List<Game> _games = new List<Game>();
     Parser? _parser;
     Config _config = null!;
@@ -69,7 +65,7 @@ public class MainForm : Form
     public MainForm()
     {
         Text = "🍺 酒馆战棋联赛工具";
-        Size = new Size(440, 640);
+        Size = new Size(440, 510);
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -212,38 +208,8 @@ public class MainForm : Form
         pnlVerify.Controls.AddRange(new Control[] { lblVLabel, lblVerifyCode, btnCopyCode });
         Controls.Add(pnlVerify);
 
-        // ── 错误横幅 ──
-        pnlError = MakePanel(0, 356, 440, 40);
-        pnlError.BorderStyle = BorderStyle.FixedSingle;
-        pnlError.BackColor = Color.FromArgb(30, 20, 20);
-        pnlError.Visible = false;
-
-        var lblErrIcon = MakeLabel("⚠️", 16, 8, 24, 24, 10f, FontStyle.Regular, C_RED);
-        lblErrorMsg = MakeLabel("", 42, 10, 280, 18, 8f, FontStyle.Regular, Color.FromArgb(252, 165, 165));
-
-        btnErrorDetail = new Button
-        {
-            Text = "详情",
-            Location = new Point(360, 8),
-            Size = new Size(60, 24),
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Color.Transparent,
-            ForeColor = C_RED,
-            Font = new Font("Microsoft YaHei UI", 8f),
-            Cursor = Cursors.Hand,
-        };
-        btnErrorDetail.FlatAppearance.BorderColor = Color.FromArgb(248, 113, 113, 68);
-        btnErrorDetail.Click += (s, e) =>
-        {
-            if (!string.IsNullOrEmpty(_lastError))
-                MessageBox.Show(_lastError, "错误详情", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        };
-
-        pnlError.Controls.AddRange(new Control[] { lblErrIcon, lblErrorMsg, btnErrorDetail });
-        Controls.Add(pnlError);
-
         // ── 日志面板 ──
-        var pnlLog = MakePanel(0, 396, 440, 220);
+        var pnlLog = MakePanel(0, 356, 440, 130);
         pnlLog.BorderStyle = BorderStyle.FixedSingle;
 
         var lblLogTitle = MakeLabel("日志", 16, 4, 40, 14, 8f, FontStyle.Bold, C_TEXT_MUTED);
@@ -252,7 +218,7 @@ public class MainForm : Form
         rtbLog = new RichTextBox
         {
             Location = new Point(0, 20),
-            Size = new Size(440, 200),
+            Size = new Size(440, 110),
             BackColor = Color.FromArgb(10, 15, 25),
             ForeColor = Color.FromArgb(148, 163, 184),
             Font = new Font("Consolas", 8f),
@@ -417,10 +383,6 @@ public class MainForm : Form
 
         // 验证码
         lblVerifyCode.Text = _verifyCode;
-
-        // 错误横幅
-        pnlError.Visible = !string.IsNullOrEmpty(_lastError);
-        lblErrorMsg.Text = _lastError;
     }
 
     static Color GetPlacementColor(int p)
