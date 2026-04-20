@@ -452,10 +452,10 @@ TAG_CHANGE Entity=[entityName=xxx ... cardId=xxx player=N] tag=PLAYER_LEADERBOAR
 **Power.log 中没有对手身份信息。**
 
 `CREATE_GAME` 块只列出 2 个 Player 实体：
-- `PlayerID=1` = 本地玩家（有 GameAccountId）
-- `PlayerID=9` = 共享的"酒馆老板/spectator"实体（`lo=0`）
+- `PlayerID=7` = 本地玩家（有 GameAccountId）
+- `PlayerID=15` = 共享的"酒馆老板/spectator"实体（`lo=0`）
 
-所有 8 个英雄都挂在 `player=1`（本地英雄）或 `player=9`（其他英雄）下。
+英雄实体中的 `player=N` 与 PlayerID 不同，需注意区分。
 HDT 的 `BattlegroundsLobbyInfo`（含对手 BattleTag + accountIdLo）来自 **HearthMirror**——
 一个 C# 库，通过读取炉石客户端**进程内存**获取，不是从日志读取。
 
@@ -538,24 +538,22 @@ python bg_parser/bg_parser.py
 
 ### 已知问题
 
-- [ ] **bg_parser 游戏结束检测不完全可靠**（2026-04-16）：最后一局已结束但脚本仍显示"进行中"。初步判断 BattleTag 格式的 LEADERBOARD_PLACE 行可能未出现在日志中（或出现在扫描范围外）。待采集更多 log 样本分析。
+- [ ] **bg_tool x86 注册表重定向问题**（2026-04-20）：bg_tool 编译为 x86（因 HearthMirror.dll 是 32 位），64 位 Windows 下 x86 进程访问注册表会被自动重定向。`Registry.LocalMachine.OpenSubKey("SOFTWARE\WOW6432Node\...")` 读不到正确的键值。Python bg_parser（64 位）不受影响。**已尝试**：`RegistryKey.OpenBaseKey(..., RegistryView.Registry64)` 显式读 64 位视图，未解决。**根因待查**。
+- [ ] **bg_tool 英雄解析失败**（2026-04-20）：`HERO_ENTITY` 在 Power.log 中有时出现在 `FULL_ENTITY` 之前，导致 `FindHeroByEntity` 返回 null → 英雄名显示"(等待数据)"，后续 LEADERBOARD_PLACE 也因 `Game.HeroCardId` 为空无法匹配排名。修复方案：`ResolveUnlinkedHero()` 在 CREATE_GAME 块结束和 STEP MAIN_START/MAIN_CLEANUP 时按 HeroEntityId 重试匹配 AllHeroes。**注意**：playerSlot 不能作为本地玩家标识（实际日志中本地英雄 player=1，Python parser 也不使用 playerSlot）。
+- [ ] **bg_tool 启动读取旧数据**（2026-04-20）：上局游戏未正常结束（无 STATE=COMPLETE），工具启动时 `FindLastCreateGamePos` 定位到最后一个 CREATE_GAME 并扫描旧数据，误认为"进行中"。修复方案：ScanExisting 后检测 active 但无任何游戏数据（无英雄/PlayerTag/AccountIdLo）时，判定为旧数据，跳到文件尾等待新游戏。
+- [ ] **bg_tool 闪退无报错**（2026-04-20）：双击 .exe 启动后窗口立即关闭。修复方案：Main 入口加 try-catch 包住逻辑，退出前等待回车。
+- [ ] **bg_tool 缺少 HearthDb.csproj 引用**（2026-04-20）：`HearthMirrorClient.ResolveHeroName()` 使用 `HearthDb.Cards.All`，但 csproj 未引用 `HearthDb.dll`。此功能仅用于诊断日志显示英雄中文名，核心数据从 Power.log 读取，不依赖 HearthDb。建议移除依赖。
+- [ ] **bg_parser 游戏结束检测不完全可靠**（2026-04-16）：最后一局已结束但脚本仍显示"进行中"。初步判断 BattleTag 格式的 LEADERBOARD_PLACE 行可能未出现在日志中。待采集更多 log 样本分析。
 
 ### 待办
 
+- [ ] bg_tool 注册表重定向问题解决后，重新实现上述修复（英雄解析兜底、旧数据跳过、进程检测、闪退修复）
+- [ ] bg_tool 编译为 x64 或使用 AnyCPU（摆脱 x86 注册表限制，需要解决 HearthMirror.dll 32 位依赖）
 - [ ] ELO 评分系统上线（feature/elo 分支有代码，已 revert）
-- [ ] bg_parser 重构为独立可执行程序（见下方开发计划）
-
-### 已修复（2026-04-20）
-
-- [x] **bg_tool 英雄解析失败**（2026-04-20）：`HERO_ENTITY` 在 Power.log 中有时出现在 `FULL_ENTITY` 之前，导致 `FindHeroByEntity` 返回 null → 英雄名显示"(等待数据)"，后续 LEADERBOARD_PLACE 也因 `Game.HeroCardId` 为空无法匹配排名。修复：`ResolveUnlinkedHero()` 三层兜底——CREATE_GAME 块结束时重试、STEP MAIN_START/MAIN_CLEANUP 时重试、ScanExisting 结束时兜底。方法 1 按 HeroEntityId 匹配，方法 2 按 playerSlot=7（本地玩家固定槽位）匹配。
-- [x] **bg_tool 启动读取旧数据**（2026-04-20）：上局游戏未正常结束（无 STATE=COMPLETE），工具启动时 `FindLastCreateGamePos` 定位到最后一个 CREATE_GAME 并扫描旧数据，误认为"进行中"。修复：ScanExisting 后检测 active 但无任何游戏数据（无英雄/PlayerTag/AccountIdLo）时，判定为旧数据，跳到文件尾等待新游戏。
-- [x] **bg_tool 炉石进程检测**（2026-04-20）：新增启动前和监控循环中检测 Hearthstone.exe 是否运行。未启动时等待，过程中关闭时暂停并自动恢复。
-
-### 已修复（2026-04-19）
-
-- [x] **bg_parser 字节偏移计算**：`FindLastCreateGamePos` 用 `GetByteCount(line) + 1` 算字节偏移，假设换行符 1 字节。但 Windows Power.log 用 CRLF（2 字节），累积偏移导致 seek 到错误位置，从头读取全部日志。修复：改用 `f.tell()` binary mode 取真实流位置。
-- [x] **bg_tool HearthMirror Lo 获取失败**：`HearthMirrorClient` 每次调用 `FetchLobbyPlayers()` 都 `new HearthMirror.Reflection()`，而 Python 版用全局单例。创建新实例无法维持游戏内存连接。修复：缓存单例 `_reflection` 实例。
-- [x] **bg_tool 中途启动无法使用**：`PreloadPlayerInfo` 只预加载 `PlayerTag`，未加载 `AccountIdLo` 和 `HeroEntityId`。中途启动时若 PlayerTag 为空，HERO_ENTITY 匹配永远失败 → HeroEntityId 为 0 → 英雄无法追踪 → 排名无输出。修复：扩展预加载为三个字段，全部找到后提前退出。
+- [ ] bg_tool 对接 Flask API（check-league / update-placement）
+- [ ] bg_tool WinForms 独立软件改造
+- [ ] UUID 问题：服务端改为 accountIdLoList 匹配
+- [ ] QQ 机器人更多命令
 
 ---
 
