@@ -20,6 +20,15 @@ class Program
         // Windows 控制台 UTF-8 输出
         Console.OutputEncoding = Encoding.UTF8;
 
+        // 双击启动时窗口不闪退
+        bool interactive = args.Length == 0 && Environment.UserInteractive;
+        if (interactive)
+        {
+            Console.WriteLine("bg_tool — 酒馆战棋日志解析器");
+            Console.WriteLine("实时监控模式（双击启动）");
+            Console.WriteLine();
+        }
+
         // 在任何 HearthMirror 代码被 JIT 之前注册依赖解析
         // HearthMirror.dll 依赖 untapped-scry-dotnet 等 DLL，需要从 HDT_PATH 加载
         AppDomain.CurrentDomain.AssemblyResolve += (sender, resolveArgs) =>
@@ -50,21 +59,36 @@ class Program
             }
         }
 
-        var logPath = LogPathFinder.Find(customPath);
-        if (logPath == null)
+        try
         {
-            Console.WriteLine("❌ 未找到 Power.log");
-            Console.WriteLine("用法: bg_tool [--parse] [Power.log路径]");
-            return;
+            var logPath = LogPathFinder.Find(customPath);
+            if (logPath == null)
+            {
+                Console.WriteLine("❌ 未找到 Power.log");
+                Console.WriteLine("用法: bg_tool [--parse] [Power.log路径]");
+                if (interactive) { Console.WriteLine("\n按回车退出..."); Console.ReadLine(); }
+                return;
+            }
+
+            if (parseMode)
+                ParseFile(logPath);
+            else
+            {
+                if (!WaitForHearthstone())
+                {
+                    if (interactive) { Console.WriteLine("\n按回车退出..."); Console.ReadLine(); }
+                    return;
+                }
+                TailLog(logPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ 启动失败: {ex.Message}");
+            Console.WriteLine(ex.StackTrace);
         }
 
-        if (parseMode)
-            ParseFile(logPath);
-        else
-        {
-            if (!WaitForHearthstone()) return;
-            TailLog(logPath);
-        }
+        if (interactive) { Console.WriteLine("\n按回车退出..."); Console.ReadLine(); }
     }
 
     /// <summary>
