@@ -64,12 +64,17 @@ public static class HearthMirrorClient
                 var p = lobby.Players[i];
                 var lo = p.AccountId?.Lo ?? (ulong)0;
                 var heroCardId = p.HeroCardId ?? "";
-                var heroName = ResolveHeroName(heroCardId);
-                result.Add(new LobbyPlayer { Lo = lo, HeroCardId = heroCardId, HeroName = heroName });
 
-                // Lo=0 时醒目标注
+                // 诊断：Lo=0 时输出更多信息
                 if (lo == 0)
-                    Console.WriteLine($"[HearthMirror] ⚠️ Lo=0: index={i}, 英雄={heroName}({heroCardId}) ← 观察此人是否为机器人");
+                {
+                    var accountIdNull = p.AccountId == null;
+                    var hi = p.AccountId?.Hi ?? 0;
+                    var name = p.Name ?? "(null)";
+                    Console.WriteLine($"[HearthMirror] ⚠️ Lo=0 诊断: index={i}, name=\"{name}\", AccountId is null={accountIdNull}, Hi={hi}, Hero={heroCardId}");
+                }
+
+                result.Add(new LobbyPlayer { Lo = lo, HeroCardId = heroCardId });
             }
             return result;
         }
@@ -78,18 +83,6 @@ public static class HearthMirrorClient
             Console.WriteLine($"[HearthMirror] 读取失败: {e.Message}");
             return new List<LobbyPlayer>();
         }
-    }
-
-    private static string ResolveHeroName(string cardId)
-    {
-        if (string.IsNullOrEmpty(cardId)) return "(未知)";
-        try
-        {
-            if (HearthDb.Cards.All.TryGetValue(cardId, out var card))
-                return card.GetLocName(HearthDb.Enums.Locale.zhCN) ?? card.Name ?? cardId;
-        }
-        catch { }
-        return cardId;
     }
 }
 }
