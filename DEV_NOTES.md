@@ -778,12 +778,30 @@ QQ群 ↔ QQ机器人 ↔ HTTP API ↔ Flask ↔ MongoDB
 
 ### bg_tool
 
-#### 2026-04-21 调试：LobbyInfo 属性 dump
-- 目的：验证 HearthMirror 的 BattlegroundsLobbyInfo 上是否有 Region / GameMode 属性（Power.log 中不存在此数据）
-- 添加 `DumpLobbyInfo()` 反射遍历 LobbyInfo 所有属性 + 每个 Player 的所有属性
-- 输出到 `%AppData%\HearthstoneDeckTracker\BGTracker\mirror_debug.log`
-- 每局游戏开始时重置 dump 标志，确保每局都重新 dump 一次
-- **待确认**：dump 结果中 Region 的类型（枚举/int？）和值，GameMode 的值含义（solo/duo？）
+#### 2026-04-21 BattlegroundsLobbyInfo 结构（已验证）
+
+HearthMirror 的 `Reflection.GetBattlegroundsLobbyInfo()` 返回 `HearthMirror.Objects.BattlegroundsLobbyInfo`：
+
+**BattlegroundsLobbyInfo 属性：**
+| 属性 | 类型 | 说明 |
+|------|------|------|
+| GameUuid | String | 对局 UUID，如 `281ac196-681f-4668-930f-e85e4076b010` |
+| Players | List\<BattlegroundsLobbyPlayer\> | 8 个玩家 |
+
+**没有** Region 或 GameMode 属性。
+
+**BattlegroundsLobbyPlayer 属性：**
+| 属性 | 类型 | 说明 |
+|------|------|------|
+| AccountId | AccountId | 含 Hi (long) 和 Lo (ulong) |
+| HeroCardId | String | 如 `BG26_HERO_101` |
+| Name | String | 玩家名（本地玩家有值，其他 7 人通常为空） |
+
+**HDT 插件获取 Region/Mode 的方式：** 不是来自 HearthMirror，而是 HDT 自身 API：
+- Region：`Core.Game.CurrentRegion.ToString()` → "CN"/"US"/"EU"
+- Mode：`Core.Game.IsBattlegroundsDuosMatch ? "duo" : "solo"`
+- bg_tool 作为独立程序没有 `Core.Game`，无法获取
+- **临时方案**：硬编码 region="CN", mode="solo"
 
 #### v0.1.1 (2026-04-19)
 - 修复 HearthMirror Lo 获取：Reflection 实例改为单例缓存，对齐 Python 全局变量模式
