@@ -88,12 +88,12 @@ public class MainForm : Form
             {
                 if (ok)
                 {
-                    lblStatus.Text = "● 已连接";
+                    lblStatus.Text = "● 服务正常";
                     lblStatus.ForeColor = C_GREEN;
                 }
                 else
                 {
-                    lblStatus.Text = "○ 未连接";
+                    lblStatus.Text = "○ 服务异常";
                     lblStatus.ForeColor = C_RED;
                 }
             }));
@@ -126,7 +126,7 @@ public class MainForm : Form
             }
         };
 
-        lblStatus = MakeLabel("○ 连接中...", 320, 16, 110, 20, 9f, FontStyle.Bold, C_TEXT_MUTED);
+        lblStatus = MakeLabel("○ 检测中...", 290, 16, 130, 20, 9f, FontStyle.Bold, C_TEXT_MUTED);
         lblStatus.TextAlign = ContentAlignment.MiddleRight;
 
         pnlHeader.Controls.AddRange(new Control[] { lblTitle, lblPlayerName, lblStatus });
