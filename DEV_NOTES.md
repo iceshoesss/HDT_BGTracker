@@ -778,6 +778,13 @@ QQ群 ↔ QQ机器人 ↔ HTTP API ↔ Flask ↔ MongoDB
 
 ### bg_tool
 
+#### 2026-04-21 调试：LobbyInfo 属性 dump
+- 目的：验证 HearthMirror 的 BattlegroundsLobbyInfo 上是否有 Region / GameMode 属性（Power.log 中不存在此数据）
+- 添加 `DumpLobbyInfo()` 反射遍历 LobbyInfo 所有属性 + 每个 Player 的所有属性
+- 输出到 `%AppData%\HearthstoneDeckTracker\BGTracker\mirror_debug.log`
+- 每局游戏开始时重置 dump 标志，确保每局都重新 dump 一次
+- **待确认**：dump 结果中 Region 的类型（枚举/int？）和值，GameMode 的值含义（solo/duo？）
+
 #### v0.1.1 (2026-04-19)
 - 修复 HearthMirror Lo 获取：Reflection 实例改为单例缓存，对齐 Python 全局变量模式
 - 修复中途启动无法使用：PreloadPlayerInfo 扩展为预加载 PlayerName + AccountIdLo + HeroEntityId
