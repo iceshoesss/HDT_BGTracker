@@ -172,10 +172,6 @@ public class Parser
                     Games.Add(old);
                     _pendingNewGame = null;
                 }
-
-                // CREATE_GAME 块结束时，尝试解析未关联的英雄
-                ResolveUnlinkedHero();
-
                 return _createHasTurn ? "reconnect" : "game_start";
             }
 
@@ -293,11 +289,6 @@ public class Parser
         if (m.Success)
         {
             var step = m.Groups[1].Value;
-
-            // 在 MAIN_START / MAIN_CLEANUP 时尝试解析未关联的英雄（二次兜底）
-            if (step == "MAIN_START" || step == "MAIN_CLEANUP")
-                ResolveUnlinkedHero();
-
             if (step == "MAIN_CLEANUP")
             {
                 if (!_loFetched)
@@ -453,25 +444,6 @@ public class Parser
                 return hero;
         }
         return null;
-    }
-
-    /// <summary>
-    /// 尝试将未关联的 HeroEntityId 与 AllHeroes 匹配。
-    /// HERO_ENTITY 可能出现在 FULL_ENTITY 之前（Power.log 时序问题），
-    /// 此时 FindHeroByEntity 失败。在 CREATE_GAME 块结束或 STEP 时重试。
-    /// </summary>
-    public void ResolveUnlinkedHero()
-    {
-        if (!string.IsNullOrEmpty(Game.HeroName)) return;
-        if (Game.HeroEntityId <= 0) return;
-
-        // 按 HeroEntityId 匹配（FULL_ENTITY 处理后 AllHeroes 已有数据）
-        var hero = FindHeroByEntity(Game.HeroEntityId);
-        if (hero != null && !string.IsNullOrEmpty(hero.HeroName))
-        {
-            Game.HeroName = hero.HeroName;
-            Game.HeroCardId = hero.CardId;
-        }
     }
 }
 }

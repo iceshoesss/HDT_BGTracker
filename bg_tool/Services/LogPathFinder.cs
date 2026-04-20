@@ -34,26 +34,6 @@ public static class LogPathFinder
             if (logPath != null) return logPath;
         }
 
-        // Battle.net 配置文件查找
-        installDir = FindHsFromBattleNetConfig();
-        if (installDir != null)
-        {
-            var logPath = FindLogInDir(Path.Combine(installDir, "Logs"));
-            if (logPath != null) return logPath;
-        }
-
-        // HDT_PATH 环境变量（编译时设置，运行时不一定有）
-        var hdtPath = Environment.GetEnvironmentVariable("HDT_PATH");
-        if (!string.IsNullOrEmpty(hdtPath))
-        {
-            var hdtLogs = Path.Combine(hdtPath, "Logs");
-            if (Directory.Exists(hdtLogs))
-            {
-                var logPath = FindLogInDir(hdtLogs);
-                if (logPath != null) return logPath;
-            }
-        }
-
         // 常见路径兜底
         foreach (var logsDir in new[]
         {
@@ -66,17 +46,6 @@ public static class LogPathFinder
             var logPath = FindLogInDir(logsDir);
             if (logPath != null) return logPath;
         }
-
-        // 诊断输出
-        Console.WriteLine("搜索路径:");
-        if (installDir != null)
-            Console.WriteLine($"  注册表: {Path.Combine(installDir, "Logs")} {(Directory.Exists(Path.Combine(installDir, "Logs")) ? "（目录存在，无 Power.log）" : "（目录不存在）")}");
-        else
-            Console.WriteLine("  注册表: 未找到炉石安装路径");
-        if (!string.IsNullOrEmpty(hdtPath))
-            Console.WriteLine($"  HDT_PATH: {Path.Combine(hdtPath, "Logs")} {(Directory.Exists(Path.Combine(hdtPath, "Logs")) ? "（目录存在，无 Power.log）" : "（目录不存在）")}");
-        else
-            Console.WriteLine("  HDT_PATH: 未设置");
 
         return null;
     }
@@ -128,13 +97,10 @@ public static class LogPathFinder
 
     private static string? FindHsInstallDir()
     {
-        // x86 进程在 64 位 Windows 下访问注册表会被自动重定向到 WOW6432Node，
-        // 导致显式指定 WOW6432Node 的路径读不到。需要用 RegistryView.Registry64
-        // 强制读 64 位注册表视图。
         try
         {
-            using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
-            using var key = baseKey.OpenSubKey(@"SOFTWARE\WOW6432Node\Blizzard Entertainment\Hearthstone");
+            using var key = Registry.LocalMachine.OpenSubKey(
+                @"SOFTWARE\WOW6432Node\Blizzard Entertainment\Hearthstone");
             var p = key?.GetValue("InstallPath") as string;
             if (!string.IsNullOrEmpty(p) && Directory.Exists(p)) return p;
         }
@@ -142,8 +108,8 @@ public static class LogPathFinder
 
         try
         {
-            using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
-            using var key = baseKey.OpenSubKey(@"SOFTWARE\Blizzard Entertainment\Hearthstone");
+            using var key = Registry.LocalMachine.OpenSubKey(
+                @"SOFTWARE\Blizzard Entertainment\Hearthstone");
             var p = key?.GetValue("InstallPath") as string;
             if (!string.IsNullOrEmpty(p) && Directory.Exists(p)) return p;
         }
@@ -151,41 +117,10 @@ public static class LogPathFinder
 
         try
         {
-            using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Registry64);
-            using var key = baseKey.OpenSubKey(@"SOFTWARE\Blizzard Entertainment\Hearthstone");
+            using var key = Registry.CurrentUser.OpenSubKey(
+                @"SOFTWARE\Blizzard Entertainment\Hearthstone");
             var p = key?.GetValue("InstallPath") as string;
             if (!string.IsNullOrEmpty(p) && Directory.Exists(p)) return p;
-        }
-        catch { }
-
-        return null;
-    }
-
-    private static string? FindHsFromBattleNetConfig()
-    {
-        // Battle.net 在 ProgramData 下存储产品配置，从中可以找到游戏安装路径
-        var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-        var agentDir = Path.Combine(programData, "Battle.net", "Agent");
-
-        if (!Directory.Exists(agentDir)) return null;
-
-        try
-        {
-            foreach (var file in Directory.GetFiles(agentDir, "*.*", SearchOption.AllDirectories))
-            {
-                try
-                {
-                    var content = File.ReadAllText(file);
-                    if (content.IndexOf("Hearthstone", StringComparison.OrdinalIgnoreCase) < 0) continue;
-
-                    var match = System.Text.RegularExpressions.Regex.Match(content,
-                        @"[A-Z]:\\[^""\s\\]+(?:\\[^""\s\\]+)*\\Hearthstone[^""\s\\]*",
-                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    if (match.Success && Directory.Exists(match.Value))
-                        return match.Value;
-                }
-                catch { }
-            }
         }
         catch { }
 
