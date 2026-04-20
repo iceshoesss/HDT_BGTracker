@@ -13,10 +13,6 @@
 
   <!-- HDT 引用 -->
   <ItemGroup>
-    <Reference Include="HearthDb">
-      <HintPath>$(HDT_PATH)\HearthDb.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
     <Reference Include="HearthMirror">
       <HintPath>$(HDT_PATH)\HearthMirror.dll</HintPath>
       <Private>True</Private>

@@ -463,32 +463,14 @@ public class Parser
     public void ResolveUnlinkedHero()
     {
         if (!string.IsNullOrEmpty(Game.HeroName)) return;
+        if (Game.HeroEntityId <= 0) return;
 
-        // 方法 1：按 HeroEntityId 匹配
-        if (Game.HeroEntityId > 0)
+        // 按 HeroEntityId 匹配（FULL_ENTITY 处理后 AllHeroes 已有数据）
+        var hero = FindHeroByEntity(Game.HeroEntityId);
+        if (hero != null && !string.IsNullOrEmpty(hero.HeroName))
         {
-            var hero = FindHeroByEntity(Game.HeroEntityId);
-            if (hero != null && !string.IsNullOrEmpty(hero.HeroName))
-            {
-                Game.HeroName = hero.HeroName;
-                Game.HeroCardId = hero.CardId;
-                return;
-            }
-        }
-
-        // 方法 2：按 playerSlot=7 匹配（炉石 BG 本地玩家固定为 slot 7）
-        if (string.IsNullOrEmpty(Game.HeroName) && Game.AllHeroes.Count > 0)
-        {
-            foreach (var kv in Game.AllHeroes)
-            {
-                if (kv.Key.Item2 == 7 && !string.IsNullOrEmpty(kv.Value.HeroName))
-                {
-                    Game.HeroName = kv.Value.HeroName;
-                    Game.HeroCardId = kv.Value.CardId;
-                    Game.HeroEntityId = kv.Value.EntityId;
-                    return;
-                }
-            }
+            Game.HeroName = hero.HeroName;
+            Game.HeroCardId = hero.CardId;
         }
     }
 }

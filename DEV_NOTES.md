@@ -452,10 +452,10 @@ TAG_CHANGE Entity=[entityName=xxx ... cardId=xxx player=N] tag=PLAYER_LEADERBOAR
 **Power.log 中没有对手身份信息。**
 
 `CREATE_GAME` 块只列出 2 个 Player 实体：
-- `PlayerID=7` = 本地玩家（有 GameAccountId）
-- `PlayerID=15` = 共享的"酒馆老板/spectator"实体（`lo=0`）
+- `PlayerID=1` = 本地玩家（有 GameAccountId）
+- `PlayerID=9` = 共享的"酒馆老板/spectator"实体（`lo=0`）
 
-所有 8 个英雄都挂在 `player=15`（对手英雄）或 `player=7`（本地英雄）下。
+所有 8 个英雄都挂在 `player=1`（本地英雄）或 `player=9`（其他英雄）下。
 HDT 的 `BattlegroundsLobbyInfo`（含对手 BattleTag + accountIdLo）来自 **HearthMirror**——
 一个 C# 库，通过读取炉石客户端**进程内存**获取，不是从日志读取。
 

@@ -83,12 +83,6 @@ public static class HearthMirrorClient
     private static string ResolveHeroName(string cardId)
     {
         if (string.IsNullOrEmpty(cardId)) return "(未知)";
-        try
-        {
-            if (HearthDb.Cards.All.TryGetValue(cardId, out var card))
-                return card.GetLocName(HearthDb.Enums.Locale.zhCN) ?? card.Name ?? cardId;
-        }
-        catch { }
         return cardId;
     }
 }
