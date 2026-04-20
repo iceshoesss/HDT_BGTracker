@@ -760,7 +760,7 @@ class UiTextWriter : TextWriter
     {
         _inner.Write(value);
         if (!string.IsNullOrEmpty(value) && value.Contains('\n'))
-            AppendToUi(value);
+            AppendToUi(value!);
     }
 
     private void AppendToUi(string text)
