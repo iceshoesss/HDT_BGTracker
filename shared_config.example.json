@@ -3,7 +3,5 @@
   "pluginApiKey": "",
   "region": "CN",
   "mode": "solo",
-  "testMode": true,
-  "mongoUrl": "mongodb://mongo:27017",
-  "flaskSecretKey": "changeme-in-production"
+  "testMode": true
 }
