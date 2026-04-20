@@ -25,10 +25,16 @@ public class Config
         var exeDir = AppDomain.CurrentDomain.BaseDirectory;
         var path = Path.Combine(exeDir, "config.json");
 
+        // 优先读 config.json，不存在则读 config.json.example
         if (!File.Exists(path))
         {
-            Console.WriteLine($"[Config] config.json 不存在，使用默认配置");
-            return new Config();
+            path = Path.Combine(exeDir, "config.json.example");
+            if (!File.Exists(path))
+            {
+                Console.WriteLine($"[Config] config.json 和 config.json.example 都不存在，使用默认配置");
+                return new Config();
+            }
+            Console.WriteLine($"[Config] config.json 不存在，使用 config.json.example");
         }
 
         try

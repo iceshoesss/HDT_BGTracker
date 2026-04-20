@@ -6,4 +6,4 @@ obj/
 __pycache__/
 migrate_league_count.py
 replacements.txt
-1.py
+1.pybg_tool/config.json
