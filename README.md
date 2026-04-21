@@ -259,8 +259,8 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 ### 进行中
 - bg_tool WinForms UI 细节优化
 - QQ 机器人更多命令（报名/退出队列、管理员命令）
-- bg_parser 游戏结束检测修复
 - ELO 评分系统（feature/elo 分支，待上线）
+- 比赛定制规则：断线重连检测标记（将来按需实现）
 
 ## 更新日志
 

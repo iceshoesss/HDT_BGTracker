@@ -541,17 +541,24 @@ python bg_parser/bg_parser.py
 - [x] **bg_tool 闪退无报错**（2026-04-20）：最初误判为 x86 注册表重定向问题，实际根因是未打开游戏时 `LogPathFinder.Find()` 返回 null，程序直接 return 退出。修复方案：未找到 Power.log 时循环等待游戏启动（3 秒重试），而非直接退出。见 commit `b793bec`。
 - [x] **bg_tool 英雄解析失败**（2026-04-20）：`HERO_ENTITY` 在 Power.log 中有时出现在 `FULL_ENTITY` 之前，导致 `FindHeroByEntity` 返回 null → 英雄名显示"(等待数据)"，后续 LEADERBOARD_PLACE 也因 `Game.HeroCardId` 为空无法匹配排名。修复方案：HERO_ENTITY 找不到英雄时不播报事件，等 FULL_ENTITY 补上后播报；STEP MAIN_START/MAIN_CLEANUP 时主动重试 `FindHeroByEntity`；LEADERBOARD_PLACE 增加 EntityId 匹配 fallback。已修复。**注意**：playerSlot 不能作为本地玩家标识（实际日志中本地英雄 player=1，Python parser 也不使用 playerSlot）。
 - [x] **bg_tool 启动读取旧数据**（2026-04-20）：上局游戏未正常结束（无 STATE=COMPLETE），工具启动时 `FindLastCreateGamePos` 定位到最后一个 CREATE_GAME 并扫描旧数据，误认为"进行中"。修复方案：ScanExisting 后检测 active 但无任何游戏数据（无英雄/PlayerTag/AccountIdLo）时，判定为旧数据，跳到文件尾等待新游戏。已修复。**已知边界场景**：玩家断线重连回同一局时，bg_tool 从重连的 CREATE_GAME 开始扫描，`_pendingNewGame` 为 null（全新 Parser），重连数据无法恢复旧局状态，Game 为空壳。该场景不常见，暂不处理。
-- [ ] **bg_tool 缺少 HearthDb.csproj 引用**（2026-04-20）：`HearthMirrorClient.ResolveHeroName()` 使用 `HearthDb.Cards.All`，但 csproj 未引用 `HearthDb.dll`。此功能仅用于诊断日志显示英雄中文名，核心数据从 Power.log 读取，不依赖 HearthDb。建议移除依赖。
-- [ ] **bg_parser 游戏结束检测不完全可靠**（2026-04-16）：最后一局已结束但脚本仍显示"进行中"。初步判断 BattleTag 格式的 LEADERBOARD_PLACE 行可能未出现在日志中。待采集更多 log 样本分析。
+- [x] **bg_tool 缺少 HearthDb.csproj 引用**（2026-04-20）：已移除 `ResolveHeroName()` 对 HearthDb 的依赖。
+- [ ] **bg_parser 游戏结束检测不完全可靠**（2026-04-16）：Python 参考实现，仅用于测试验证，不做修改。
 
 ### 待办
 
-- [ ] bg_tool 编译为 x64 或使用 AnyCPU（摆脱 x86 注册表限制，需要解决 HearthMirror.dll 32 位依赖）
+- [x] bg_tool 对接 Flask API（check-league / update-placement）— v0.2.0
+- [x] bg_tool WinForms 独立软件改造 — v0.2.0 框架完成，UI 细节优化中
+- [x] UUID 问题 — 已解决，双方均从 HearthMirror 读取 GameUuid，值一致
 - [ ] ELO 评分系统上线（feature/elo 分支有代码，已 revert）
-- [ ] bg_tool 对接 Flask API（check-league / update-placement）
-- [ ] bg_tool WinForms 独立软件改造（开发中，见 §11）
-- [ ] UUID 问题：服务端改为 accountIdLoList 匹配
-- [ ] QQ 机器人更多命令
+- [ ] QQ 机器人更多命令（报名/退出队列、管理员命令）
+- [ ] 比赛定制规则：断线重连检测标记（players[].reconnected 字段，将来按需实现）
+- [ ] bg_tool WinForms UI 细节优化
+
+### 已知限制
+
+- bg_tool 必须 x86 运行（HearthMirror.dll 是 32 位程序集，无法编译为 x64）
+- bg_tool 无法从游戏获取 Region/Mode，需手动配置
+- bg_tool 只能检测自己的断线重连，其他玩家的断线需服务端交叉验证
 
 ---
 
@@ -581,12 +588,9 @@ Python 原型（bg_parser）功能已完善，C# 重写版（bg_tool）已完成
 
 ### 待办
 
-- [ ] 对接 Flask API（check-league / update-placement）
-- [ ] 游戏结束检测可靠性修复
+- [ ] 游戏结束检测可靠性修复（针对非正常退出场景）
 - [ ] 多局连续追踪稳定性测试
-- [ ] LEADERBOARD_PLACE 动态排名追踪（所有玩家）
-- [ ] 配置文件（API 地址、token 等）
-- [ ] UUID 问题：bg_tool 和 HDT 插件同时使用时 gameUuid 不一致，需要服务端根据 accountIdLoList 去重（见下方记录）
+- [ ] LEADERBOARD_PLACE 动态排名追踪（仅本地玩家，当前已实现）
 - [ ] WinForms 独立软件改造（见下方 UI 设计）
 
 ### Python → C# 迁移对照
