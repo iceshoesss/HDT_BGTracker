@@ -102,15 +102,23 @@ public static class ApiClient
             if (!ok) return false;
 
             // 解析响应
+            // 无论 isLeague 结果如何，都提取 verificationCode
+            // 服务端 check-league 总是返回 verificationCode（确保玩家在 player_records 中有记录）
+            var vc = ExtractJsonString(json, "verificationCode");
+            if (!string.IsNullOrEmpty(vc))
+            {
+                VerificationCode = vc;
+                Console.WriteLine($"[API] ✅ 验证码: {VerificationCode}");
+            }
+
             var isLeague = json.Contains("\"isLeague\"") && json.Contains("true");
             if (isLeague)
             {
-                VerificationCode = ExtractJsonString(json, "verificationCode");
-                Console.WriteLine($"[API] ✅ 联赛对局 | 验证码: {VerificationCode}");
+                Console.WriteLine("[API] 联赛对局已匹配");
             }
             else
             {
-                Console.WriteLine("[API] 非联赛对局，跳过");
+                Console.WriteLine("[API] 非联赛对局，但验证码已获取");
             }
 
             LastLeagueResult = isLeague;
