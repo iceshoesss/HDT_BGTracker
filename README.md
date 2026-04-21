@@ -141,7 +141,6 @@ $env:HDT_PATH = "C:\...\HDT"
 ```json
 {
   "apiBaseUrl": "http://localhost:5000",
-  "apiKey": "",
   "region": "CN",
   "mode": "solo",
   "testMode": true
@@ -151,10 +150,11 @@ $env:HDT_PATH = "C:\...\HDT"
 | 字段 | 说明 |
 |------|------|
 | `apiBaseUrl` | Flask API 地址 |
-| `apiKey` | PLUGIN_API_KEY（可选，留空则不发送 Authorization header） |
 | `region` | 服务器区域（bg_tool 无法从游戏获取，需手动配置） |
 | `mode` | 游戏模式（bg_tool 无法从游戏获取，需手动配置） |
 | `testMode` | 测试模式：跳过 check-league 判定，所有对局强制标记为联赛 |
+
+> **注意**：`PLUGIN_API_KEY` 为编译时常量，已嵌入二进制文件中，不暴露在 config.json。发布前需替换 `ApiClient.cs` 中的 `const string ApiKey`。"
 
 ### 调试（mock_server.py）
 
