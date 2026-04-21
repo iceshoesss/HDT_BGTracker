@@ -231,6 +231,14 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 ## 当前开发状态
 
+### bg_tool v0.2.1 (2026-04-21)
+- 标题栏显示版本号
+- 点击玩家名跳转 URL 改为 apiBaseUrl 拼接
+- 断线重连时日志显示具体时间
+- apiKey 改为编译时常量，不暴露在 config.json
+- 启动扫描旧日志不触发 check_league，避免读到残留内存数据
+- 日志优化：bg_tool.log 超 1MB 覆盖重写，移除 Lo=0 诊断日志
+
 ### bg_tool v0.2.0 (2026-04-21)
 - WinForms 桌面应用（深色主题 UI）
 - 对接 Flask API（check-league + update-placement）

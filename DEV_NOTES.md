@@ -817,6 +817,14 @@ HearthMirror 的 `Reflection.GetBattlegroundsLobbyInfo()` 返回 `HearthMirror.O
 3. `Core.Game` 是 HDT 的 `GameV2` 类，Region 来自 Battle.net 客户端的区域配置（不是游戏内存），Mode 来自 HDT 对游戏实体标签的解析
 4. 结论：bg_tool 无法绕过 HDT 框架获取这两项，必须硬编码或从外部配置
 
+#### v0.2.1 (2026-04-21)
+- 标题栏显示版本号（从程序集版本读取）
+- 点击玩家名跳转 URL 改为 apiBaseUrl 拼接
+- 断线重连时日志显示具体时间 `[游戏] 🔄 断线重连 HH:mm:ss`
+- apiKey 改为编译时常量（`ApiClient.cs` 的 `const string ApiKey`），不暴露在 config.json
+- 启动扫描旧日志不触发 check_league（`_scanning` 标志），避免读到 HearthMirror 残留内存数据
+- 日志优化：bg_tool.log 超 1MB 覆盖重写，移除 Lo=0 诊断日志，增加 API 连接日志
+
 #### v0.2.0 (2026-04-21)
 - WinForms 桌面应用：深色主题 UI，对局状态/最近战绩/今日统计/验证码复制
 - 对接 Flask API：check-league（STEP 13）+ update-placement（游戏结束），失败重试 3 次

@@ -64,7 +64,9 @@ public class MainForm : Form
 
     public MainForm()
     {
-        Text = "🍺 酒馆战棋联赛工具";
+        var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        var verStr = version != null ? $"v{version.Major}.{version.Minor}.{version.Build}" : "";
+        Text = $"🍺 酒馆战棋联赛工具 {verStr}";
         Size = new Size(440, 510);
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
@@ -123,7 +125,7 @@ public class MainForm : Form
         {
             if (!string.IsNullOrEmpty(_playerTag))
             {
-                try { Process.Start($"https://league.你的域名.com/player/{Uri.EscapeDataString(_playerTag)}"); }
+                try { Process.Start($"{_config.ApiBaseUrl}/player/{Uri.EscapeDataString(_playerTag)}"); }
                 catch { }
             }
         };
@@ -532,6 +534,9 @@ public class MainForm : Form
                             _state = AppState.InGame;
                             _leagueChecked = false;
                             uiChanged = true;
+                            break;
+                        case "reconnect":
+                            Console.WriteLine($"[游戏] 🔄 断线重连 {DateTime.Now:HH:mm:ss}");
                             break;
                         case "player_info":
                             _playerTag = _parser.Game.PlayerTag;
