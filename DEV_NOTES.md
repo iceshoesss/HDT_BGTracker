@@ -821,6 +821,9 @@ HearthMirror 的 `Reflection.GetBattlegroundsLobbyInfo()` 返回 `HearthMirror.O
 3. `Core.Game` 是 HDT 的 `GameV2` 类，Region 来自 Battle.net 客户端的区域配置（不是游戏内存），Mode 来自 HDT 对游戏实体标签的解析
 4. 结论：bg_tool 无法绕过 HDT 框架获取这两项，必须硬编码或从外部配置
 
+#### v0.2.2 (2026-04-21)
+- 修复非联赛对局验证码不显示：check-league 回调中验证码更新与 isLeague 判断解耦，无论是否联赛都同步验证码到 UI
+
 #### v0.2.1 (2026-04-21)
 - 标题栏显示版本号（从程序集版本读取）
 - 点击玩家名跳转 URL 改为 apiBaseUrl 拼接

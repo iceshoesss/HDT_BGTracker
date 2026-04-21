@@ -7,7 +7,7 @@
     <RootNamespace>BgTool</RootNamespace>
     <AssemblyName>bg_tool</AssemblyName>
     <LangVersion>8.0</LangVersion>
-    <Version>0.2.1</Version>
+    <Version>0.2.2</Version>
     <Description>炉石酒馆战棋联赛工具（WinForms 版）</Description>
   </PropertyGroup>
 

@@ -231,6 +231,9 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 ## 当前开发状态
 
+### bg_tool v0.2.2 (2026-04-21)
+- 修复非联赛对局验证码不显示：check-league 回调中验证码更新与 isLeague 判断解耦
+
 ### bg_tool v0.2.1 (2026-04-21)
 - 标题栏显示版本号
 - 点击玩家名跳转 URL 改为 apiBaseUrl 拼接
@@ -265,6 +268,14 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 ## 更新日志
 
 > Web 端更新日志已迁移至 [LeagueWeb](https://github.com/iceshoesss/LeagueWeb) 仓库。
+
+### v0.2.2 (2026-04-21)
+- 修复非联赛对局验证码不显示：check-league 回调中验证码更新与 isLeague 判断解耦
+
+### v0.2.1 (2026-04-21)
+- 标题栏显示版本号、点击玩家名跳转 URL 拼接、断线重连日志
+- apiKey 改为编译时常量、启动扫描旧日志不触发 check_league
+- 日志优化：超 1MB 覆盖重写
 
 ### v0.2.0 (2026-04-21)
 - WinForms 桌面应用（深色主题 UI）

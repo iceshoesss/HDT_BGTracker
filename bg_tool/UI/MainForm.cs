@@ -570,10 +570,13 @@ public class MainForm : Form
                                         Console.WriteLine("[API] [TEST] 强制标记为联赛对局（忽略 isLeague=false）");
                                     }
 
+                                    // 验证码无论是否联赛都更新（check-league 总会返回）
+                                    if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
+                                        _verifyCode = ApiClient.VerificationCode;
+
                                     if (isLeague)
                                     {
                                         _state = AppState.LeagueGame;
-                                        _verifyCode = ApiClient.VerificationCode;
                                     }
                                     BeginInvoke(new Action(UpdateUI));
                                 });
