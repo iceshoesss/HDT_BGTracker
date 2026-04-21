@@ -771,7 +771,83 @@ QQ群 ↔ QQ机器人 ↔ HTTP API ↔ Flask ↔ MongoDB
 
 不需要新建集合，不需要改动现有字段。
 
-## 14. 更新记录
+## 14. 淘汰赛设计（LeagueWeb feat/knockout 分支）
+
+> 2026-04-22 讨论并确认
+
+### 核心设计
+
+- 淘汰赛预分组，管理员创建赛事时分配 8 人一组（`tournament_groups` 集合）
+- 每组打 N 局（BO3/BO5/BO7），每轮可配置不同（如海选 BO3、决赛 BO5）
+- 按 N 局累计积分排名，前 4 晋级
+- **插件不需要改动**——插件只上报 8 个 Lo，判断逻辑全在 Flask 侧
+
+### 匹配机制
+
+淘汰赛 **不走 `league_waiting_queue`**，直接在 `tournament_groups` 内部匹配：
+
+```
+check-league → 先查 tournament_groups（status=waiting + gamesPlayed < boN + Lo 集合匹配）
+  → 匹配到 → isLeague=true，创建 league_matches（带 tournamentGroupId）
+  → 没匹配到 → 查 league_waiting_queue（积分赛）→ 都没匹配到 → isLeague=false
+```
+
+BO 系列赛流程：
+1. 管理员创建赛事 → tournament_groups 初始化（status=waiting, boN=N, gamesPlayed=0）
+2. 8 人进游戏 → check-league 匹配到 → 创建 match → gamesPlayed=1
+3. 打完 → update-placement 累加积分 → gamesPlayed < boN → status 回到 waiting
+4. 8 人重开游戏 → check-league 再次匹配（同一个 tournament_group）→ 创建新 match
+5. 全部打完 → status=done → 晋级判定 → 自动创建下一轮分组
+
+### tournament_groups 数据结构
+
+```json
+{
+  "tournamentName": "2026 春季赛",
+  "round": 1,
+  "groupIndex": 1,
+  "status": "waiting",        // waiting / active / done
+  "boN": 3,                   // 本组打几局
+  "gamesPlayed": 1,           // 已完成局数
+  "players": [
+    {
+      "battleTag": "xxx#1234",
+      "accountIdLo": "1708070391",
+      "displayName": "xxx",
+      "heroCardId": "TB_BaconShop_HERO_56",
+      "heroName": "阿莱克丝塔萨",
+      "totalPoints": 7,       // BO 累计积分
+      "games": [7],           // 每局得分明细
+      "placement": null,      // 最终排名（done 后计算）
+      "points": null,         // 最终总分
+      "qualified": false,     // 是否晋级
+      "eliminated": false,
+      "empty": false
+    }
+  ],
+  "nextRoundGroupId": 1,      // 晋级目标组号
+  "startedAt": null,
+  "endedAt": null
+}
+```
+
+### 已知问题：移动端玩家
+
+手机玩家无法使用插件，获取不到 accountIdLo。插件上报的是对手的 Lo（来自 HearthMirror 读内存），但对手的 battleTag 无法获取（HearthMirror 限制：只有本地玩家有 tag，对手只有 Lo）。
+
+讨论的解决方案（待定）：
+1. 匹配阈值降为 5/8 人匹配即可（容错手机玩家 Lo 缺失）
+2. 手机玩家提前开一局，由同局有插件的玩家获取他们的 Lo，管理员手动注册
+
+### 积分规则
+
+| 排名 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|------|---|---|---|---|---|---|---|---|
+| 积分 | 9 | 7 | 6 | 5 | 4 | 3 | 2 | 1 |
+
+BO N 下每局积分不变，N 局累加。公式：`points = placement == 1 ? 9 : max(1, 9 - placement)`
+
+## 15. 更新记录
 
 <details>
 <summary>展开完整版本历史</summary>

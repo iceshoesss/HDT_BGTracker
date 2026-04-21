@@ -62,7 +62,12 @@ docker build -t league-web:v0.1.0 -t league-web:latest ./league
 
 联赛网站已拆分为独立仓库：[LeagueWeb](https://github.com/iceshoesss/LeagueWeb)
 
+- **main 分支**：积分赛（排行榜 + 报名队列 + 等待队列）
+- **feat/knockout 分支**：淘汰赛（BO N 赛制 + 对阵图 + 自动晋级）
+
 部署、配置、环境变量等详见 LeagueWeb 仓库。
+
+> **淘汰赛不需要改插件。** 插件只上报 8 个 accountIdLo，判断逻辑全在 Flask 侧。check-league 先查 tournament_groups 匹配（淘汰赛），没匹配到再查 waiting_queue（积分赛）。
 
 ## C# 插件编译
 
