@@ -14,9 +14,17 @@ class Program
     static void Main(string[] args)
     {
         // 日志文件（WinExe 没有控制台，Console 输出写入 bg_tool.log）
+        // 超过 1MB 时覆盖重写，避免无限增长
         var logDir = AppDomain.CurrentDomain.BaseDirectory;
         var logPath = Path.Combine(logDir, "bg_tool.log");
-        var logWriter = new StreamWriter(logPath, append: true) { AutoFlush = true };
+        bool overwrite = false;
+        try
+        {
+            if (File.Exists(logPath) && new FileInfo(logPath).Length > 1024 * 1024)
+                overwrite = true;
+        }
+        catch { }
+        var logWriter = new StreamWriter(logPath, append: !overwrite) { AutoFlush = true };
         Console.SetOut(logWriter);
         Console.SetError(logWriter);
         Console.WriteLine($"\n=== bg_tool 启动 {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");

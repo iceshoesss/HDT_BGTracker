@@ -84,6 +84,7 @@ public class MainForm : Form
         Task.Run(async () =>
         {
             var ok = await ApiClient.PingAsync();
+            Console.WriteLine(ok ? "[API] ✅ 服务连接正常" : "[API] ❌ 服务连接异常");
             BeginInvoke(new Action(() =>
             {
                 if (ok)

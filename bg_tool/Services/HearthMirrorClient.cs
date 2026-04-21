@@ -68,12 +68,6 @@ public static class HearthMirrorClient
                 var lo = p.AccountId?.Lo ?? (ulong)0;
                 var heroCardId = p.HeroCardId ?? "";
 
-                // 诊断：Lo=0 时输出更多信息
-                if (lo == 0)
-                {
-                    Console.WriteLine($"[HearthMirror] ⚠️ index={i} Lo=0, Hero={heroCardId}");
-                }
-
                 result.Add(new LobbyPlayer { Lo = lo, HeroCardId = heroCardId });
             }
             return result;
