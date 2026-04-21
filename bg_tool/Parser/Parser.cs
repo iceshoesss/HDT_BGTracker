@@ -451,6 +451,12 @@ public class Parser
         _loFetched = false;
     }
 
+    /// <summary>重置大厅状态，用于扫描完成后重新允许触发 check_league</summary>
+    public void ResetLobbyState()
+    {
+        _loFetched = false;
+    }
+
     private void EndGame()
     {
         if (!Game.IsActive) return;

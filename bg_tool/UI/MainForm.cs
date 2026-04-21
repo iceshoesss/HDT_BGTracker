@@ -56,6 +56,7 @@ public class MainForm : Form
     Config _config = null!;
     bool _leagueChecked = false; // 当前对局是否已调过 check-league
     string _currentGameUuid = "";
+    bool _scanning = false; // 扫描旧日志期间不触发 check_league
 
     // ═══════════════════════════════════════
     //  构造
@@ -436,7 +437,9 @@ public class MainForm : Form
 
         try
         {
+            _scanning = true;
             ScanExisting(logPath, out _parser, out pos);
+            _scanning = false;
 
             // 检测空壳旧数据
             if (_parser.Game.IsActive
@@ -449,6 +452,7 @@ public class MainForm : Form
             }
             else if (_parser.Game.IsActive)
             {
+                _parser.ResetLobbyState(); // 扫描跳过 check_league，实时监控中重新触发
                 _state = AppState.InGame;
                 _playerTag = _parser.Game.PlayerTag;
             }
@@ -477,7 +481,9 @@ public class MainForm : Form
                     if (newPath != null)
                     {
                         currentPath = newPath;
+                        _scanning = true;
                         ScanExisting(currentPath, out _parser, out pos);
+                        _scanning = false;
 
                         if (_parser.Game.IsActive
                             && string.IsNullOrEmpty(_parser.Game.HeroName)
@@ -489,6 +495,7 @@ public class MainForm : Form
                         }
                         else if (_parser.Game.IsActive)
                         {
+                            _parser.ResetLobbyState(); // 扫描跳过 check_league，实时监控中重新触发
                             _state = AppState.InGame;
                             _playerTag = _parser.Game.PlayerTag;
                         }
@@ -535,7 +542,7 @@ public class MainForm : Form
                             uiChanged = true;
                             break;
                         case "check_league":
-                            if (!_leagueChecked)
+                            if (!_leagueChecked && !_scanning)
                             {
                                 _leagueChecked = true;
                                 var game = _parser.Game;
