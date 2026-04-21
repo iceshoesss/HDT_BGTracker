@@ -1,6 +1,5 @@
 {
   "apiBaseUrl": "https://你的域名.com",
-  "pluginApiKey": "",
   "region": "CN",
   "mode": "solo",
   "testMode": true

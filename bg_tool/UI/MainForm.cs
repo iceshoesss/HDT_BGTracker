@@ -74,7 +74,7 @@ public class MainForm : Form
 
         // 加载配置并初始化 API
         _config = Config.Load();
-        ApiClient.Init(_config.ApiBaseUrl, _config.ApiKey);
+        ApiClient.Init(_config.ApiBaseUrl);
         GameStore.Init();
 
         BuildUI();

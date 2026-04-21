@@ -18,7 +18,6 @@ namespace BgTool
 public class Config
 {
     public string ApiBaseUrl { get; set; } = "http://localhost:5000";
-    public string ApiKey { get; set; } = "";
     public string Region { get; set; } = "CN";
     public string Mode { get; set; } = "solo";
     public bool TestMode { get; set; } = false;
@@ -91,9 +90,6 @@ public class Config
                 switch (key)
                 {
                     case "apiBaseUrl": cfg.ApiBaseUrl = val; break;
-                    case "pluginApiKey": // 共享配置字段名
-                    case "apiKey":       // 本地配置字段名
-                        cfg.ApiKey = val; break;
                     case "region": cfg.Region = val; break;
                     case "mode": cfg.Mode = val; break;
                     case "testMode": cfg.TestMode = val.Trim().ToLower() == "true"; break;

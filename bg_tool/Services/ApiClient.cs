@@ -17,7 +17,11 @@ public static class ApiClient
 {
     // 配置
     private static string _baseUrl = "";
-    private static string _apiKey = "";
+
+    // API Key 编译时写入，不暴露给用户配置
+    // 发布前需替换为实际 Key
+    private const string ApiKey = "";
+
     private static string _pluginVersion = "0.5.7"; // 服务端兼容版本，bg_tool 实际版本另算
 
     private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
@@ -30,10 +34,9 @@ public static class ApiClient
     /// <summary>
     /// 初始化配置（从配置文件或默认值）
     /// </summary>
-    public static void Init(string baseUrl, string apiKey = "")
+    public static void Init(string baseUrl)
     {
         _baseUrl = baseUrl.TrimEnd('/');
-        _apiKey = apiKey;
     }
 
     /// <summary>
@@ -45,8 +48,8 @@ public static class ApiClient
         {
             var request = new HttpRequestMessage(HttpMethod.Get, _baseUrl + "/");
             request.Headers.Add("X-HDT-Plugin", _pluginVersion);
-            if (!string.IsNullOrEmpty(_apiKey))
-                request.Headers.Add("Authorization", $"Bearer {_apiKey}");
+            if (!string.IsNullOrEmpty(ApiKey))
+                request.Headers.Add("Authorization", $"Bearer {ApiKey}");
 
             var response = await _http.SendAsync(request);
             return response.IsSuccessStatusCode;
@@ -198,8 +201,8 @@ public static class ApiClient
 
         var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
         request.Headers.Add("X-HDT-Plugin", _pluginVersion);
-        if (!string.IsNullOrEmpty(_apiKey))
-            request.Headers.Add("Authorization", $"Bearer {_apiKey}");
+        if (!string.IsNullOrEmpty(ApiKey))
+            request.Headers.Add("Authorization", $"Bearer {ApiKey}");
 
         var response = await _http.SendAsync(request);
         var respBody = await response.Content.ReadAsStringAsync();
