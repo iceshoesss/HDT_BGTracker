@@ -117,8 +117,20 @@ C# 插件 (HDT_BGTracker/)          Flask 网站 (LeagueWeb/)
 - 投降或自然淘汰：**无新 STEP 变化**，游戏直接切回菜单
 - **STEP 检测无法判断 BG 游戏结束**
 - 游戏结束依赖 HDT 的 `IsInMenu = true`（由日志 mode 变化驱动）
-- 自然淘汰时 `FinalPlacement` 在 `HandleGameEnd(true)` 时已可读
 - **当前方案：保持 `IsInMenu` 检测**
+
+**关于 FinalPlacement 的踩坑记录（2026-04-15 实测）**：
+- ❌ `FinalPlacement` **在游戏内始终为 null**，不可用于提前检测淘汰
+- `FinalPlacement` 由 HDT 的 `HandleGameEnd()` 设置，读取的是 `PLAYER_LEADERBOARD_PLACE` tag
+- 该 tag 只有在 HDT 处理完整 power log（`STATE=COMPLETE`）后才可读
+- 游戏内轮询 ~500 次全部 null，IsInMenu 触发后才变为实际值
+- ❌ 英雄血量 ≤ 0 可在游戏内读取，但**无法解决并列排名和投降排名问题**
+  - 自然淘汰时有并列可能（同轮多人淘汰，排名相同）
+  - 投降时排名不确定（可能在任意轮次，排名不等于"活着人数+1"）
+  - 只有服务端的 `PLAYER_LEADERBOARD_PLACE` 才是准确的
+- ⚠️ 玩家淘汰后 AFK 挂机不回菜单时，`IsInMenu` 延迟触发，上传会有延迟
+  - 这是 HDT 层面的限制，插件无法绕过
+  - 服务端有 80 分钟超时兜底
 
 ### 2.5 HeroDb → 英雄名
 
@@ -404,55 +416,519 @@ docker compose up -d
 
 ---
 
-## 8. 待办
+## 8. Power.log 直接解析（bg_parser）
 
-- [ ] **插件架构改造：直连 MongoDB → HTTP API（通过 CF Tunnel）**
-  - 背景：CF Tunnel 只能穿透 HTTP，无法暴露 MongoDB 端口
-  - C# 插件：`MongoDB.Driver` → `HttpClient` + `JavaScriptSerializer`
-  - Flask 端：`/api/plugin/*` 端点，由插件 HTTP 调用
-  - 插件体积：仅 1 个 DLL（移除 MongoDB 全套依赖）
+> 脱离 HDT 插件，直接从游戏日志提取数据。位于 `bg_parser/bg_parser.py`。
+
+### 8.1 Power.log 格式
+
+关键日志行：
+
+```
+GameState.DebugPrintPower() - CREATE_GAME                          → 新游戏开始
+GameState.DebugPrintGame() - GameType=GT_BATTLEGROUNDS             → 确认战棋模式
+GameState.DebugPrintGame() - PlayerID=7, PlayerName=玩家名#1234    → 本地玩家
+GameState.DebugPrintPower() - Player EntityID=20 PlayerID=7 GameAccountId=[hi=.. lo=1708070391]
+                                                                   → accountIdLo
+PowerTaskList...FULL_ENTITY ... entityName=xxx cardId=BG34_HERO_002 player=7
+                                                                   → 英雄实体
+TAG_CHANGE Entity=[entityName=xxx ... cardId=xxx player=N] tag=PLAYER_LEADERBOARD_PLACE value=N
+                                                                   → 排名更新
+```
+
+### 8.2 可提取数据
+
+| 数据 | 来源 | 可靠性 |
+|------|------|--------|
+| 本地玩家 BattleTag | `DebugPrintGame` 的 `PlayerName` | ✅ 可靠 |
+| accountIdLo | `Player EntityID` 的 `lo` 字段 | ✅ 可靠 |
+| 英雄名 + cardId | `FULL_ENTITY` + `LEADERBOARD_PLACE` | ✅ 可靠 |
+| 最终排名 | `LEADERBOARD_PLACE` 最后出现的值 | ⚠️ 游戏中动态变化 |
+| 对手 BattleTag | — | ❌ 不存在于 Power.log |
+| 对手 accountIdLo | — | ❌ 不存在于 Power.log |
+
+### 8.3 关键发现
+
+**Power.log 中没有对手身份信息。**
+
+`CREATE_GAME` 块只列出 2 个 Player 实体：
+- `PlayerID=7` = 本地玩家（有 GameAccountId）
+- `PlayerID=15` = 共享的"酒馆老板/spectator"实体（`lo=0`）
+
+英雄实体中的 `player=N` 与 PlayerID 不同，需注意区分。
+HDT 的 `BattlegroundsLobbyInfo`（含对手 BattleTag + accountIdLo）来自 **HearthMirror**——
+一个 C# 库，通过读取炉石客户端**进程内存**获取，不是从日志读取。
+
+**LEADERBOARD_PLACE 在游戏中动态变化：**
+- 排名会在战斗阶段不断重排（7↔8 互换等）
+- 真正的最终排名在游戏结束前最后几秒才确定
+- 解析器取最后出现的值，但中间值可能不准确
+
+### 8.4 自动查找日志路径
+
+1. Windows 注册表：`HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Blizzard Entertainment\Hearthstone\InstallPath`
+2. 常见安装路径兜底（D:\Battle.net\、C:\Program Files\ 等）
+3. 在 `Logs\` 下找最新修改的 `Hearthstone_*` 文件夹
+
+### 8.5 实时监控机制
+
+- 100ms 轮询读取文件新内容
+- 每 ~10 秒检查 Logs 目录下是否有更新的 `Hearthstone_xx` 文件夹
+- 玩家重启游戏 → 自动切换到新日志 → 扫描新文件已有内容重建对局状态
+
+### 8.6 中途接入与断线重连
+
+**启动时找最后一个 CREATE_GAME 位置开始扫描。** 原因：
+- 从头扫描会输出所有历史对局，没有意义
+- 只关心最后一局：如果已结束则等待下一局，如果未结束则是断线重连/中途启动
+- `_find_last_create_game_pos()` 跳到该位置，静默处理已有数据（不打印历史排名变化）
+- 扫描完后如果对局仍在进行，输出当前状态概要（玩家、英雄、当前排名），然后继续实时监控
+
+**游戏结束检测（扫描阶段）：**
+- `RE_LB_TAG` 匹配到本地玩家 BattleTag → 游戏已结束（HDT 只在游戏结束时用 BattleTag 格式写排名行）
+- 8 个英雄全部有 placement → 游戏已结束
+- 以上两个信号任一命中即标记 `is_active = False`，不再追踪该局
+
+**断线重连英雄匹配：**
+- LEADERBOARD_PLACE 通过 `card_id + player_slot` 匹配已有英雄（而非 entity_id）
+- 原因：断线重连后 entity_id 可能变化，但 card_id + player_slot 保持一致
+- 没有匹配到已有英雄时才创建新的 HeroPlacement（正常游戏 FULL_ENTITY 已创建）
+
+**LEADERBOARD_PLACE 追踪所有玩家（不仅是本地玩家）：**
+- 通过 `RE_LB_ENTITY` 正则匹配带 cardId 的 LEADERBOARD_PLACE 行
+- 每次匹配时更新 `all_heroes` 和 `hero_placements`（如果 entity 不存在则自动创建）
+- 本地玩家判定：entity_id 匹配 `local_hero_entity_id`，或 `player_slot == 7`
+- 断线重连时本地玩家的 HERO_ENTITY 可能不出现，通过 player_slot=7 回退识别
+
+### 8.7 HearthMirror 集成（获取对手 Lo）
+
+bg_parser 通过 pythonnet 加载 HearthMirror.dll，在 STEP 13（MAIN_CLEANUP）时读取大厅 8 个玩家的 `AccountId.Lo` + `HeroCardId`。
+
+**前置条件**：
+- **必须 32 位 Python**（HearthMirror.dll 是 x86 编译，64 位 Python 无法加载）
+- pythonnet 包
+- HearthMirror.dll 路径通过 `HDT_PATH` 环境变量指定，或放在 `bg_parser/` 同级目录
+
+```powershell
+$env:HDT_PATH = "C:\...\HDT"
+python bg_parser/bg_parser.py
+```
+
+**加载机制**：
+- `pythonnet.set_runtime('netfx')` 只能调用一次，重复调用会报 "already been loaded"
+- 解决方案：`set_runtime` 失败时 catch 异常继续执行（运行时可能已加载）
+- 用 `_mirror_init_attempted` 标志确保只尝试初始化一次，失败不再重试
+
+**读取方式**：
+- `HearthMirror.Reflection()` 实例化 → `GetBattlegroundsLobbyInfo()` → `Players`
+- 每个 Player 有 `AccountId.Lo`、`AccountId.Hi`、`HeroCardId`
+- **只有本地玩家有 `Name`**，对手 Name 为空（这是 HearthMirror 的限制）
+
+**时机验证**：
+- ❌ `game_start`（CREATE_GAME）时内存未就绪：只拿到 7 人，第 8 个 Lo=0
+- ✅ `MAIN_CLEANUP`（STEP 13）时完整获取 8 人 + 英雄信息
+
+**可选依赖设计**：
+- 导入失败不影响 bg_parser 正常运行
+- 没有 32 位 Python 或找不到 DLL 时静默降级
 
 ---
 
-## 9. 更新记录
+## 9. 待办与已知问题
+
+### 已知问题
+
+- [x] **bg_tool 闪退无报错**（2026-04-20）：最初误判为 x86 注册表重定向问题，实际根因是未打开游戏时 `LogPathFinder.Find()` 返回 null，程序直接 return 退出。修复方案：未找到 Power.log 时循环等待游戏启动（3 秒重试），而非直接退出。见 commit `b793bec`。
+- [x] **bg_tool 英雄解析失败**（2026-04-20）：`HERO_ENTITY` 在 Power.log 中有时出现在 `FULL_ENTITY` 之前，导致 `FindHeroByEntity` 返回 null → 英雄名显示"(等待数据)"，后续 LEADERBOARD_PLACE 也因 `Game.HeroCardId` 为空无法匹配排名。修复方案：HERO_ENTITY 找不到英雄时不播报事件，等 FULL_ENTITY 补上后播报；STEP MAIN_START/MAIN_CLEANUP 时主动重试 `FindHeroByEntity`；LEADERBOARD_PLACE 增加 EntityId 匹配 fallback。已修复。**注意**：playerSlot 不能作为本地玩家标识（实际日志中本地英雄 player=1，Python parser 也不使用 playerSlot）。
+- [x] **bg_tool 启动读取旧数据**（2026-04-20）：上局游戏未正常结束（无 STATE=COMPLETE），工具启动时 `FindLastCreateGamePos` 定位到最后一个 CREATE_GAME 并扫描旧数据，误认为"进行中"。修复方案：ScanExisting 后检测 active 但无任何游戏数据（无英雄/PlayerTag/AccountIdLo）时，判定为旧数据，跳到文件尾等待新游戏。已修复。**已知边界场景**：玩家断线重连回同一局时，bg_tool 从重连的 CREATE_GAME 开始扫描，`_pendingNewGame` 为 null（全新 Parser），重连数据无法恢复旧局状态，Game 为空壳。该场景不常见，暂不处理。
+- [x] **bg_tool 缺少 HearthDb.csproj 引用**（2026-04-20）：已移除 `ResolveHeroName()` 对 HearthDb 的依赖。
+- [ ] **bg_parser 游戏结束检测不完全可靠**（2026-04-16）：Python 参考实现，仅用于测试验证，不做修改。
+
+### 待办
+
+- [x] bg_tool 对接 Flask API（check-league / update-placement）— v0.2.0
+- [x] bg_tool WinForms 独立软件改造 — v0.2.0 框架完成，UI 细节优化中
+- [x] UUID 问题 — 已解决，双方均从 HearthMirror 读取 GameUuid，值一致
+- [ ] ELO 评分系统上线（feature/elo 分支有代码，已 revert）
+- [ ] QQ 机器人更多命令（报名/退出队列、管理员命令）
+- [ ] 比赛定制规则：断线重连检测标记（players[].reconnected 字段，将来按需实现）
+- [ ] bg_tool WinForms UI 细节优化
+
+### 已知限制
+
+- bg_tool 必须 x86 运行（HearthMirror.dll 是 32 位程序集，无法编译为 x64）
+- bg_tool 无法从游戏获取 Region/Mode，需手动配置
+- bg_tool 只能检测自己的断线重连，其他玩家的断线需服务端交叉验证
+
+---
+
+## 10. 独立可执行程序（bg_tool）
+
+### 状态
+
+Python 原型（bg_parser）功能已完善，C# 重写版（bg_tool）已完成基础功能。
+
+**技术选型：C# net472**（而非 Go/.NET 8）
+- 原因：需要直接引用 HearthMirror.dll（.NET Framework 程序集），Go 和 .NET 8 无法加载
+- bg_tool 与 HDT 插件共享同一框架（net472），用户只需一个可执行文件
+
+### 已完成
+
+- [x] Power.log 实时监控 + 自动查找日志路径
+- [x] CREATE_GAME / STEP / LEADERBOARD_PLACE 状态机解析
+- [x] 玩家信息提取（BattleTag、accountIdLo、英雄名+cardId）
+- [x] 排名追踪
+- [x] 投降检测
+- [x] 断线重连检测与恢复
+- [x] 中途接入预加载玩家信息
+- [x] 自动切换日志文件（游戏重启）
+- [x] HearthMirror 直接引用：STEP 13 获取对手 Lo + HeroCardId
+- [x] 批量解析 `--parse` 模式
+- [x] Ctrl+C 优雅退出
+
+### 待办
+
+- [ ] 游戏结束检测可靠性修复（针对非正常退出场景）
+- [ ] 多局连续追踪稳定性测试
+- [ ] LEADERBOARD_PLACE 动态排名追踪（仅本地玩家，当前已实现）
+- [ ] WinForms 独立软件改造（见下方 UI 设计）
+
+### Python → C# 迁移对照
+
+| Python bg_parser | C# bg_tool | 说明 |
+|------------------|-----------|------|
+| `re.compile()` | `static readonly Regex(..., Compiled)` | 预编译正则 |
+| `dataclass Game` | `class Game` | 同字段 |
+| `dataclass Hero` | `class Hero` | 同字段 |
+| `class Parser` | `class Parser` | 同状态机逻辑 |
+| `fetch_lobby_players()` | `HearthMirrorClient.FetchLobbyPlayers()` | 直接引用 DLL |
+| `find_latest_power_log()` | `LogPathFinder.Find()` | 含注册表查找 |
+| `signal.SIGINT` | `Console.CancelKeyPress` | 优雅退出 |
+| `time.sleep(0.1)` | `Thread.Sleep(100)` | 轮询间隔 |
+
+### C# net472 兼容性踩坑
+
+- ❌ **HearthMirror.dll 必须 x86 进程加载**：csproj 需 `<PlatformTarget>x86</PlatformTarget>`，否则 AnyCPU 在 64 位系统以 64 位运行，报"试图加载格式不正确的程序"
+- ❌ `namespace BgTool;`（文件作用域）→ 需要 `namespace BgTool { }`（C# 10 语法）
+- ❌ `new(...)`（目标类型 new）→ 需要 `new Regex(...)` 等显式类型（C# 9）
+- ❌ `cardId[prefix.Length..]`（范围语法）→ 需要 `cardId.Substring(prefix.Length)`（需 System.Range）
+- ❌ `step is "A" or "B"`（模式组合）→ 需要 `step == "A" || step == "B"`（C# 9）
+- ❌ `name.Contains('#')`（char 重载）→ 需要 `name.Contains("#")`（.NET Core 才有）
+- ❌ `[^1]`（从末尾索引）→ 需要 `list[list.Count - 1]`（需 System.Index）
+- GameResult 数据结构
+- process_line 状态机逻辑
+- tail_log 文件监控逻辑
+
+---
+
+## 11. WinForms 独立软件改造（开发中）
+
+bg_tool 最终目标：脱离 HDT 插件，独立存在一个上报分数给联赛网站的软件。
+
+### UI 设计（2026-04-20 确认）
+
+```
+┌──────────────────────────────────────────┐
+│ 🍺 酒馆战棋联赛工具           🔗 已连接  │
+│ 南怀北瑾丨少头脑#5267                     │
+├──────────────────────────────────────────┤
+│                                          │
+│         ⏳ 等待对局中...                   │
+│                                          │
+├───────────────────────┬──────────────────┤
+│ 最近战绩              │ 今日统计         │
+│ ① 风暴之王托里姆 +9   │ 总局数      5    │
+│ ④ 阿莱克丝塔萨   +5   │ 前四     60%    │
+│ ⑦ 巫妖王         −2   │ 场均排名  3.2   │
+│ ② 米尔豪斯       +7   │ 积分变动  +23   │
+│ ⑥ 拉卡尼休       −3   │                  │
+├───────────────────────┴──────────────────┤
+│ 验证码  A1B2C3             [📋 复制]     │
+├──────────────────────────────────────────┤
+│ ⚠️ 上次上传失败，将在下局重试   [详情]   │
+└──────────────────────────────────────────┘
+```
+
+- 玩家名可点击，打开浏览器跳转 player 页面
+- 验证码显示 + 一键复制（来自 upload-rating API）
+- 对局中状态：主区域显示英雄名 + "8 人联赛 · 等待结算"
+- 错误横幅：底部，有错误才出现，点详情展开
+- 三种状态：等待中 / 对局中 / 已上传，自动切换
+- 最近战绩 5 局，今日统计 4 项（总局数/前四/场均排名/积分变动）
+
+### 技术方案
+
+- OutputType 改为 `WinExe`（无控制台窗口）
+- 后台线程跑现有 Parser 状态机，通过事件回调更新 UI
+- `Parser`、`HearthMirrorClient`、`LogPathFinder` 代码不动，只加 WinForms 前端
+- UI 用 WinForms 原生控件，深色主题
+- 玩家名点击用 `Process.Start()` 打开浏览器
+
+### 数据来源
+
+| 数据 | 来源 | Demo 状态 |
+|------|------|----------|
+| 玩家名 | Flask API / 本地配置 | 先硬编码 |
+| 连接状态 | API 健康检查 | 先硬编码 |
+| 对局状态 | Parser 事件 | ✅ 本地可实现 |
+| 最近战绩 | Parser 本地记录 | ✅ 本地可实现 |
+| 今日统计 | Parser 本地计算 | ✅ 本地可实现 |
+| 验证码 | Flask upload-rating API | 需 API 接入 |
+| 错误状态 | HTTP 请求失败记录 | ✅ 本地可实现 |
+
+---
+
+## 12. UUID 问题（待解决）
+
+### 现状
+
+- HDT 插件：`GameId = Guid.NewGuid()`（随机生成）
+- `BattlegroundsLobbyInfo.GameUuid`：来自 HearthMirror 读游戏内存（可能为 null）
+- Power.log 中无 UUID，只有 `GAME_SEED`（暴雪内部种子，非 UUID）
+
+### 问题
+
+同一局对局中，玩家 A 用 HDT 插件、玩家 B 用 bg_tool，两者生成不同的 gameUuid，服务端会创建两条对局记录。
+
+### 待定方案
+
+服务端 `check-league` 匹配依据改为 `accountIdLoList`（8 个 Lo 的集合），而非 `gameUuid`。同一批玩家重复请求时，返回已有的对局记录，不再创建新记录。
+
+### Lo=0 问题（已解决）
+
+HearthMirror 返回 8 个玩家中总有一个 `AccountId.Lo=0`，原因是最后一个玩家是机器人。非并发问题，无需进一步处理。
+
+---
+
+## 13. QQ 机器人集成（BG_QQBot 仓库）
+
+> 独立仓库：[BG_QQBot](https://github.com/iceshoesss/BG_QQBot)，v0.1.1（2026-04-17）
+
+### 已实现
+
+- 排行榜 TOP 10、选手查询、队列状态、最近对局
+- QQ 绑定码验证 + 解绑
+- Webhook 接收（LeagueWeb 超时/掉线对局 → bot 转发群通知 @ 玩家）
+- 帮助命令
+1. **查询排名** — 群内发送指令查询排行榜/选手详情
+2. **管理员补录** — 管理员通过机器人补录问题对局排名
+3. **问题对局通知** — 对局超时/掉线时自动通知相关玩家
+
+### 架构
+
+```
+QQ群 ↔ QQ机器人 ↔ HTTP API ↔ Flask ↔ MongoDB
+```
+
+机器人作为独立服务运行，通过 HTTP API 与 Flask 通信。不需要 WebSocket，现有 SSE 也不需要改。
+
+### 需要的改动
+
+#### 1. Webhook 通知（Flask 侧）
+
+- 新增环境变量 `WEBHOOK_URL`（QQ 机器人的接收地址）
+- 在问题对局发生时（超时、部分掉线），POST 通知到 webhook URL
+- payload 包含对局信息 + 玩家列表（battleTag）
+
+#### 2. QQ 号绑定机制（Flask 侧）
+
+采用 **方案 A**：在 `league_players` 上加字段
+
+```json
+{
+  "battleTag": "衣锦夜行#1000",
+  "bindCode": "A3F8",
+  "bindCodeExpire": "2026-04-17T08:30:00Z"
+}
+```
+
+- `bindCode`：一次性绑定码，有效期 5 分钟
+- `bindCodeExpire`：过期时间
+- 绑定成功后清除这两个字段
+
+流程：
+1. 玩家在网站点击「绑定 QQ」→ 生成临时绑定码
+2. 玩家在 QQ 机器人输入 `/绑定 A3F8`
+3. 机器人调 API 验证 → 匹配到 battleTag → 机器人写入本地映射表
+4. 绑定码用完即废
+
+**机器人侧**维护 QQ 号 ↔ battleTag 映射表，不存入 Flask 数据库。
+
+#### 3. 新增 API 端点
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/bind-code` | POST | 登录用户生成绑定码（返回 code） |
+| `/api/bind-code/verify` | POST | 机器人验证绑定码（返回 battleTag） |
+
+机器人调用第二个端点时，需要带机器人自己的认证 token（环境变量 `BOT_API_KEY`）。
+
+### 涉及的数据集合
+
+| 集合 | 改动 |
+|------|------|
+| `league_players` | 新增 `bindCode`、`bindCodeExpire` 字段（临时） |
+
+不需要新建集合，不需要改动现有字段。
+
+## 14. 更新记录
 
 <details>
 <summary>展开完整版本历史</summary>
+
+### C# 插件
+
+### bg_tool
+
+#### 2026-04-21 bg_tool 对接 Flask API
+- 新增 `ApiClient.cs`：极简 HTTP 客户端，无第三方 JSON 库依赖，手写序列化
+- 新增 `Config.cs` + `config.json`：API 地址、Key、Region/Mode 配置
+- 流程：英雄选定（STEP=MAIN_CLEANUP）→ check-league → 游戏结束 → update-placement
+- 服务端版本兼容：`X-HDT-Plugin` header 硬编 `0.5.7`（bg_tool 内部版本保持独立）
+- check-league 获取 GameUuid：来自 HearthMirror 的 `BattlegroundsLobbyInfo.GameUuid`
+- update-placement 失败重试 3 次（2 秒间隔）
+- config.json 编译时自动复制到输出目录
+
+#### 2026-04-21 BattlegroundsLobbyInfo 结构（已验证）
+
+HearthMirror 的 `Reflection.GetBattlegroundsLobbyInfo()` 返回 `HearthMirror.Objects.BattlegroundsLobbyInfo`：
+
+**BattlegroundsLobbyInfo 属性：**
+| 属性 | 类型 | 说明 |
+|------|------|------|
+| GameUuid | String | 对局 UUID，如 `281ac196-681f-4668-930f-e85e4076b010` |
+| Players | List\<BattlegroundsLobbyPlayer\> | 8 个玩家 |
+
+**没有** Region 或 GameMode 属性。
+
+**BattlegroundsLobbyPlayer 属性：**
+| 属性 | 类型 | 说明 |
+|------|------|------|
+| AccountId | AccountId | 含 Hi (long) 和 Lo (ulong) |
+| HeroCardId | String | 如 `BG26_HERO_101` |
+| Name | String | 玩家名（本地玩家有值，其他 7 人通常为空） |
+
+**HDT 插件获取 Region/Mode 的方式：** 不是来自 HearthMirror，而是 HDT 自身 API：
+- Region：`Core.Game.CurrentRegion.ToString()` → "CN"/"US"/"EU"
+- Mode：`Core.Game.IsBattlegroundsDuosMatch ? "duo" : "solo"`
+- 这些是 HDT 框架（Hearthstone Deck Tracker）的内置能力，通过拦截 Battle.net 客户端启动参数和游戏元数据获取
+- bg_tool 作为独立程序没有 `Core.Game`，无法获取
+- **临时方案**：硬编码 region="CN", mode="solo"
+
+**详细发现过程（2026-04-21）：**
+1. 起初怀疑 Region/Mode 来自 HearthMirror 的 LobbyInfo → 用反射 dump 验证 → LobbyInfo 只有 GameUuid + Players，**无 Region/GameMode**
+2. 查看 HDT 插件 `RatingTracker.cs` → `GetRegion()` 调用 `Core.Game.CurrentRegion`，`GetMode()` 用 `Core.Game.IsBattlegroundsDuosMatch`
+3. `Core.Game` 是 HDT 的 `GameV2` 类，Region 来自 Battle.net 客户端的区域配置（不是游戏内存），Mode 来自 HDT 对游戏实体标签的解析
+4. 结论：bg_tool 无法绕过 HDT 框架获取这两项，必须硬编码或从外部配置
+
+#### v0.2.2 (2026-04-21)
+- 修复非联赛对局验证码不显示：check-league 回调中验证码更新与 isLeague 判断解耦，无论是否联赛都同步验证码到 UI
+
+#### v0.2.1 (2026-04-21)
+- 标题栏显示版本号（从程序集版本读取）
+- 点击玩家名跳转 URL 改为 apiBaseUrl 拼接
+- 断线重连时日志显示具体时间 `[游戏] 🔄 断线重连 HH:mm:ss`
+- apiKey 改为编译时常量（`ApiClient.cs` 的 `const string ApiKey`），不暴露在 config.json
+- 启动扫描旧日志不触发 check_league（`_scanning` 标志），避免读到 HearthMirror 残留内存数据
+- 日志优化：bg_tool.log 超 1MB 覆盖重写，移除 Lo=0 诊断日志，增加 API 连接日志
+
+#### v0.2.0 (2026-04-21)
+- WinForms 桌面应用：深色主题 UI，对局状态/最近战绩/今日统计/验证码复制
+- 对接 Flask API：check-league（STEP 13）+ update-placement（游戏结束），失败重试 3 次
+- testMode：仍调用 check-league 创建对局记录，强制标记为联赛
+- 联赛对局持久化到 games.json，最近战绩和今日统计从文件读取，重启不丢失
+- 启动时 Ping API 服务器，状态栏显示服务正常/异常
+- 日志面板：Console 输出同步显示到 UI + bg_tool.log 文件
+- 统一配置：bg_tool 和 HDT 插件都从 shared_config.json 读取（向上逐级查找）
+- config.json 不再进 git，改用 config.json.example + shared_config.example.json 模板
+- mock_server.py 支持状态追踪：随机验证码、对局记录、update-placement 校验
+
+#### v0.1.1 (2026-04-19)
+- 修复 HearthMirror Lo 获取：Reflection 实例改为单例缓存，对齐 Python 全局变量模式
+- 修复中途启动无法使用：PreloadPlayerInfo 扩展为预加载 PlayerName + AccountIdLo + HeroEntityId
+- STEP 13 无数据时不再静默，输出警告日志
+- csproj 添加 PlatformTarget x86（HearthMirror.dll 是 32 位程序集，AnyCPU 64 位进程无法加载）
+- 添加 AssemblyResolve 事件，从 HDT_PATH 自动加载 HearthMirror 的依赖 DLL（如 untapped-scry-dotnet.dll）
+
+#### v0.1.0 (2026-04-19)
+- C# 重写 Python bg_parser，net472 + HearthMirror 直接引用
+- Power.log 实时监控 + 自动查找日志路径（注册表 + 常见路径兜底）
+- CREATE_GAME / STEP / LEADERBOARD_PLACE 状态机解析
+- 玩家信息提取（BattleTag、accountIdLo、英雄名+cardId）
+- 投降检测、断线重连检测与恢复
+- 中途接入：PreloadPlayerInfo 预加载 PlayerName
+- 自动切换日志文件（游戏重启检测）
+- HearthMirror 集成：直接引用 DLL，STEP 13 获取对手 Lo + HeroCardId
+- 批量解析 --parse 模式
+- Ctrl+C 优雅退出
+- 静默处理文件短暂不可访问（IOException）
+
+### C# 插件
+
+#### v0.5.7 (2026-04-18)
+- 修复日志刷屏：GetPlayerId/GetAccountIdLo 未找到时加 1 秒日志节流，避免 OnUpdate 每 100ms 写一条重复日志
 
 ### v0.5.6 (2026-04-14)
 - 修复 GetPlayerId 失败导致 update-placement 静默丢失：三个缓存独立重试
 - 修复 409 误判为失败：已提交的 placement 返回 409 时不再重试
 
-### v0.5.5 (2026-04-14)
+#### v0.5.5 (2026-04-14)
 - update-placement 网络失败时重试 3 次
 - 插件认证：Bearer token + 版本号 header，服务端双重校验
 
-### v0.5.4 (2026-04-14)
+#### v0.5.4 (2026-04-14)
 - check-league 网络失败时重试 3 次
 
-### v0.5.3 (2026-04-14)
+#### v0.5.3 (2026-04-14)
 - placement 为 null 时重试上传，解决淘汰玩家排名丢失
 
-### v0.5.2 (2026-04-13)
+#### v0.5.2 (2026-04-13)
 - 队列超时机制：报名 10 分钟踢出，等待 20 分钟解散
 - 验证码逻辑去重，print → logging
 
-### v0.5.1 (2026-04-13)
+#### v0.5.1 (2026-04-13)
 - 编译输出改用下划线分隔
 
-### v0.3.0 Web (2026-04-14)
-- 测试模式改为重叠人数匹配，MIN_MATCH_PLAYERS 可配置
-
-### v0.2.13 Web (2026-04-14)
-- 登录状态持久化修复，时间显示修正
-
-### 插件架构改造 (2026-04-12)
+#### 插件架构改造 (2026-04-12)
 - 直连 MongoDB → HTTP API（CF Tunnel 限制）
 
-### 网站 UI 迭代 (2026-04-12 ~ 04-13)
+### 联赛网站
+
+#### v0.4.0 (2026-04-17)
+- QQ 绑定码 API：`/api/bind-code` 生成绑定码（5 分钟有效），`/api/bind-code/verify` 机器人验证
+- Webhook 通知：超时/掉线对局自动 POST 到 QQ 机器人
+- 队列退出自动补人：等待组有人退出时，自动从报名队列拉人补满
+- player 页面绑定按钮：已登录用户在自己主页可见
+
+#### v0.3.4 (2026-04-15)
+- 7人提交后自动推算第8人排名：当 7 位玩家提交 placement 后，自动计算剩余玩家的排名（唯一剩余数字），立即写入 endedAt 结束对局
+- 适用于插件 API 和管理员补录 API 两个端点
+- 解决第一名 AFK 不上传导致对局无法结束的问题
+
+#### v0.3.3 (2026-04-17)
+- 修复 player 页面 battleTag 不带 #tag：不再依赖 league_matches 中插件上报的不完整数据，改为从 league_players 读取真实 battleTag；匹配逻辑也从 battleTag 改为 accountIdLo，兼容带/不带 #tag 的访问
+
+#### v0.3.1 (2026-04-14)
+- 插件认证 + 版本强制更新：所有 /api/plugin/* 端点双重校验
+  - API Key：配置 PLUGIN_API_KEY 后，插件请求必须带 Authorization: Bearer <key>，否则 403
+  - 版本检查：X-HDT-Plugin header 版本号低于 MIN_PLUGIN_VERSION 则 403
+  - 两个 env var 配合使用，发新插件时同步更换即可让旧插件失效
+
+#### v0.3.0 (2026-04-14)
+- 测试模式改为重叠人数匹配，MIN_MATCH_PLAYERS 可配置
+- 报名队列阈值联动：满 N 人移入等待组，N 跟随 MIN_MATCH_PLAYERS（test=3, normal=8）
+- toggle-test-mode.py 拆分为独立脚本，只管本仓库的 app.py
+
+#### v0.2.13 (2026-04-14)
+- 修复登录后导航到其他页面丢失登录状态的问题（Session cookie SameSite 配置）
+- 修复 player 页面历史对局时间显示错误（双重时区偏移）
+- 时间格式统一：所有 ISO 时间字符串带 Z 后缀，前端正确解析为 UTC
+- 新增 WEB_VERSION 常量，页面底部显示当前版本号
+
+#### 网站 UI 迭代 (2026-04-12 ~ 04-13)
 - 问题对局提醒、选手页图表、SSE 实时推送
 
-### 数据统计修复 (2026-04-12)
+#### 数据统计修复 (2026-04-12)
 - 排除 timeout/abandoned 对局
 
 </details>

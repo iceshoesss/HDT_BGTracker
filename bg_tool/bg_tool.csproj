@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <PlatformTarget>x86</PlatformTarget>
+    <RootNamespace>BgTool</RootNamespace>
+    <AssemblyName>bg_tool</AssemblyName>
+    <LangVersion>8.0</LangVersion>
+    <Version>0.2.2</Version>
+    <Description>炉石酒馆战棋联赛工具（WinForms 版）</Description>
+  </PropertyGroup>
+
+  <!-- HDT 引用 -->
+  <ItemGroup>
+    <Reference Include="HearthMirror">
+      <HintPath>$(HDT_PATH)\HearthMirror.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Net.Http">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System.Web.Extensions">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System.Windows.Forms">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System.Drawing">
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="config.json.example">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

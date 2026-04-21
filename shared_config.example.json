@@ -1,0 +1,6 @@
+{
+  "apiBaseUrl": "https://你的域名.com",
+  "region": "CN",
+  "mode": "solo",
+  "testMode": true
+}

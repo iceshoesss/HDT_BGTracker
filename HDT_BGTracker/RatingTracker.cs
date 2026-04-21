@@ -13,11 +13,62 @@ namespace HDT_BGTracker
 {
     public class RatingTracker
     {
-        // ── 配置 ──────────────────────────────────────────
-        private const string ApiBaseUrl = "https://da.iceshoes.dpdns.org/";
+        // ── 配置（从 shared_config.json 读取）──────────────────
+        private static string ApiBaseUrl = "https://da.iceshoes.dpdns.org/";
+        private static string PluginApiKey = "bgtracker-20260414";
         private const string PluginHeaderName = "X-HDT-Plugin";
         private static readonly string PluginHeaderValue = typeof(RatingTracker).Assembly.GetName().Version.ToString(3);
-        private const string PluginApiKey = "bgtracker-20260414";
+
+        static RatingTracker()
+        {
+            LoadSharedConfig();
+        }
+
+        /// <summary>
+        /// 从 shared_config.json 加载配置（向上逐级查找，最多 5 级）
+        /// </summary>
+        private static void LoadSharedConfig()
+        {
+            try
+            {
+                // 环境变量优先
+                var envPath = System.Environment.GetEnvironmentVariable("BGTRACKER_CONFIG");
+                if (!string.IsNullOrEmpty(envPath) && File.Exists(envPath))
+                {
+                    ParseConfigFile(envPath);
+                    return;
+                }
+
+                // 从插件 DLL 目录向上查找
+                var dir = Path.GetDirectoryName(typeof(RatingTracker).Assembly.Location);
+                for (int i = 0; i < 5 && dir != null; i++)
+                {
+                    var path = Path.Combine(dir, "shared_config.json");
+                    if (File.Exists(path))
+                    {
+                        ParseConfigFile(path);
+                        return;
+                    }
+                    dir = Path.GetDirectoryName(dir);
+                }
+            }
+            catch { }
+        }
+
+        private static void ParseConfigFile(string path)
+        {
+            foreach (var line in File.ReadAllLines(path))
+            {
+                var trimmed = line.Trim();
+                if (!trimmed.StartsWith("\"")) continue;
+                var colonIdx = trimmed.IndexOf(':');
+                if (colonIdx < 0) continue;
+                var key = trimmed.Substring(1, trimmed.IndexOf('"', 1) - 1).Trim();
+                var val = trimmed.Substring(colonIdx + 1).Trim().TrimEnd(',').Trim('"');
+                if (key == "apiBaseUrl") ApiBaseUrl = val;
+                else if (key == "pluginApiKey") PluginApiKey = val;
+            }
+        }
 
         // ── 状态 ──────────────────────────────────────────
         private bool _enabled;
@@ -34,6 +85,10 @@ namespace HDT_BGTracker
         private int _lastStepValue = -1;
         private int _placementRetryCount;
         private const int MaxPlacementRetries = 10;
+        private DateTime _lastAccountIdLoLog = DateTime.MinValue;
+        private DateTime _lastPlayerIdLog = DateTime.MinValue;
+        private DateTime _lastGameUuidLog = DateTime.MinValue;
+        private static readonly TimeSpan LogThrottle = TimeSpan.FromSeconds(1);
 
         // ── HTTP + JSON ───────────────────────────────────
         private HttpClient _httpClient;
@@ -462,7 +517,11 @@ namespace HDT_BGTracker
                 Log($"GetPlayerId: PlayerEntities 读取失败: {ex.Message}");
             }
 
-            Log("GetPlayerId: 未找到有效 ID");
+            if (DateTime.Now - _lastPlayerIdLog >= LogThrottle)
+            {
+                _lastPlayerIdLog = DateTime.Now;
+                Log("GetPlayerId: 未找到有效 ID");
+            }
             return "unknown";
         }
 
@@ -494,7 +553,11 @@ namespace HDT_BGTracker
                 Log($"GetAccountIdLo 异常: {ex.Message}");
             }
 
-            Log("GetAccountIdLo: 未找到 accountIdLo（等待 GetPlayerId 成功后重试）");
+            if (DateTime.Now - _lastAccountIdLoLog >= LogThrottle)
+            {
+                _lastAccountIdLoLog = DateTime.Now;
+                Log("GetAccountIdLo: 未找到 accountIdLo（等待 GetPlayerId 成功后重试）");
+            }
             return null;
         }
 
