@@ -795,11 +795,13 @@ check-league → 先查 tournament_groups（status=waiting + gamesPlayed < boN +
 BO 系列赛流程：
 1. 管理员创建赛事 → tournament_groups 初始化（status=waiting, boN=N, gamesPlayed=0）
 2. 8 人进游戏 → check-league 匹配到 → 创建 match → gamesPlayed=1
-3. 打完 → update-placement 累加积分 → gamesPlayed < boN → status 回到 waiting
+3. 打完 → update-placement 写排名到 league_matches → gamesPlayed < boN → status 回到 waiting
 4. 8 人重开游戏 → check-league 再次匹配（同一个 tournament_group）→ 创建新 match
-5. 全部打完 → status=done → 晋级判定 → 自动创建下一轮分组
+5. 全部打完 → status=done → 从 league_matches 聚合排名 → 晋级判定 → 自动创建下一轮分组
 
 ### tournament_groups 数据结构
+
+排名数据（totalPoints/games/placement/qualified/eliminated）**不存储在 tournament_groups 中**，而是从 league_matches 按 tournamentGroupId 聚合计算。tournament_groups 只存身份信息和元数据。
 
 ```json
 {
@@ -816,12 +818,6 @@ BO 系列赛流程：
       "displayName": "xxx",
       "heroCardId": "TB_BaconShop_HERO_56",
       "heroName": "阿莱克丝塔萨",
-      "totalPoints": 7,       // BO 累计积分
-      "games": [7],           // 每局得分明细
-      "placement": null,      // 最终排名（done 后计算）
-      "points": null,         // 最终总分
-      "qualified": false,     // 是否晋级
-      "eliminated": false,
       "empty": false
     }
   ],
