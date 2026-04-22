@@ -551,10 +551,25 @@ public class MainForm : Form
                             {
                                 _leagueChecked = true;
                                 var game = _parser.Game;
-                                _currentGameUuid = !string.IsNullOrEmpty(game.GameUuid) ? game.GameUuid : Guid.NewGuid().ToString();
 
                                 Task.Run(async () =>
                                 {
+                                    // gameUuid 可能延迟加载，等待重试
+                                    for (int attempt = 0; attempt < 2; attempt++)
+                                    {
+                                        if (!string.IsNullOrEmpty(game.GameUuid)) break;
+                                        if (attempt == 0)
+                                        {
+                                            Console.WriteLine("[MainForm] gameUuid 为空，等待 3 秒后重试...");
+                                            await Task.Delay(3000);
+                                            // 重新尝试从 HearthMirror 获取
+                                            var freshUuid = HearthMirrorClient.LastGameUuid;
+                                            if (!string.IsNullOrEmpty(freshUuid))
+                                                game.GameUuid = freshUuid;
+                                        }
+                                    }
+                                    _currentGameUuid = !string.IsNullOrEmpty(game.GameUuid) ? game.GameUuid : Guid.NewGuid().ToString();
+
                                     var isLeague = await ApiClient.CheckLeagueAsync(
                                         _currentGameUuid,
                                         game.PlayerTag,
