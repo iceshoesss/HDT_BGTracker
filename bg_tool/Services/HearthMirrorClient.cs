@@ -67,8 +67,9 @@ public static class HearthMirrorClient
                 var p = lobby.Players[i];
                 var lo = p.AccountId?.Lo ?? (ulong)0;
                 var heroCardId = p.HeroCardId ?? "";
+                var heroName = HeroNameResolver.Resolve(heroCardId);
 
-                result.Add(new LobbyPlayer { Lo = lo, HeroCardId = heroCardId });
+                result.Add(new LobbyPlayer { Lo = lo, HeroCardId = heroCardId, HeroName = heroName });
             }
             return result;
         }

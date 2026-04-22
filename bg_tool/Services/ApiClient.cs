@@ -86,13 +86,15 @@ public static class ApiClient
 
         foreach (var p in lobbyPlayers)
         {
-            if (p.Lo == 0) continue;
             var loStr = p.Lo.ToString();
             loList.Add(loStr);
-            playersDict[loStr] = new
+            var playerInfo = new Dictionary<string, object>
             {
-                heroCardId = p.HeroCardId ?? ""
+                ["heroCardId"] = p.HeroCardId ?? ""
             };
+            if (!string.IsNullOrEmpty(p.HeroName))
+                playerInfo["heroName"] = p.HeroName;
+            playersDict[loStr] = playerInfo;
         }
 
         var body = new Dictionary<string, object>
