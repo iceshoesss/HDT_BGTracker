@@ -69,7 +69,8 @@ public static class ApiClient
         ulong accountIdLo,
         List<LobbyPlayer> lobbyPlayers,
         string region = "CN",
-        string mode = "solo")
+        string mode = "solo",
+        string startedAt = "")
     {
         LastError = "";
 
@@ -94,6 +95,18 @@ public static class ApiClient
             };
             if (!string.IsNullOrEmpty(p.HeroName))
                 playerInfo["heroName"] = p.HeroName;
+            // 本地玩家带 battleTag + displayName（HearthMirror 只有本地玩家有名字）
+            if (p.Lo == accountIdLo)
+            {
+                if (!string.IsNullOrEmpty(playerId))
+                    playerInfo["battleTag"] = playerId;
+                var displayName = playerId;
+                var hashIdx = playerId.IndexOf('#');
+                if (hashIdx > 0)
+                    displayName = playerId.Substring(0, hashIdx);
+                if (!string.IsNullOrEmpty(displayName))
+                    playerInfo["displayName"] = displayName;
+            }
             playersDict[loStr] = playerInfo;
         }
 
@@ -105,7 +118,8 @@ public static class ApiClient
             ["accountIdLo"] = accountIdLo.ToString(),
             ["players"] = playersDict,
             ["mode"] = mode,
-            ["region"] = region
+            ["region"] = region,
+            ["startedAt"] = startedAt ?? ""
         };
 
         try

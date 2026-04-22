@@ -576,7 +576,8 @@ public class MainForm : Form
                                         game.AccountIdLo,
                                         game.LobbyPlayers,
                                         _config.Region,
-                                        _config.Mode);
+                                        _config.Mode,
+                                        DateTime.UtcNow.ToString("o"));
 
                                     if (_config.TestMode)
                                     {
