@@ -104,9 +104,11 @@ class MockHandler(BaseHTTPRequestHandler):
             resp = state.check_league(data)
             status = 200
         elif "/update-placement" in self.path:
-            resp, status = state.update_placement(data)
+            resp, raw_status = state.update_placement(data)
+            status = int(raw_status)
         else:
-            resp, status = {"ok": True}, 200
+            resp, raw_status = {"ok": True}, 200
+            status = int(raw_status)
 
         print(f"Response: {json.dumps(resp, ensure_ascii=False)}")
         print(f"{'='*60}")
