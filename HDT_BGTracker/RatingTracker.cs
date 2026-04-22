@@ -324,6 +324,14 @@ namespace HDT_BGTracker
                         return;
                     }
 
+                    // 过滤 Lo=0 的玩家（HearthMirror 内存未初始化时 Lo 默认为 0）
+                    var validIds = accountIdList.Where(id => id != "0").ToList();
+                    if (validIds.Count == 0)
+                    {
+                        Log("CheckLeagueQueue: 所有 accountIdLo 为 0（LobbyInfo 未就绪），跳过");
+                        return;
+                    }
+
                     Log($"CheckLeagueQueue: 本局玩家 accountIdLo = [{string.Join(", ", accountIdList)}]");
 
                     // 等待 gameUuid 就绪（HearthMirror 偶尔延迟加载）
