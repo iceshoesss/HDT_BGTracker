@@ -543,7 +543,7 @@ python bg_parser/bg_parser.py
 - [x] **bg_tool 启动读取旧数据**（2026-04-20）：上局游戏未正常结束（无 STATE=COMPLETE），工具启动时 `FindLastCreateGamePos` 定位到最后一个 CREATE_GAME 并扫描旧数据，误认为"进行中"。修复方案：ScanExisting 后检测 active 但无任何游戏数据（无英雄/PlayerTag/AccountIdLo）时，判定为旧数据，跳到文件尾等待新游戏。已修复。**已知边界场景**：玩家断线重连回同一局时，bg_tool 从重连的 CREATE_GAME 开始扫描，`_pendingNewGame` 为 null（全新 Parser），重连数据无法恢复旧局状态，Game 为空壳。该场景不常见，暂不处理。
 - [x] **bg_tool 缺少 HearthDb.csproj 引用**（2026-04-20）：已移除 `ResolveHeroName()` 对 HearthDb 的依赖。
 - [x] **check-league 400 空参数**（2026-04-22）：HearthMirror 的 LobbyInfo 在 STEP 13 偶尔延迟加载，gameUuid 为空时插件仍发送请求导致服务端 400。修复方案：HDT 插件 CheckLeagueQueue 中 gameUuid 为空时等待 3 秒重试，仍为空则跳过；bg_tool ApiClient.CheckLeagueAsync 中 gameUuid 为空直接跳过。已修复。
-- [x] **联赛对局玩家名字为空**（2026-04-22）：HearthMirror 只有本地玩家有 Name，插件发送的 players dict 中其他 7 人 battleTag/displayName 为空串。服务端 check-league 构建 players 时 `detail.get("battleTag", fallback)` 因 detail dict 存在（有 heroCardId）导致空串覆盖了 fallback。修复方案：服务端改用 `or` 三级 fallback（请求数据 → 等待组 name → league_players 查库）。已修复。
+- [x] **联赛对局玩家名字为空**（2026-04-22）：HearthMirror 只有本地玩家有 Name（显示名，无 #tag），插件发送的 players dict 中其他 7 人 battleTag 为空串。服务端 check-league 构建 players 时 `detail.get("battleTag", fallback)` 因 detail dict 存在（有 heroCardId）导致空串覆盖了 fallback。修复方案：服务端改用 `or` 三级 fallback（请求数据 → 等待组 name → player_records.playerId 查库）。注意必须查 player_records 而非 league_players，因为 player_records.playerId 是插件上传的完整 battleTag（带 #tag），league_players.battleTag 可能缺 #tag。已修复。
 - [ ] **bg_parser 游戏结束检测不完全可靠**（2026-04-16）：Python 参考实现，仅用于测试验证，不做修改。
 
 ### 待办
