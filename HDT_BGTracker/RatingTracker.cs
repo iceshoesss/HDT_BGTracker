@@ -302,13 +302,20 @@ namespace HDT_BGTracker
                         if (p.AccountId == null) continue;
                         string lo = p.AccountId.Lo.ToString();
                         accountIdList.Add(lo);
-                        playerDetails[lo] = new Dictionary<string, object>
+
+                        // 本地玩家用 _cachedPlayerId（含 #tag），其他玩家不传 battleTag（服务端 fallback）
+                        var detail = new Dictionary<string, object>
                         {
-                            ["battleTag"] = p.Name ?? "",
-                            ["displayName"] = p.Name ?? "",
                             ["heroCardId"] = p.HeroCardId ?? "",
                             ["heroName"] = GetHeroName(p.HeroCardId ?? ""),
                         };
+                        if (p.Name == (_cachedPlayerId ?? "").Split('#')[0])
+                        {
+                            // 本地玩家：LobbyPlayer.Name 和 _cachedPlayerId 的显示名匹配
+                            detail["battleTag"] = _cachedPlayerId ?? "";
+                            detail["displayName"] = (_cachedPlayerId ?? "").Split('#')[0];
+                        }
+                        playerDetails[lo] = detail;
                     }
 
                     if (accountIdList.Count == 0)
