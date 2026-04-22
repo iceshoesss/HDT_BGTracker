@@ -319,7 +319,19 @@ namespace HDT_BGTracker
 
                     Log($"CheckLeagueQueue: 本局玩家 accountIdLo = [{string.Join(", ", accountIdList)}]");
 
+                    // 等待 gameUuid 就绪（HearthMirror 偶尔延迟加载）
                     string gameUuid = lobbyInfo.GameUuid ?? _cachedGameUuid ?? "";
+                    if (string.IsNullOrEmpty(gameUuid))
+                    {
+                        Log("CheckLeagueQueue: gameUuid 为空，等待 3 秒后重试...");
+                        System.Threading.Thread.Sleep(3000);
+                        gameUuid = lobbyInfo.GameUuid ?? _cachedGameUuid ?? "";
+                    }
+                    if (string.IsNullOrEmpty(gameUuid))
+                    {
+                        Log("CheckLeagueQueue: gameUuid 仍为空，跳过本次检查");
+                        return;
+                    }
                     string mode = Core.Game.IsBattlegroundsDuosMatch ? "duo" : "solo";
                     string region = GetRegion();
                     string startedAt = _bgGameStartTime != DateTime.MinValue

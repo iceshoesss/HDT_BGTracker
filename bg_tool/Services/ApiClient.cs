@@ -73,6 +73,13 @@ public static class ApiClient
     {
         LastError = "";
 
+        // gameUuid 为空时跳过，不发无效请求
+        if (string.IsNullOrEmpty(gameUuid))
+        {
+            Console.WriteLine("[API] gameUuid 为空，跳过 check-league");
+            return false;
+        }
+
         // 构建 accountIdLoList
         var loList = new List<string>();
         var playersDict = new Dictionary<string, object>();
