@@ -328,23 +328,41 @@ namespace HDT_BGTracker
                     var validIds = accountIdList.Where(id => id != "0").ToList();
                     if (validIds.Count == 0)
                     {
-                        Log("CheckLeagueQueue: 所有 accountIdLo 为 0（LobbyInfo 未就绪），跳过");
-                        return;
+                        Log("CheckLeagueQueue: 所有 accountIdLo 为 0（LobbyInfo 未就绪），等待 3 秒后重试...");
+                        System.Threading.Thread.Sleep(3000);
+                        // 重新读取 LobbyInfo
+                        lobbyInfo = Core.Game?.MetaData?.BattlegroundsLobbyInfo;
+                        if (lobbyInfo?.Players != null)
+                        {
+                            accountIdList.Clear();
+                            foreach (var p in lobbyInfo.Players)
+                            {
+                                if (p.AccountId != null)
+                                    accountIdList.Add(p.AccountId.Lo.ToString());
+                            }
+                            validIds = accountIdList.Where(id => id != "0").ToList();
+                        }
+                        if (validIds.Count == 0)
+                        {
+                            Log("CheckLeagueQueue: Lo 重试后仍全为 0，跳过");
+                            return;
+                        }
+                        Log($"CheckLeagueQueue: Lo 重试成功，有效玩家 {validIds.Count} 人");
                     }
 
                     Log($"CheckLeagueQueue: 本局玩家 accountIdLo = [{string.Join(", ", accountIdList)}]");
 
-                    // 等待 gameUuid 就绪（HearthMirror 偶尔延迟加载）
+                    // 等待 gameUuid 就绪（HearthMirror 偶尔延迟加载，最多重试 3 次共 ~9 秒）
                     string gameUuid = lobbyInfo.GameUuid ?? _cachedGameUuid ?? "";
-                    if (string.IsNullOrEmpty(gameUuid))
+                    for (int retry = 0; string.IsNullOrEmpty(gameUuid) && retry < 3; retry++)
                     {
-                        Log("CheckLeagueQueue: gameUuid 为空，等待 3 秒后重试...");
+                        Log($"CheckLeagueQueue: gameUuid 为空，等待 3 秒后重试...（第 {retry + 1}/3 次）");
                         System.Threading.Thread.Sleep(3000);
                         gameUuid = lobbyInfo.GameUuid ?? _cachedGameUuid ?? "";
                     }
                     if (string.IsNullOrEmpty(gameUuid))
                     {
-                        Log("CheckLeagueQueue: gameUuid 仍为空，跳过本次检查");
+                        Log("CheckLeagueQueue: gameUuid 重试耗尽（9 秒），跳过本次检查");
                         return;
                     }
                     string mode = Core.Game.IsBattlegroundsDuosMatch ? "duo" : "solo";
