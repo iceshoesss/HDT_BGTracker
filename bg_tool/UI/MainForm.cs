@@ -554,19 +554,15 @@ public class MainForm : Form
 
                                 Task.Run(async () =>
                                 {
-                                    // gameUuid 可能延迟加载，等待重试
-                                    for (int attempt = 0; attempt < 2; attempt++)
+                                    // gameUuid 可能延迟加载，最多重试 3 次共 ~9 秒
+                                    for (int attempt = 0; attempt < 3; attempt++)
                                     {
                                         if (!string.IsNullOrEmpty(game.GameUuid)) break;
-                                        if (attempt == 0)
-                                        {
-                                            Console.WriteLine("[MainForm] gameUuid 为空，等待 3 秒后重试...");
-                                            await Task.Delay(3000);
-                                            // 重新尝试从 HearthMirror 获取
-                                            var freshUuid = HearthMirrorClient.LastGameUuid;
-                                            if (!string.IsNullOrEmpty(freshUuid))
-                                                game.GameUuid = freshUuid;
-                                        }
+                                        Console.WriteLine($"[MainForm] gameUuid 为空，等待 3 秒后重试...（第 {attempt + 1}/3 次）");
+                                        await Task.Delay(3000);
+                                        var freshUuid = HearthMirrorClient.LastGameUuid;
+                                        if (!string.IsNullOrEmpty(freshUuid))
+                                            game.GameUuid = freshUuid;
                                     }
                                     _currentGameUuid = !string.IsNullOrEmpty(game.GameUuid) ? game.GameUuid : Guid.NewGuid().ToString();
 

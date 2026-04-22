@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
@@ -22,7 +23,7 @@ public static class ApiClient
     // 发布前需替换为实际 Key
     private const string ApiKey = "";
 
-    private static string _pluginVersion = "0.5.7"; // 服务端兼容版本，bg_tool 实际版本另算
+    private static string _pluginVersion = "0.5.8"; // 服务端兼容版本，bg_tool 实际版本另算
 
     private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
 
@@ -78,6 +79,14 @@ public static class ApiClient
         if (string.IsNullOrEmpty(gameUuid))
         {
             Console.WriteLine("[API] gameUuid 为空，跳过 check-league");
+            return false;
+        }
+
+        // Lo 全为 0 时跳过（HearthMirror 未就绪）
+        var validPlayers = lobbyPlayers.Where(p => p.Lo != 0).ToList();
+        if (validPlayers.Count == 0)
+        {
+            Console.WriteLine("[API] 所有 accountIdLo 为 0（LobbyInfo 未就绪），跳过 check-league");
             return false;
         }
 

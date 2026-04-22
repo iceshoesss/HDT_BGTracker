@@ -895,6 +895,13 @@ HearthMirror 的 `Reflection.GetBattlegroundsLobbyInfo()` 返回 `HearthMirror.O
 3. `Core.Game` 是 HDT 的 `GameV2` 类，Region 来自 Battle.net 客户端的区域配置（不是游戏内存），Mode 来自 HDT 对游戏实体标签的解析
 4. 结论：bg_tool 无法绕过 HDT 框架获取这两项，必须硬编码或从外部配置
 
+#### v0.2.3 (2026-04-23)
+- check-league 接入 HearthDb 解析英雄名，POST 携带 heroName（与插件格式一致）
+- 修复 players dict 匿式对象 JSON 序列化 bug（改为 Dictionary<string, object>）
+- 不再过滤 Lo=0 玩家，8 人全量发送
+- 本地玩家附带 battleTag + displayName + startedAt
+- gameUuid 为空重试 3 次（共 ~9 秒），Lo 全为 0 时跳过
+
 #### v0.2.2 (2026-04-21)
 - 修复非联赛对局验证码不显示：check-league 回调中验证码更新与 isLeague 判断解耦，无论是否联赛都同步验证码到 UI
 
@@ -938,6 +945,10 @@ HearthMirror 的 `Reflection.GetBattlegroundsLobbyInfo()` 返回 `HearthMirror.O
 - 静默处理文件短暂不可访问（IOException）
 
 ### C# 插件
+
+#### v0.5.8 (2026-04-23)
+- check-league LobbyInfo 延迟加载保护加强：gameUuid 为空重试 3 次（共 ~9 秒），accountIdLo 全为 0 时等 3 秒后重新读取 LobbyInfo
+- 服务端同步：拒绝 accountIdLo 全为 0 的请求，日志补充 playerId 便于定位
 
 #### v0.5.7 (2026-04-18)
 - 修复日志刷屏：GetPlayerId/GetAccountIdLo 未找到时加 1 秒日志节流，避免 OnUpdate 每 100ms 写一条重复日志

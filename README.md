@@ -236,6 +236,12 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 ## 当前开发状态
 
+### bg_tool v0.2.3 (2026-04-23)
+- check-league 接入 HearthDb 解析英雄名，POST 携带 heroName
+- 修复 players dict 匿式对象 JSON 序列化 bug
+- 不再过滤 Lo=0 玩家，本地玩家附带 battleTag + displayName + startedAt
+- gameUuid 为空重试 3 次（共 ~9 秒），Lo 全为 0 时跳过
+
 ### bg_tool v0.2.2 (2026-04-21)
 - 修复非联赛对局验证码不显示：check-league 回调中验证码更新与 isLeague 判断解耦
 
@@ -289,6 +295,9 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 - 启动 Ping 服务检测、日志面板
 - 统一配置 shared_config.json
 - mock_server.py 支持状态追踪
+
+### v0.5.8 (2026-04-23)
+- check-league LobbyInfo 延迟加载保护加强：gameUuid 为空重试 3 次（共 ~9 秒），accountIdLo 全为 0 时等 3 秒后重新读取 LobbyInfo
 
 ### v0.5.7 (2026-04-18)
 - 修复日志刷屏：GetPlayerId/GetAccountIdLo 未找到时加 1 秒日志节流，避免 OnUpdate 每 100ms 写一条重复日志
