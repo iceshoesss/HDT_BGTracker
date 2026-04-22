@@ -17,10 +17,7 @@
       <HintPath>$(HDT_PATH)\HearthMirror.dll</HintPath>
       <Private>True</Private>
     </Reference>
-    <Reference Include="HearthDb">
-      <HintPath>$(HDT_PATH)\HearthDb.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
+
     <Reference Include="System.Net.Http">
       <Private>False</Private>
     </Reference>
@@ -33,6 +30,10 @@
     <Reference Include="System.Drawing">
       <Private>False</Private>
     </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="bg_heroes.json" />
   </ItemGroup>
 
   <ItemGroup>
