@@ -72,16 +72,16 @@ public static class HearthMirrorClient
             var matchInfo = _reflection.GetMatchInfo();
             if (matchInfo != null)
             {
-                Console.WriteLine($"[诊断] MatchInfo: 非空");
-                try { Console.WriteLine($"[诊断]   LocalPlayer.Name = {matchInfo.LocalPlayer?.Name ?? "(null)"); } catch { }
+                Console.WriteLine("[诊断] MatchInfo: 非空");
+                try { var n = matchInfo.LocalPlayer?.Name; Console.WriteLine("[诊断]   LocalPlayer.Name = " + (n ?? "(null)")); } catch { }
                 try
                 {
                     var bt = matchInfo.LocalPlayer?.BattleTag;
-                    Console.WriteLine($"[诊断]   LocalPlayer.BattleTag = {(bt != null ? $"{bt.Name}#{bt.Number}" : "(null)")}");
+                    Console.WriteLine("[诊断]   LocalPlayer.BattleTag = " + (bt != null ? bt.Name + "#" + bt.Number : "(null)"));
                 }
                 catch { }
-                try { Console.WriteLine($"[诊断]   LocalPlayer.AccountId.Hi = {matchInfo.LocalPlayer?.AccountId?.Hi ?? 0}"); } catch { }
-                try { Console.WriteLine($"[诊断]   LocalPlayer.AccountId.Lo = {matchInfo.LocalPlayer?.AccountId?.Lo ?? 0}"); } catch { }
+                try { var h = matchInfo.LocalPlayer?.AccountId?.Hi; Console.WriteLine("[诊断]   LocalPlayer.AccountId.Hi = " + (h ?? 0)); } catch { }
+                try { var l = matchInfo.LocalPlayer?.AccountId?.Lo; Console.WriteLine("[诊断]   LocalPlayer.AccountId.Lo = " + (l ?? 0)); } catch { }
             }
             else
             {
@@ -90,7 +90,7 @@ public static class HearthMirrorClient
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[诊断] MatchInfo 异常: {e.Message}");
+            Console.WriteLine("[诊断] MatchInfo 异常: " + e.Message);
         }
 
         // 2. BattlegroundsLobbyInfo
@@ -99,8 +99,9 @@ public static class HearthMirrorClient
             var lobby = _reflection.GetBattlegroundsLobbyInfo();
             if (lobby != null)
             {
-                Console.WriteLine($"[诊断] LobbyInfo: 非空, Players={lobby.Players?.Count ?? 0}");
-                try { Console.WriteLine($"[诊断]   GameUuid = {lobby.GameUuid ?? "(null)"); } catch { }
+                var cnt = lobby.Players?.Count ?? 0;
+                Console.WriteLine("[诊断] LobbyInfo: 非空, Players=" + cnt);
+                try { var g = lobby.GameUuid; Console.WriteLine("[诊断]   GameUuid = " + (g ?? "(null)")); } catch { }
             }
             else
             {
@@ -109,7 +110,7 @@ public static class HearthMirrorClient
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[诊断] LobbyInfo 异常: {e.Message}");
+            Console.WriteLine("[诊断] LobbyInfo 异常: " + e.Message);
         }
 
         // 3. 尝试反射列出 Reflection 类的所有公共方法
@@ -117,16 +118,16 @@ public static class HearthMirrorClient
         {
             var methods = typeof(HearthMirror.Reflection).GetMethods(
                 System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-            Console.WriteLine($"[诊断] Reflection 公共方法 ({methods.Length} 个):");
+            Console.WriteLine("[诊断] Reflection 公共方法 (" + methods.Length + " 个):");
             foreach (var m in methods)
             {
                 var parms = string.Join(", ", m.GetParameters().Select(p => p.ParameterType.Name));
-                Console.WriteLine($"[诊断]   {m.ReturnType.Name} {m.Name}({parms})");
+                Console.WriteLine("[诊断]   " + m.ReturnType.Name + " " + m.Name + "(" + parms + ")");
             }
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[诊断] 反射列出方法失败: {e.Message}");
+            Console.WriteLine("[诊断] 反射列出方法失败: " + e.Message);
         }
 
         Console.WriteLine("═══ HearthMirror 诊断结束 ═══");

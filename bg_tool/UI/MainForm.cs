@@ -88,11 +88,11 @@ public class MainForm : Form
         ApiClient.Init(_config.ApiBaseUrl);
         GameStore.Init();
 
-        // 启动时诊断 HearthMirror（结果写入 bg_tool.log）
-        HearthMirrorClient.Diagnose();
-
         BuildUI();
         UpdateUI();
+
+        // 启动时诊断 HearthMirror（结果写入 bg_tool.log + 日志面板）
+        HearthMirrorClient.Diagnose();
 
         // 异步测试 API 连通性
         Task.Run(async () =>
