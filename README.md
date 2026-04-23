@@ -240,6 +240,7 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 - 从炉石进程自动获取安装目录（HDT 同款方案：Process.MainModule.FileName）
 - 国服常见中文路径兜底 + 盘符自动扫描
 - 日志轮询优化：文件大小预检（减少 90% IO）+ 行前缀过滤（跳过 90% 冗余行）
+- 修复中途启动 bg_tool 丢失联赛对局：扫描完成后补发 check-league
 - DEV_NOTES 新增 HDT 日志读取方案对比分析（§16）
 
 ### bg_tool v0.2.3 (2026-04-23)
