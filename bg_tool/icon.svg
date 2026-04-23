@@ -1,67 +1,106 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
   <defs>
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0c1018"/>
-      <stop offset="100%" stop-color="#07080c"/>
+      <stop offset="0%" stop-color="#3a2518"/>
+      <stop offset="50%" stop-color="#2a1a10"/>
+      <stop offset="100%" stop-color="#1e120a"/>
     </linearGradient>
     <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#ffd700"/>
       <stop offset="50%" stop-color="#e2b714"/>
-      <stop offset="100%" stop-color="#a07818"/>
-    </linearGradient>
-    <linearGradient id="goldGrad2" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#ffd700"/>
       <stop offset="100%" stop-color="#c9a84c"/>
     </linearGradient>
+    <linearGradient id="woodGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#5a3a20"/>
+      <stop offset="50%" stop-color="#4a2e18"/>
+      <stop offset="100%" stop-color="#3a2210"/>
+    </linearGradient>
+    <radialGradient id="warmGlow" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="rgba(255,200,100,0.15)"/>
+      <stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
     <filter id="glow">
-      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feGaussianBlur stdDeviation="2" result="blur"/>
       <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
-    <filter id="shadow">
-      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity="0.5"/>
+    <filter id="innerShadow">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3" result="blur"/>
+      <feOffset dy="2"/>
+      <feComposite in2="SourceAlpha" operator="arithmetic" k2="-1" k3="1"/>
+      <feFlood flood-color="#000" flood-opacity="0.3"/>
+      <feComposite in2="SourceGraphic" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
 
-  <!-- 背景 -->
-  <rect width="256" height="256" rx="48" fill="url(#bgGrad)"/>
+  <!-- 木质背景 -->
+  <rect width="256" height="256" rx="44" fill="url(#bgGrad)"/>
+  <rect width="256" height="256" rx="44" fill="url(#warmGlow)"/>
 
-  <!-- 外框盾牌 -->
-  <path d="M128 16 L224 60 L224 140 C224 190 180 230 128 248 C76 230 32 190 32 140 L32 60 Z"
-        fill="none" stroke="url(#goldGrad)" stroke-width="4" opacity="0.6"/>
-  <path d="M128 28 L212 66 L212 138 C212 182 172 218 128 234 C84 218 44 182 44 138 L44 66 Z"
-        fill="rgba(255,215,0,0.03)" stroke="url(#goldGrad)" stroke-width="1.5" opacity="0.4"/>
+  <!-- 木纹装饰线 -->
+  <line x1="0" y1="30" x2="256" y2="30" stroke="#5a3a20" stroke-width="0.5" opacity="0.3"/>
+  <line x1="0" y1="226" x2="256" y2="226" stroke="#5a3a20" stroke-width="0.5" opacity="0.3"/>
 
-  <!-- 中心圆环 -->
-  <circle cx="128" cy="120" r="52" fill="none" stroke="url(#goldGrad)" stroke-width="2.5" opacity="0.5"/>
-  <circle cx="128" cy="120" r="44" fill="rgba(255,215,0,0.04)" stroke="url(#goldGrad)" stroke-width="1" opacity="0.3"/>
+  <!-- 外层金属边框 -->
+  <rect x="8" y="8" width="240" height="240" rx="38" fill="none" stroke="url(#goldGrad)" stroke-width="3" opacity="0.7"/>
+  <rect x="14" y="14" width="228" height="228" rx="34" fill="none" stroke="url(#goldGrad)" stroke-width="1" opacity="0.3"/>
+
+  <!-- 铆钉装饰 -->
+  <circle cx="32" cy="32" r="5" fill="#8b6914" opacity="0.6"/>
+  <circle cx="32" cy="32" r="3" fill="#c9a84c" opacity="0.4"/>
+  <circle cx="224" cy="32" r="5" fill="#8b6914" opacity="0.6"/>
+  <circle cx="224" cy="32" r="3" fill="#c9a84c" opacity="0.4"/>
+  <circle cx="32" cy="224" r="5" fill="#8b6914" opacity="0.6"/>
+  <circle cx="32" cy="224" r="3" fill="#c9a84c" opacity="0.4"/>
+  <circle cx="224" cy="224" r="5" fill="#8b6914" opacity="0.6"/>
+  <circle cx="224" cy="224" r="3" fill="#c9a84c" opacity="0.4"/>
+
+  <!-- 中心盾牌 -->
+  <path d="M128 40 L196 70 L196 130 C196 170 166 200 128 218 C90 200 60 170 60 130 L60 70 Z"
+        fill="url(#woodGrad)" stroke="url(#goldGrad)" stroke-width="2.5" filter="url(#innerShadow)"/>
+  <!-- 盾牌内边 -->
+  <path d="M128 52 L186 78 L186 128 C186 162 160 188 128 204 C96 188 70 162 70 128 L70 78 Z"
+        fill="none" stroke="url(#goldGrad)" stroke-width="1" opacity="0.4"/>
+
+  <!-- 盾牌顶部装饰 -->
+  <path d="M128 40 L128 52" stroke="url(#goldGrad)" stroke-width="2" opacity="0.5"/>
+  <circle cx="128" cy="36" r="4" fill="url(#goldGrad)" opacity="0.7"/>
 
   <!-- BG 文字 -->
-  <text x="128" y="112" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif"
-        font-size="42" font-weight="900" fill="url(#goldGrad2)" filter="url(#glow)">BG</text>
+  <text x="128" y="118" text-anchor="middle" font-family="'Georgia', 'Times New Roman', serif"
+        font-size="52" font-weight="900" fill="url(#goldGrad)" filter="url(#glow)"
+        letter-spacing="4">BG</text>
 
-  <!-- 底部小字 LEAGUE -->
-  <text x="128" y="138" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif"
-        font-size="11" font-weight="700" fill="#6b7280" letter-spacing="4">LEAGUE</text>
+  <!-- 底部横线装饰 -->
+  <line x1="88" y1="130" x2="168" y2="130" stroke="url(#goldGrad)" stroke-width="1" opacity="0.4"/>
+  <circle cx="88" cy="130" r="2" fill="url(#goldGrad)" opacity="0.4"/>
+  <circle cx="168" cy="130" r="2" fill="url(#goldGrad)" opacity="0.4"/>
 
-  <!-- 顶部装饰星 -->
-  <polygon points="128,40 131,48 139,48 133,53 135,61 128,56 121,61 123,53 117,48 125,48"
-           fill="url(#goldGrad)" opacity="0.6"/>
+  <!-- LEAGUE 文字 -->
+  <text x="128" y="152" text-anchor="middle" font-family="'Georgia', 'Times New Roman', serif"
+        font-size="13" font-weight="700" fill="#c9a84c" letter-spacing="5" opacity="0.8">LEAGUE</text>
 
-  <!-- 底部排名数字装饰 -->
-  <text x="76" y="190" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif"
-        font-size="14" font-weight="900" fill="#ffd700" opacity="0.15">1</text>
-  <text x="102" y="196" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif"
-        font-size="12" font-weight="900" fill="#c0c0c0" opacity="0.12">2</text>
-  <text x="128" y="200" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif"
-        font-size="11" font-weight="900" fill="#cd7f32" opacity="0.10">3</text>
-  <text x="154" y="196" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif"
-        font-size="12" font-weight="900" fill="#6b7280" opacity="0.10">4</text>
-  <text x="180" y="190" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif"
-        font-size="14" font-weight="900" fill="#6b7280" opacity="0.08">5</text>
+  <!-- 底部酒馆标志 — 酒杯 -->
+  <g transform="translate(128, 180)" opacity="0.5">
+    <path d="M-8,0 L-6,-14 L6,-14 L8,0 Z" fill="none" stroke="#c9a84c" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M8,-10 Q14,-10 14,-4 Q14,2 8,0" fill="none" stroke="#c9a84c" stroke-width="1.2"/>
+    <line x1="-4" y1="2" x2="4" y2="2" stroke="#c9a84c" stroke-width="1.5"/>
+    <line x1="-5" y1="5" x2="5" y2="5" stroke="#c9a84c" stroke-width="1.2"/>
+    <!-- 泡沫 -->
+    <circle cx="-3" cy="-15" r="2.5" fill="#c9a84c" opacity="0.3"/>
+    <circle cx="2" cy="-16" r="2" fill="#c9a84c" opacity="0.3"/>
+    <circle cx="5" cy="-14" r="1.8" fill="#c9a84c" opacity="0.25"/>
+  </g>
 
-  <!-- 边角装饰点 -->
-  <circle cx="60" cy="60" r="2" fill="#e2b714" opacity="0.3"/>
-  <circle cx="196" cy="60" r="2" fill="#e2b714" opacity="0.3"/>
-  <circle cx="60" cy="180" r="1.5" fill="#e2b714" opacity="0.2"/>
-  <circle cx="196" cy="180" r="1.5" fill="#e2b714" opacity="0.2"/>
+  <!-- 排名数字装饰（底部弧形） -->
+  <text x="78" y="210" text-anchor="middle" font-family="'Georgia', serif"
+        font-size="11" font-weight="900" fill="#ffd700" opacity="0.12">1</text>
+  <text x="98" y="214" text-anchor="middle" font-family="'Georgia', serif"
+        font-size="10" font-weight="900" fill="#c0c0c0" opacity="0.10">2</text>
+  <text x="128" y="216" text-anchor="middle" font-family="'Georgia', serif"
+        font-size="9" font-weight="900" fill="#cd7f32" opacity="0.08">3</text>
+  <text x="158" y="214" text-anchor="middle" font-family="'Georgia', serif"
+        font-size="10" font-weight="900" fill="#8b6914" opacity="0.08">4</text>
+  <text x="178" y="210" text-anchor="middle" font-family="'Georgia', serif"
+        font-size="11" font-weight="900" fill="#8b6914" opacity="0.06">5</text>
 </svg>
