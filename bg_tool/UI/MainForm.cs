@@ -648,7 +648,14 @@ public class MainForm : Form
                                         if (!string.IsNullOrEmpty(freshUuid))
                                             game.GameUuid = freshUuid;
                                     }
-                                    _currentGameUuid = !string.IsNullOrEmpty(game.GameUuid) ? game.GameUuid : Guid.NewGuid().ToString();
+                                    // gameUuid 仍为空 → 不发请求，避免脏数据
+                                    if (string.IsNullOrEmpty(game.GameUuid))
+                                    {
+                                        Console.WriteLine("[MainForm] ⚠️ gameUuid 最终为空，跳过 check-league（不发送脏数据）");
+                                        _leagueChecked = false;
+                                        return;
+                                    }
+                                    _currentGameUuid = game.GameUuid;
 
                                     var isLeague = await ApiClient.CheckLeagueAsync(
                                         _currentGameUuid,
@@ -747,8 +754,17 @@ public class MainForm : Form
         if (_leagueChecked) return;
         if (!_parser.Game.IsActive) return;
 
-        _leagueChecked = true;
         var game = _parser.Game;
+
+        // 扫描阶段如果没读到 STEP 13（英雄选择中才打开工具），数据不完整
+        // 不锁 _leagueChecked，等真正的 STEP 13 触发
+        if (string.IsNullOrEmpty(game.HeroName) || game.LobbyPlayers == null || game.LobbyPlayers.Count == 0)
+        {
+            Console.WriteLine("[日志] 📋 扫描完成，但 STEP 13 数据未就绪（可能中途启动），等待实时 STEP 13 触发");
+            return;
+        }
+
+        _leagueChecked = true;
 
         if (!string.IsNullOrEmpty(game.PlayerTag) && game.PlayerTag != _playerTag)
             _playerTag = game.PlayerTag;
@@ -766,7 +782,24 @@ public class MainForm : Form
                 if (!string.IsNullOrEmpty(freshUuid))
                     game.GameUuid = freshUuid;
             }
-            _currentGameUuid = !string.IsNullOrEmpty(game.GameUuid) ? game.GameUuid : Guid.NewGuid().ToString();
+
+            // 数据不可用 → 解锁 _leagueChecked，等真正的 STEP 13 重试
+            var hasValidLo = game.LobbyPlayers != null && game.LobbyPlayers.Any(p => p.Lo != 0);
+            if (string.IsNullOrEmpty(game.GameUuid) && game.AccountIdLo == 0 && !hasValidLo)
+            {
+                Console.WriteLine("[MainForm] ⚠️ 补发 check-league 数据不可用（gameUuid 空 + Lo 全 0），等待实时 STEP 13 重试");
+                _leagueChecked = false;
+                return;
+            }
+
+            // gameUuid 仍为空 → 不发请求，避免脏数据
+            if (string.IsNullOrEmpty(game.GameUuid))
+            {
+                Console.WriteLine("[MainForm] ⚠️ gameUuid 最终为空，跳过补发 check-league（不发送脏数据）");
+                _leagueChecked = false;
+                return;
+            }
+            _currentGameUuid = game.GameUuid;
 
             var isLeague = await ApiClient.CheckLeagueAsync(
                 _currentGameUuid,
