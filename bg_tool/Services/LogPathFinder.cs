@@ -37,13 +37,46 @@ public static class LogPathFinder
 
         // 常见路径兜底
         var triedPaths = new List<string>();
-        foreach (var logsDir in new[]
+        var candidateDirs = new List<string>
         {
             @"D:\Battle.net\Hearthstone\Logs",
             @"C:\Program Files (x86)\Hearthstone\Logs",
             @"C:\Program Files\Hearthstone\Logs",
             @"D:\Hearthstone\Logs",
-        })
+            // 国服常见中文路径
+            @"D:\暴雪战网\炉石传说\Hearthstone\Logs",
+            @"C:\暴雪战网\炉石传说\Hearthstone\Logs",
+            @"E:\暴雪战网\炉石传说\Hearthstone\Logs",
+            @"D:\暴雪战网\Hearthstone\Logs",
+            @"C:\暴雪战网\Hearthstone\Logs",
+            @"E:\暴雪战网\Hearthstone\Logs",
+        };
+
+        // 扫描所有盘符下匹配 *Hearthstone* 或 *炉石* 的目录
+        foreach (var drive in DriveInfo.GetDrives())
+        {
+            if (drive.DriveType != DriveType.Fixed || !drive.IsReady) continue;
+            var root = drive.RootDirectory.FullName;
+            foreach (var pattern in new[] { "*Hearthstone*", "*炉石*" })
+            {
+                try
+                {
+                    foreach (var dir in Directory.GetDirectories(root, pattern))
+                    {
+                        var logsPath = Path.Combine(dir, "Logs");
+                        if (!candidateDirs.Contains(logsPath, StringComparer.OrdinalIgnoreCase))
+                            candidateDirs.Add(logsPath);
+                        // 也检查 Battle.net 子目录
+                        var bnLogs = Path.Combine(dir, "Hearthstone", "Logs");
+                        if (!candidateDirs.Contains(bnLogs, StringComparer.OrdinalIgnoreCase))
+                            candidateDirs.Add(bnLogs);
+                    }
+                }
+                catch { } // 跳过无权限的目录
+            }
+        }
+
+        foreach (var logsDir in candidateDirs)
         {
             var logPath = FindLogInDir(logsDir);
             if (logPath != null) return logPath;
