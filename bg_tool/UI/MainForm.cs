@@ -471,9 +471,10 @@ public class MainForm : Form
             else if (_parser.Game.IsActive)
             {
                 Console.WriteLine($"[日志] 🔄 检测到进行中对局: {_parser.Game.PlayerTag} | 英雄={_parser.Game.HeroName} | Lo={_parser.Game.AccountIdLo}");
-                _parser.ResetLobbyState(); // 扫描跳过 check_league，实时监控中重新触发
+                _parser.ResetLobbyState();
                 _state = AppState.InGame;
                 _playerTag = _parser.Game.PlayerTag;
+                TriggerCheckLeagueIfNeeded();
             }
             else
             {
@@ -520,9 +521,10 @@ public class MainForm : Form
                         }
                         else if (_parser.Game.IsActive)
                         {
-                            _parser.ResetLobbyState(); // 扫描跳过 check_league，实时监控中重新触发
+                            _parser.ResetLobbyState();
                             _state = AppState.InGame;
                             _playerTag = _parser.Game.PlayerTag;
+                            TriggerCheckLeagueIfNeeded();
                         }
                         else
                         {
@@ -691,6 +693,60 @@ public class MainForm : Form
                 Thread.Sleep(1000);
             }
         }
+    }
+
+    /// <summary>
+    /// 扫描完成后补发 check-league（STEP 13 已过，不会在实时监控中再次触发）
+    /// </summary>
+    void TriggerCheckLeagueIfNeeded()
+    {
+        if (_leagueChecked) return;
+        if (!_parser.Game.IsActive) return;
+
+        _leagueChecked = true;
+        var game = _parser.Game;
+
+        if (!string.IsNullOrEmpty(game.PlayerTag) && game.PlayerTag != _playerTag)
+            _playerTag = game.PlayerTag;
+
+        Console.WriteLine("[日志] 📋 扫描完成，补发 check-league（STEP 13 已过）");
+
+        Task.Run(async () =>
+        {
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                if (!string.IsNullOrEmpty(game.GameUuid)) break;
+                Console.WriteLine($"[MainForm] gameUuid 为空，等待 3 秒后重试...（第 {attempt + 1}/3 次）");
+                await Task.Delay(3000);
+                var freshUuid = HearthMirrorClient.LastGameUuid;
+                if (!string.IsNullOrEmpty(freshUuid))
+                    game.GameUuid = freshUuid;
+            }
+            _currentGameUuid = !string.IsNullOrEmpty(game.GameUuid) ? game.GameUuid : Guid.NewGuid().ToString();
+
+            var isLeague = await ApiClient.CheckLeagueAsync(
+                _currentGameUuid,
+                game.PlayerTag,
+                game.AccountIdLo,
+                game.LobbyPlayers,
+                _config.Region,
+                _config.Mode,
+                DateTime.UtcNow.ToString("o"));
+
+            if (_config.TestMode)
+            {
+                isLeague = true;
+                Console.WriteLine("[API] [TEST] 强制标记为联赛对局（忽略 isLeague=false）");
+            }
+
+            if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
+                _verifyCode = ApiClient.VerificationCode;
+
+            if (isLeague)
+                _state = AppState.LeagueGame;
+
+            BeginInvoke(new Action(UpdateUI));
+        });
     }
 
     static void ScanExisting(string filePath, out Parser parser, out long pos)
