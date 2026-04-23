@@ -491,7 +491,7 @@ public class MainForm : Form
                 Thread.Sleep(3000);
             }
         }
-        Console.WriteLine("[日志] ✅ 已找到 Power.log");
+        Console.WriteLine("[日志] ✅ 已定位炉石日志");
 
         _parser = new Parser();
         long pos;
