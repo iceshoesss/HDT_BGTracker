@@ -49,6 +49,18 @@ public static class HearthMirrorClient
     }
 
     /// <summary>
+    /// 重置状态（炉石进程退出后调用，下次 TryInit 会重新初始化）
+    /// </summary>
+    public static void Reset()
+    {
+        _available = false;
+        _reflection = null;
+        LocalPlayerBattleTag = "";
+        LocalPlayerLo = 0;
+        LastGameUuid = "";
+    }
+
+    /// <summary>
     /// 从 HearthMirror 获取本地玩家 BattleTag（主菜单即可调用，无需进入对局）
     /// </summary>
     public static bool FetchBattleTag()
