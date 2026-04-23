@@ -94,31 +94,33 @@ public class MainForm : Form
         // 启动时诊断 HearthMirror（结果写入 bg_tool.log + 日志面板）
         HearthMirrorClient.Diagnose();
 
-        // 启动时尝试从 HearthMirror 获取玩家信息（主菜单即可）
+        // 尝试从 HearthMirror 获取玩家信息 + 验证码（炉石未启动时每 30 秒重试）
         Task.Run(async () =>
         {
-            var tagOk = HearthMirrorClient.FetchBattleTag();
-            var loOk = HearthMirrorClient.FetchAccountId();
-
-            if (tagOk && loOk && !string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
+            while (string.IsNullOrEmpty(ApiClient.VerificationCode))
             {
-                _playerTag = HearthMirrorClient.LocalPlayerBattleTag;
-                Console.WriteLine("[启动] ✅ 玩家信息已获取: " + _playerTag + " Lo=" + HearthMirrorClient.LocalPlayerLo);
+                var tagOk = HearthMirrorClient.FetchBattleTag();
+                var loOk = HearthMirrorClient.FetchAccountId();
 
-                // 调 upload-rating 获取验证码
-                await ApiClient.UploadRatingAsync(
-                    HearthMirrorClient.LocalPlayerBattleTag,
-                    HearthMirrorClient.LocalPlayerLo,
-                    0, _config.Region, _config.Mode);
+                if (tagOk && loOk && !string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
+                {
+                    _playerTag = HearthMirrorClient.LocalPlayerBattleTag;
+                    Console.WriteLine("[启动] ✅ 玩家信息已获取: " + _playerTag + " Lo=" + HearthMirrorClient.LocalPlayerLo);
 
-                if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
-                    _verifyCode = ApiClient.VerificationCode;
+                    await ApiClient.UploadRatingAsync(
+                        HearthMirrorClient.LocalPlayerBattleTag,
+                        HearthMirrorClient.LocalPlayerLo,
+                        0, _config.Region, _config.Mode);
 
-                BeginInvoke(new Action(UpdateUI));
-            }
-            else
-            {
-                Console.WriteLine("[启动] ⚠️ 主菜单无法获取玩家信息，等待对局中自动获取");
+                    if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
+                        _verifyCode = ApiClient.VerificationCode;
+
+                    BeginInvoke(new Action(UpdateUI));
+                    break;
+                }
+
+                // 炉石未启动或 HearthMirror 不可用，30 秒后重试
+                await Task.Delay(30000);
             }
         });
 

@@ -13,7 +13,6 @@ namespace BgTool
 /// </summary>
 public static class HearthMirrorClient
 {
-    private static bool _initAttempted;
     private static bool _available;
     private static HearthMirror.Reflection? _reflection;
 
@@ -35,8 +34,6 @@ public static class HearthMirrorClient
     public static bool TryInit()
     {
         if (_available) return true;
-        if (_initAttempted) return _available;
-        _initAttempted = true;
 
         try
         {
@@ -45,9 +42,9 @@ public static class HearthMirrorClient
             Console.WriteLine("[HearthMirror] ✅ 已加载，可获取对手 Lo");
             return true;
         }
-        catch (Exception e)
+        catch
         {
-            Console.WriteLine($"[HearthMirror] ⚠️ 不可用: {e.Message}");
+            // 失败不设 _initAttempted，允许重试（炉石可能还没启动）
             return false;
         }
     }
