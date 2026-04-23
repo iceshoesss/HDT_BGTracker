@@ -74,7 +74,9 @@ class Program
 
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         Application.Run(new MainForm());
+        Console.WriteLine($"[计时] Main 退出: {sw.ElapsedMilliseconds}ms");
     }
 }
 

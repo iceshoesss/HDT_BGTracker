@@ -64,6 +64,7 @@ public class MainForm : Form
 
     public MainForm()
     {
+        var swCtor = System.Diagnostics.Stopwatch.StartNew();
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         var verStr = version != null ? $"v{version.Major}.{version.Minor}.{version.Build}" : "";
         Text = $"🍺 酒馆战棋联赛工具 {verStr}";
@@ -88,8 +89,12 @@ public class MainForm : Form
         ApiClient.Init(_config.ApiBaseUrl);
         GameStore.Init();
 
+        var swUI = System.Diagnostics.Stopwatch.StartNew();
         BuildUI();
+        Console.WriteLine($"[计时] BuildUI: {swUI.ElapsedMilliseconds}ms");
+        swUI.Restart();
         UpdateUI();
+        Console.WriteLine($"[计时] UpdateUI: {swUI.ElapsedMilliseconds}ms");
 
         // 尝试从 HearthMirror 获取玩家信息 + 验证码（炉石未启动时每 30 秒重试）
         Task.Run(async () =>
@@ -144,6 +149,7 @@ public class MainForm : Form
         // 后台线程启动日志监控
         var thread = new Thread(LogMonitorLoop) { IsBackground = true, Name = "LogMonitor" };
         thread.Start();
+        Console.WriteLine($"[计时] 构造函数: {swCtor.ElapsedMilliseconds}ms");
     }
 
     // ═══════════════════════════════════════
