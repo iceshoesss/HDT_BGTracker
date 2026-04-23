@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using Microsoft.Win32;
@@ -33,6 +34,15 @@ public static class LogPathFinder
             var logPath = FindLogInDir(Path.Combine(installDir, "Logs"));
             if (logPath != null) return logPath;
             Console.WriteLine($"[LogPath] 注册表路径: {installDir}，Logs 下无 Power.log");
+        }
+
+        // 从运行中的炉石进程获取安装路径（HDT 同款方案）
+        var processDir = FindHsDirFromProcess();
+        if (processDir != null)
+        {
+            var logPath = FindLogInDir(Path.Combine(processDir, "Logs"));
+            if (logPath != null) return logPath;
+            Console.WriteLine($"[LogPath] 进程路径: {processDir}，Logs 下无 Power.log");
         }
 
         // 常见路径兜底
@@ -173,6 +183,40 @@ public static class LogPathFinder
 
         return null;
     }
+
+    /// <summary>
+    /// 从运行中的炉石进程获取安装目录（HDT 同款方案）
+    /// </summary>
+    private static string? FindHsDirFromProcess()
+    {
+        if (_processDirCached) return _processDir;
+        _processDirCached = true;
+
+        try
+        {
+            var procs = Process.GetProcessesByName("Hearthstone");
+            if (procs.Length == 0) return null;
+
+            var exePath = procs[0].MainModule?.FileName;
+            if (string.IsNullOrEmpty(exePath)) return null;
+
+            var dir = Path.GetDirectoryName(exePath);
+            if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+            {
+                _processDir = dir;
+                Console.WriteLine($"[LogPath] ✅ 从炉石进程找到安装目录: {dir}");
+                return dir;
+            }
+        }
+        catch
+        {
+            // MainModule 可能因权限不足抛异常，静默忽略
+        }
+        return null;
+    }
+
+    private static string? _processDir;
+    private static bool _processDirCached;
 
     private static string? FindLogInDir(string logsDir)
     {
