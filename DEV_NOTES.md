@@ -74,8 +74,13 @@ C# 插件 (HDT_BGTracker/)          Flask 网站 (LeagueWeb/)
 | 数据源 | 格式 | 有 #tag？ | 唯一标识 |
 |--------|------|----------|---------|
 | `Core.Game.Player.Name` | `南怀北瑾丨少头脑#5267` | ✅ | ❌ 游戏结束后变空 |
+| `MatchInfo.LocalPlayer.BattleTag` | `南怀北瑾丨少头脑#5267`（Name#Number 拼接） | ✅ | ✅ HearthMirror 提供 |
 | `LobbyPlayer.Name` | `南怀北瑾丨少头脑` | ❌ | 通过 `AccountId.Lo` |
 | `AccountId.Lo` | 数字 (ulong) | N/A | ✅ 跨局稳定不变 |
+
+**bg_tool 方案（v0.2.5+）**：STEP 13 时从 `MatchInfo` 获取完整 BattleTag（主力），从 `LobbyInfo` 名字匹配获取 AccountIdLo（主力）。Power.log 的 `PlayerName` 和 `GameAccountId` 保留作为 fallback。
+
+**HDT 插件方案**：`Core.Game.Player.Name`（HDT 内部通过 MatchInfo 设置，含 #tag）+ `LobbyInfo` 名字匹配获取 Lo。
 
 **关键踩坑**：
 - `Player.Name` 在**游戏结束后被重置为空**，必须在游戏进行中缓存
@@ -901,6 +906,12 @@ HearthMirror 的 `Reflection.GetBattlegroundsLobbyInfo()` 返回 `HearthMirror.O
 2. 查看 HDT 插件 `RatingTracker.cs` → `GetRegion()` 调用 `Core.Game.CurrentRegion`，`GetMode()` 用 `Core.Game.IsBattlegroundsDuosMatch`
 3. `Core.Game` 是 HDT 的 `GameV2` 类，Region 来自 Battle.net 客户端的区域配置（不是游戏内存），Mode 来自 HDT 对游戏实体标签的解析
 4. 结论：bg_tool 无法绕过 HDT 框架获取这两项，必须硬编码或从外部配置
+
+#### v0.2.5 (2026-04-23)
+- 玩家身份（BattleTag + AccountIdLo）改用 HearthMirror 为主力，Power.log 降为 fallback
+- 新增 `HearthMirrorClient.FetchMatchInfo()`：从 `MatchInfo.LocalPlayer.BattleTag` 获取完整 BattleTag（Name#Number）
+- STEP 13 流程：FetchMatchInfo → 覆盖 PlayerTag → FetchLobbyPlayers → 覆盖 AccountIdLo
+- Power.log 的 `PlayerName` 和 `GameAccountId` 保留作为 fallback（HearthMirror 不可用时兜底）
 
 #### v0.2.4 (2026-04-23)
 - 修复本地玩家 ID 获取到观战好友 ID 的 bug：Power.log CREATE_GAME 块中观战者也可能有非零 GameAccountId.Lo，Parser 取第一个非零值会命中观战者。改为 STEP 13 时通过 HearthMirror LobbyInfo 按名字匹配本地玩家，用匹配到的 Lo 覆盖 Power.log 的值

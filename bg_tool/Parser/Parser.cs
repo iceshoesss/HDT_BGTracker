@@ -309,16 +309,35 @@ public class Parser
                 if (!_loFetched)
                 {
                     _loFetched = true;
-                    // 传入本地玩家 BattleTag，HearthMirror 通过名字匹配获取真实 Lo
-                    // （修正 Power.log CREATE_GAME 可能读到观战者 Lo 的 bug）
+
+                    // 1. 从 MatchInfo 获取完整 BattleTag（Name#Number）
+                    HearthMirrorClient.FetchMatchInfo();
+
+                    // 用 HearthMirror 的 BattleTag 覆盖 Power.log 的值
+                    if (!string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
+                    {
+                        if (Game.PlayerTag != HearthMirrorClient.LocalPlayerBattleTag)
+                        {
+                            Console.WriteLine($"[Parser] 🔧 修正 BattleTag: {Game.PlayerTag} → {HearthMirrorClient.LocalPlayerBattleTag}");
+                            Game.PlayerTag = HearthMirrorClient.LocalPlayerBattleTag;
+                            var hashIdx = Game.PlayerTag.IndexOf('#');
+                            Game.PlayerDisplayName = hashIdx > 0
+                                ? Game.PlayerTag.Substring(0, hashIdx)
+                                : Game.PlayerTag;
+                        }
+                    }
+
+                    // 2. 从 LobbyInfo 获取 8 个玩家 + 本地玩家 Lo（用 BattleTag 匹配）
                     Game.LobbyPlayers = HearthMirrorClient.FetchLobbyPlayers(Game.PlayerTag);
                     Game.GameUuid = HearthMirrorClient.LastGameUuid;
-                    // 用 HearthMirror 名字匹配的 Lo 覆盖 Power.log 的值（如果匹配成功）
+
+                    // 用 HearthMirror 名字匹配的 Lo 覆盖 Power.log 的值
                     if (HearthMirrorClient.LocalPlayerLo != 0 && HearthMirrorClient.LocalPlayerLo != Game.AccountIdLo)
                     {
                         Console.WriteLine($"[Parser] 🔧 修正本地玩家 Lo: {Game.AccountIdLo} → {HearthMirrorClient.LocalPlayerLo}");
                         Game.AccountIdLo = HearthMirrorClient.LocalPlayerLo;
                     }
+
                     if (Game.LobbyPlayers.Count > 0)
                     {
                         Console.WriteLine($"[HearthMirror] 📋 获取到 {Game.LobbyPlayers.Count} 个玩家");

@@ -22,8 +22,12 @@ public static class HearthMirrorClient
     public static string LastGameUuid { get; private set; } = "";
 
     /// <summary>
+    /// 从 MatchInfo 获取的本地玩家完整 BattleTag（含 #tag）
+    /// </summary>
+    public static string LocalPlayerBattleTag { get; private set; } = "";
+
+    /// <summary>
     /// 从 LobbyInfo 中通过名字匹配获取的本地玩家 AccountId.Lo
-    /// （修正 Power.log CREATE_GAME 块可能读到观战者 Lo 的 bug）
     /// </summary>
     public static ulong LocalPlayerLo { get; private set; }
 
@@ -48,11 +52,44 @@ public static class HearthMirrorClient
     }
 
     /// <summary>
+    /// 从 MatchInfo 获取本地玩家完整 BattleTag（Name#Number）
+    /// </summary>
+    public static bool FetchMatchInfo()
+    {
+        if (!TryInit() || _reflection == null)
+            return false;
+
+        try
+        {
+            var matchInfo = _reflection.GetMatchInfo();
+            if (matchInfo?.LocalPlayer?.BattleTag != null)
+            {
+                var bt = matchInfo.LocalPlayer.BattleTag;
+                LocalPlayerBattleTag = $"{bt.Name}#{bt.Number}";
+                Console.WriteLine($"[HearthMirror] ✅ BattleTag={LocalPlayerBattleTag}（MatchInfo）");
+                return true;
+            }
+            // BattleTag 为 null 时尝试 Name fallback
+            if (matchInfo?.LocalPlayer?.Name != null)
+            {
+                LocalPlayerBattleTag = matchInfo.LocalPlayer.Name;
+                Console.WriteLine($"[HearthMirror] ✅ BattleTag={LocalPlayerBattleTag}（MatchInfo.Name fallback）");
+                return true;
+            }
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[HearthMirror] MatchInfo 读取失败: {e.Message}");
+        }
+        return false;
+    }
+
+    /// <summary>
     /// 获取大厅玩家列表 + 本地玩家的 AccountId.Lo
     /// </summary>
     /// <param name="localPlayerName">
     /// 本地玩家 BattleTag（含 #tag），用于在 LobbyInfo 中名字匹配。
-    /// HearthMirror 只有本地玩家有 Name（不带 #tag），其他 7 人为空。
+    /// 优先使用 FetchMatchInfo() 获取的 LocalPlayerBattleTag。
     /// </param>
     public static List<LobbyPlayer> FetchLobbyPlayers(string? localPlayerName = null)
     {
@@ -76,14 +113,18 @@ public static class HearthMirrorClient
             }
             catch { }
 
-            // 提取本地玩家显示名（去掉 #tag 部分）
+            // 提取本地玩家显示名：优先用 MatchInfo 的 BattleTag，fallback 用参数
             string? localDisplayName = null;
-            if (!string.IsNullOrEmpty(localPlayerName))
+            var tagSource = !string.IsNullOrEmpty(LocalPlayerBattleTag)
+                ? LocalPlayerBattleTag
+                : localPlayerName;
+
+            if (!string.IsNullOrEmpty(tagSource))
             {
-                var hashIdx = localPlayerName.IndexOf('#');
+                var hashIdx = tagSource.IndexOf('#');
                 localDisplayName = hashIdx > 0
-                    ? localPlayerName.Substring(0, hashIdx)
-                    : localPlayerName;
+                    ? tagSource.Substring(0, hashIdx)
+                    : tagSource;
             }
 
             var result = new List<LobbyPlayer>();

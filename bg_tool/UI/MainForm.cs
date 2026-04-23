@@ -560,6 +560,10 @@ public class MainForm : Form
                                 _leagueChecked = true;
                                 var game = _parser.Game;
 
+                                // HearthMirror 可能修正了 PlayerTag，同步到 UI
+                                if (!string.IsNullOrEmpty(game.PlayerTag) && game.PlayerTag != _playerTag)
+                                    _playerTag = game.PlayerTag;
+
                                 Task.Run(async () =>
                                 {
                                     // gameUuid 可能延迟加载，最多重试 3 次共 ~9 秒
