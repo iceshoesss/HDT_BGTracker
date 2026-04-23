@@ -88,6 +88,9 @@ public class MainForm : Form
         ApiClient.Init(_config.ApiBaseUrl);
         GameStore.Init();
 
+        // 启动时诊断 HearthMirror（结果写入 bg_tool.log）
+        HearthMirrorClient.Diagnose();
+
         BuildUI();
         UpdateUI();
 
