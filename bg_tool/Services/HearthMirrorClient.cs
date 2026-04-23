@@ -76,10 +76,7 @@ public static class HearthMirrorClient
                 return true;
             }
         }
-        catch (Exception e)
-        {
-            Console.WriteLine("[HearthMirror] GetBattleTag 失败: " + e.Message);
-        }
+        catch { }
         return false;
     }
 
@@ -99,10 +96,7 @@ public static class HearthMirrorClient
                 return true;
             }
         }
-        catch (Exception e)
-        {
-            Console.WriteLine("[HearthMirror] GetAccountId 失败: " + e.Message);
-        }
+        catch { }
         return false;
     }
 
