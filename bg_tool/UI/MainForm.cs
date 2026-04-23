@@ -91,9 +91,6 @@ public class MainForm : Form
         BuildUI();
         UpdateUI();
 
-        // 启动时诊断 HearthMirror（结果写入 bg_tool.log + 日志面板）
-        HearthMirrorClient.Diagnose();
-
         // 尝试从 HearthMirror 获取玩家信息 + 验证码（炉石未启动时每 30 秒重试）
         Task.Run(async () =>
         {
@@ -123,9 +120,6 @@ public class MainForm : Form
                 await Task.Delay(30000);
             }
         });
-
-        // 启动时诊断 HearthMirror（结果写入 bg_tool.log + 日志面板）
-        HearthMirrorClient.Diagnose();
 
         // 异步测试 API 连通性
         Task.Run(async () =>

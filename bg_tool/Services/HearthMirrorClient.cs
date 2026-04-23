@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 
 #nullable enable
 
@@ -93,87 +92,6 @@ public static class HearthMirrorClient
             Console.WriteLine("[HearthMirror] GetAccountId 失败: " + e.Message);
         }
         return false;
-    }
-
-    /// <summary>
-    /// 诊断：尝试从 HearthMirror 读取所有可用数据（主菜单/对局中均可调用）
-    /// 用于测试主菜单时能否获取 BattleTag + AccountId.Lo
-    /// </summary>
-    public static void Diagnose()
-    {
-        if (!TryInit() || _reflection == null)
-        {
-            Console.WriteLine("[诊断] HearthMirror 不可用");
-            return;
-        }
-
-        Console.WriteLine("═══ HearthMirror 诊断开始 ═══");
-
-        // 1. MatchInfo
-        try
-        {
-            var matchInfo = _reflection.GetMatchInfo();
-            if (matchInfo != null)
-            {
-                Console.WriteLine("[诊断] MatchInfo: 非空");
-                try { var n = matchInfo.LocalPlayer?.Name; Console.WriteLine("[诊断]   LocalPlayer.Name = " + (n ?? "(null)")); } catch { }
-                try
-                {
-                    var bt = matchInfo.LocalPlayer?.BattleTag;
-                    Console.WriteLine("[诊断]   LocalPlayer.BattleTag = " + (bt != null ? bt.Name + "#" + bt.Number : "(null)"));
-                }
-                catch { }
-                try { var h = matchInfo.LocalPlayer?.AccountId?.Hi; Console.WriteLine("[诊断]   LocalPlayer.AccountId.Hi = " + (h ?? 0)); } catch { }
-                try { var l = matchInfo.LocalPlayer?.AccountId?.Lo; Console.WriteLine("[诊断]   LocalPlayer.AccountId.Lo = " + (l ?? 0)); } catch { }
-            }
-            else
-            {
-                Console.WriteLine("[诊断] MatchInfo: null（不在对局中？）");
-            }
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine("[诊断] MatchInfo 异常: " + e.Message);
-        }
-
-        // 2. BattlegroundsLobbyInfo
-        try
-        {
-            var lobby = _reflection.GetBattlegroundsLobbyInfo();
-            if (lobby != null)
-            {
-                var cnt = lobby.Players?.Count ?? 0;
-                Console.WriteLine("[诊断] LobbyInfo: 非空, Players=" + cnt);
-                try { var g = lobby.GameUuid; Console.WriteLine("[诊断]   GameUuid = " + (g ?? "(null)")); } catch { }
-            }
-            else
-            {
-                Console.WriteLine("[诊断] LobbyInfo: null（不在对局中？）");
-            }
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine("[诊断] LobbyInfo 异常: " + e.Message);
-        }
-
-        // 3. 尝试反射列出 Reflection 类的所有公共方法
-        try
-        {
-            var methods = typeof(HearthMirror.Reflection).GetMethods(
-                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-            Console.WriteLine("[诊断] Reflection 公共方法 (" + methods.Length + " 个):");
-            foreach (var m in methods)
-            {
-                var parms = string.Join(", ", m.GetParameters().Select(p => p.ParameterType.Name));
-                Console.WriteLine("[诊断]   " + m.ReturnType.Name + " " + m.Name + "(" + parms + ")");
-            }
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine("[诊断] 反射列出方法失败: " + e.Message);
-        }
-
-        Console.WriteLine("═══ HearthMirror 诊断结束 ═══");
     }
 
     /// <summary>
