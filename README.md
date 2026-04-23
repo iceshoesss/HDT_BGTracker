@@ -236,6 +236,12 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 ## 当前开发状态
 
+### bg_tool v0.2.8 (2026-04-24)
+- 移除 Diagnose() 诊断代码
+- 启动先检测炉石进程，再获取 ID
+- 玩家名立即显示（不等验证码上传）
+- HearthMirror 失败重试间隔 30s → 5s
+
 ### bg_tool v0.2.6 (2026-04-23)
 - 从炉石进程自动获取安装目录（HDT 同款方案：Process.MainModule.FileName）
 - 国服常见中文路径兜底 + 盘符自动扫描

@@ -64,7 +64,6 @@ public class MainForm : Form
 
     public MainForm()
     {
-        var swCtor = System.Diagnostics.Stopwatch.StartNew();
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         var verStr = version != null ? $"v{version.Major}.{version.Minor}.{version.Build}" : "";
         Text = $"🍺 酒馆战棋联赛工具 {verStr}";
@@ -89,16 +88,18 @@ public class MainForm : Form
         ApiClient.Init(_config.ApiBaseUrl);
         GameStore.Init();
 
-        var swUI = System.Diagnostics.Stopwatch.StartNew();
         BuildUI();
-        Console.WriteLine($"[计时] BuildUI: {swUI.ElapsedMilliseconds}ms");
-        swUI.Restart();
         UpdateUI();
-        Console.WriteLine($"[计时] UpdateUI: {swUI.ElapsedMilliseconds}ms");
 
-        // 尝试从 HearthMirror 获取玩家信息 + 验证码（炉石未启动时每 30 秒重试）
+        // 获取玩家信息 + 验证码
         Task.Run(async () =>
         {
+            // Phase 1: 等待炉石进程启动
+            while (Process.GetProcessesByName("Hearthstone").Length == 0)
+                await Task.Delay(1000);
+            Console.WriteLine("[启动] ✅ 检测到炉石进程");
+
+            // Phase 2: 获取 ID + 上传验证码（HearthMirror 失败时 5 秒重试）
             while (string.IsNullOrEmpty(ApiClient.VerificationCode))
             {
                 var tagOk = HearthMirrorClient.FetchBattleTag();
@@ -123,8 +124,7 @@ public class MainForm : Form
                     break;
                 }
 
-                // 炉石未启动或 HearthMirror 不可用，30 秒后重试
-                await Task.Delay(30000);
+                await Task.Delay(5000);
             }
         });
 
@@ -151,7 +151,6 @@ public class MainForm : Form
         // 后台线程启动日志监控
         var thread = new Thread(LogMonitorLoop) { IsBackground = true, Name = "LogMonitor" };
         thread.Start();
-        Console.WriteLine($"[计时] 构造函数: {swCtor.ElapsedMilliseconds}ms");
     }
 
     // ═══════════════════════════════════════
