@@ -447,7 +447,7 @@ TAG_CHANGE Entity=[entityName=xxx ... cardId=xxx player=N] tag=PLAYER_LEADERBOAR
 | 数据 | 来源 | 可靠性 |
 |------|------|--------|
 | 本地玩家 BattleTag | `DebugPrintGame` 的 `PlayerName` | ✅ 可靠 |
-| accountIdLo | `Player EntityID` 的 `lo` 字段 | ✅ 可靠 |
+| accountIdLo | `Player EntityID` 的 `lo` 字段 | ⚠️ 可能读到观战者的 Lo，需用 HearthMirror 修正 |
 | 英雄名 + cardId | `FULL_ENTITY` + `LEADERBOARD_PLACE` | ✅ 可靠 |
 | 最终排名 | `LEADERBOARD_PLACE` 最后出现的值 | ⚠️ 游戏中动态变化 |
 | 对手 BattleTag | — | ❌ 不存在于 Power.log |
@@ -544,6 +544,7 @@ python bg_parser/bg_parser.py
 
 ### 已知问题
 
+- [x] **bg_tool 获取到观战者的 ID**（2026-04-23）：bg_tool 从 Power.log 的 CREATE_GAME 块读取第一个非零 `GameAccountId.Lo` 作为本地玩家 ID，但观战好友也会有非零 Lo，如果排在前面就被错误采用。HDT 插件用 HearthMirror LobbyInfo 按名字匹配不存在此问题。修复方案：STEP 13 调用 `FetchLobbyPlayers(playerTag)` 时传入本地玩家 BattleTag，HearthMirror 通过 `p.Name == displayName` 匹配本地玩家并提取真实 Lo，覆盖 Power.log 的值。已修复。
 - [x] **bg_tool 闪退无报错**（2026-04-20）：最初误判为 x86 注册表重定向问题，实际根因是未打开游戏时 `LogPathFinder.Find()` 返回 null，程序直接 return 退出。修复方案：未找到 Power.log 时循环等待游戏启动（3 秒重试），而非直接退出。见 commit `b793bec`。
 - [x] **bg_tool 英雄解析失败**（2026-04-20）：`HERO_ENTITY` 在 Power.log 中有时出现在 `FULL_ENTITY` 之前，导致 `FindHeroByEntity` 返回 null → 英雄名显示"(等待数据)"，后续 LEADERBOARD_PLACE 也因 `Game.HeroCardId` 为空无法匹配排名。修复方案：HERO_ENTITY 找不到英雄时不播报事件，等 FULL_ENTITY 补上后播报；STEP MAIN_START/MAIN_CLEANUP 时主动重试 `FindHeroByEntity`；LEADERBOARD_PLACE 增加 EntityId 匹配 fallback。已修复。**注意**：playerSlot 不能作为本地玩家标识（实际日志中本地英雄 player=1，Python parser 也不使用 playerSlot）。
 - [x] **bg_tool 启动读取旧数据**（2026-04-20）：上局游戏未正常结束（无 STATE=COMPLETE），工具启动时 `FindLastCreateGamePos` 定位到最后一个 CREATE_GAME 并扫描旧数据，误认为"进行中"。修复方案：ScanExisting 后检测 active 但无任何游戏数据（无英雄/PlayerTag/AccountIdLo）时，判定为旧数据，跳到文件尾等待新游戏。已修复。**已知边界场景**：玩家断线重连回同一局时，bg_tool 从重连的 CREATE_GAME 开始扫描，`_pendingNewGame` 为 null（全新 Parser），重连数据无法恢复旧局状态，Game 为空壳。该场景不常见，暂不处理。
@@ -900,6 +901,12 @@ HearthMirror 的 `Reflection.GetBattlegroundsLobbyInfo()` 返回 `HearthMirror.O
 2. 查看 HDT 插件 `RatingTracker.cs` → `GetRegion()` 调用 `Core.Game.CurrentRegion`，`GetMode()` 用 `Core.Game.IsBattlegroundsDuosMatch`
 3. `Core.Game` 是 HDT 的 `GameV2` 类，Region 来自 Battle.net 客户端的区域配置（不是游戏内存），Mode 来自 HDT 对游戏实体标签的解析
 4. 结论：bg_tool 无法绕过 HDT 框架获取这两项，必须硬编码或从外部配置
+
+#### v0.2.4 (2026-04-23)
+- 修复本地玩家 ID 获取到观战好友 ID 的 bug：Power.log CREATE_GAME 块中观战者也可能有非零 GameAccountId.Lo，Parser 取第一个非零值会命中观战者。改为 STEP 13 时通过 HearthMirror LobbyInfo 按名字匹配本地玩家，用匹配到的 Lo 覆盖 Power.log 的值
+- `HearthMirrorClient.FetchLobbyPlayers()` 新增 `localPlayerName` 参数，内部提取 displayName 匹配 `p.Name`
+- 新增 `HearthMirrorClient.LocalPlayerLo` 属性，Parser 在 STEP 13 时检查并修正 `Game.AccountIdLo`
+- 修正时输出诊断日志 `[Parser] 🔧 修正本地玩家 Lo: xxx → yyy`
 
 #### v0.2.3 (2026-04-23)
 - check-league 接入 HearthDb 解析英雄名，POST 携带 heroName（与插件格式一致）

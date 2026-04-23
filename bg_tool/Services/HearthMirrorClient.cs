@@ -21,6 +21,12 @@ public static class HearthMirrorClient
     /// </summary>
     public static string LastGameUuid { get; private set; } = "";
 
+    /// <summary>
+    /// 从 LobbyInfo 中通过名字匹配获取的本地玩家 AccountId.Lo
+    /// （修正 Power.log CREATE_GAME 块可能读到观战者 Lo 的 bug）
+    /// </summary>
+    public static ulong LocalPlayerLo { get; private set; }
+
     public static bool TryInit()
     {
         if (_available) return true;
@@ -41,8 +47,17 @@ public static class HearthMirrorClient
         }
     }
 
-    public static List<LobbyPlayer> FetchLobbyPlayers()
+    /// <summary>
+    /// 获取大厅玩家列表 + 本地玩家的 AccountId.Lo
+    /// </summary>
+    /// <param name="localPlayerName">
+    /// 本地玩家 BattleTag（含 #tag），用于在 LobbyInfo 中名字匹配。
+    /// HearthMirror 只有本地玩家有 Name（不带 #tag），其他 7 人为空。
+    /// </param>
+    public static List<LobbyPlayer> FetchLobbyPlayers(string? localPlayerName = null)
     {
+        LocalPlayerLo = 0;
+
         if (!TryInit() || _reflection == null)
             return new List<LobbyPlayer>();
 
@@ -61,6 +76,16 @@ public static class HearthMirrorClient
             }
             catch { }
 
+            // 提取本地玩家显示名（去掉 #tag 部分）
+            string? localDisplayName = null;
+            if (!string.IsNullOrEmpty(localPlayerName))
+            {
+                var hashIdx = localPlayerName.IndexOf('#');
+                localDisplayName = hashIdx > 0
+                    ? localPlayerName.Substring(0, hashIdx)
+                    : localPlayerName;
+            }
+
             var result = new List<LobbyPlayer>();
             for (int i = 0; i < lobby.Players.Count; i++)
             {
@@ -69,8 +94,24 @@ public static class HearthMirrorClient
                 var heroCardId = p.HeroCardId ?? "";
                 var heroName = HeroNameResolver.Resolve(heroCardId);
 
+                // 通过名字匹配识别本地玩家（和 HDT 插件 GetAccountIdLo 同逻辑）
+                if (LocalPlayerLo == 0 && lo != 0
+                    && !string.IsNullOrEmpty(localDisplayName)
+                    && p.Name == localDisplayName)
+                {
+                    LocalPlayerLo = lo;
+                    Console.WriteLine($"[HearthMirror] ✅ 本地玩家 Lo={lo}（名字匹配: {p.Name}）");
+                }
+
                 result.Add(new LobbyPlayer { Lo = lo, HeroCardId = heroCardId, HeroName = heroName });
             }
+
+            // 未匹配到时输出诊断
+            if (LocalPlayerLo == 0 && !string.IsNullOrEmpty(localDisplayName))
+            {
+                Console.WriteLine($"[HearthMirror] ⚠️ 未通过名字匹配到本地玩家（期望: {localDisplayName}）");
+            }
+
             return result;
         }
         catch (Exception e)

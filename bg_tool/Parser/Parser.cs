@@ -309,8 +309,16 @@ public class Parser
                 if (!_loFetched)
                 {
                     _loFetched = true;
-                    Game.LobbyPlayers = HearthMirrorClient.FetchLobbyPlayers();
+                    // 传入本地玩家 BattleTag，HearthMirror 通过名字匹配获取真实 Lo
+                    // （修正 Power.log CREATE_GAME 可能读到观战者 Lo 的 bug）
+                    Game.LobbyPlayers = HearthMirrorClient.FetchLobbyPlayers(Game.PlayerTag);
                     Game.GameUuid = HearthMirrorClient.LastGameUuid;
+                    // 用 HearthMirror 名字匹配的 Lo 覆盖 Power.log 的值（如果匹配成功）
+                    if (HearthMirrorClient.LocalPlayerLo != 0 && HearthMirrorClient.LocalPlayerLo != Game.AccountIdLo)
+                    {
+                        Console.WriteLine($"[Parser] 🔧 修正本地玩家 Lo: {Game.AccountIdLo} → {HearthMirrorClient.LocalPlayerLo}");
+                        Game.AccountIdLo = HearthMirrorClient.LocalPlayerLo;
+                    }
                     if (Game.LobbyPlayers.Count > 0)
                     {
                         Console.WriteLine($"[HearthMirror] 📋 获取到 {Game.LobbyPlayers.Count} 个玩家");
