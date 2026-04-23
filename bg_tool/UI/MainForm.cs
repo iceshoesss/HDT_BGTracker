@@ -533,6 +533,12 @@ public class MainForm : Form
                     }
                 }
 
+                // 先检查文件是否有新数据，避免每 100ms 重复打开 FileStream
+                long fileLen;
+                try { fileLen = new FileInfo(currentPath).Length; }
+                catch { Thread.Sleep(200); continue; }
+                if (fileLen <= pos) { Thread.Sleep(100); continue; }
+
                 string[] lines;
                 using (var fs = new FileStream(currentPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                 using (var reader = new StreamReader(fs))
@@ -548,6 +554,11 @@ public class MainForm : Form
                 bool uiChanged = false;
                 foreach (var line in lines)
                 {
+                    // 行前缀过滤（HDT 方案）：跳过 90% 的 PowerTaskList.DebugDump 冗余行
+                    if (!line.Contains("GameState.") && !line.Contains("PowerTaskList.DebugPrintPower()")
+                        && !line.Contains("PowerTaskList.DebugDump()"))
+                        continue;
+
                     var evt = _parser.ProcessLine(line);
                     if (evt == null) continue;
 
