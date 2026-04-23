@@ -67,6 +67,14 @@ public class MainForm : Form
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         var verStr = version != null ? $"v{version.Major}.{version.Minor}.{version.Build}" : "";
         Text = $"🍺 酒馆战棋联赛工具 {verStr}";
+        // 加载窗口图标
+        try
+        {
+            var iconPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "icon.ico");
+            if (System.IO.File.Exists(iconPath))
+                Icon = new System.Drawing.Icon(iconPath);
+        }
+        catch { }
         Size = new Size(440, 510);
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
