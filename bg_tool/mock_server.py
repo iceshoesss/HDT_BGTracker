@@ -63,7 +63,7 @@ class MockState:
         else:
             print(f"  📝 排名已记录: Lo={account_lo} → 第{placement}名 ({total}/8)")
 
-        return {"ok": True, "finalized": finalized}
+        return {"ok": True, "finalized": finalized}, 200
 
 
 state = MockState()
