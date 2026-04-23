@@ -857,6 +857,129 @@ BO 系列赛流程：
 
 BO N 下每局积分不变，N 局累加。公式：`points = placement == 1 ? 9 : max(1, 9 - placement)`
 
+## 16. HDT 日志读取方案对比分析
+
+> 2026-04-23 阅读 HDT 源码整理，**重要参考资料**。
+
+### HDT 架构概览
+
+HDT 采用**双管齐下**策略：
+- **Power.log 文件监控**：游戏生命周期、STEP 变化、对局事件（通过 `HearthWatcher.LogFileWatcher`）
+- **HearthMirror 内存读取**：实时获取玩家信息、排名、对局 UUID 等（通过 C# 直接引用 DLL）
+
+两者互补，缺一不可。bg_tool 的架构与 HDT 类似，但 bg_tool 是独立程序，不依赖 HDT 框架。
+
+### HDT 日志路径查找（LogWatcherManager.Start）
+
+**关键源码**：`Hearthstone Deck Tracker/LogReader/LogWatcherManager.cs`
+
+```csharp
+public async Task Start(GameV2 game)
+{
+    if(!Helper.HearthstoneDirExists)
+        await FindHearthstone();  // 找不到就等进程
+    var logDirectory = Path.Combine(
+        Config.Instance.HearthstoneDirectory,
+        Config.Instance.HearthstoneLogsDirectoryName
+    );
+    _logWatcher.Start(logDirectory);
+}
+
+private async Task FindHearthstone()
+{
+    Log.Warn("Hearthstone not found, waiting for process...");
+    Process? proc;
+    while((proc = User32.GetHearthstoneProc()) == null)
+        await Task.Delay(500);  // 每 500ms 检查一次
+    var dir = new FileInfo(proc.MainModule.FileName).Directory?.FullName;
+    Config.Instance.HearthstoneDirectory = dir;
+    Config.Save();  // 存下来下次直接用
+}
+```
+
+**查找顺序**：
+1. `Config.Instance.HearthstoneDirectory`（用户在 HDT 设置中手动指定，持久化保存）
+2. `Helper.FindHearthstoneDir()`（注册表查找，3 个位置）
+3. **等炉石进程启动**，从 `Process.MainModule.FileName` 推导安装目录
+4. 找到后写入 Config，下次直接用
+
+**bg_tool 已采纳**：v0.2.6 加入了相同的进程检测方案（`FindHsDirFromProcess()`）。
+
+### HDT 日志文件监控（LogFileWatcher）
+
+**关键源码**：`HearthWatcher/LogReader/LogFileWatcher.cs`
+
+HDT 的日志监控与 bg_tool 的对比：
+
+| 特性 | HDT LogFileWatcher | bg_tool MainForm |
+|------|-------------------|-----------------|
+| 文件句柄 | 保持打开，不重复开关 | 每 100ms 重新打开 FileStream |
+| 行前缀过滤 | `StartsWithFilters` 过滤，只处理 `GameState.` 和 `PowerTaskList.DebugPrintPower()` | v0.2.6 加入相同过滤 |
+| 文件大小预检 | 有（检查 offset vs 文件大小） | v0.2.6 加入（FileInfo.Length 预检） |
+| 线程模型 | ConcurrentQueue，读取和处理分离 | 单线程，读一行处理一行 |
+| 日志目录切换 | 检测 Hearthstone_* 子目录创建时间，MoveTo 文件判断活跃目录 | LogPathFinder.CheckNewLogFile 检测新目录 |
+| 内存保护 | MAX_LOG_LINE_BUFFER=100000，防止 BG 后期爆内存 | 无（但实际影响不大，BG 对局不会太长） |
+
+### HDT 日志过滤机制（重点）
+
+HDT 的 `LogWatcherInfo` 定义了过滤规则：
+
+```csharp
+public static LogWatcherInfo PowerLogWatcherInfo => new LogWatcherInfo
+{
+    Name = "Power",
+    StartsWithFilters = new[] {
+        "PowerTaskList.DebugPrintPower",  // FULL_ENTITY、TAG_CHANGE 等
+        "GameState.",                      // DebugPrintGame、DebugPrintPower 等
+        "PowerProcessor.EndCurrentTaskList"
+    },
+    ContainsFilters = new[] {
+        "Begin Spectating", "Start Spectator", "End Spectator"
+    }
+};
+```
+
+**原理**：Power.log 中 90%+ 的行是 `PowerTaskList.DebugDump()` 输出（冗余的游戏状态 dump），只有 `GameState.` 和 `PowerTaskList.DebugPrintPower()` 开头的行包含有用信息。HDT 在读取层就过滤掉无用行，避免进入解析器。
+
+**bg_tool v0.2.6 已采纳**：
+```csharp
+if (!line.Contains("GameState.") && !line.Contains("PowerTaskList.DebugPrintPower()")
+    && !line.Contains("PowerTaskList.DebugDump()"))
+    continue;
+```
+注：bg_tool 额外保留 `PowerTaskList.DebugDump()` 是因为 Parser 用它标记 CREATE_GAME 块结束。
+
+### HDT 游戏状态检测
+
+HDT 不依赖单一信号判断游戏状态：
+- **游戏开始**：`LoadingScreen.OnSceneLoaded` + `MulliganManager.HandleGameStart`
+- **游戏结束**：`STATE=COMPLETE` + `IsInMenu`（由日志 mode 变化驱动）
+- **排名获取**：`PLAYER_LEADERBOARD_PLACE` tag（来自 Power.log）+ HearthMirror 内存读取
+
+bg_tool 的游戏结束检测依赖 `IsInMenu`（与 HDT 一致），排名只从 Power.log 读取。
+
+### bg_tool 与 HDT 的功能对比
+
+| 功能 | HDT | bg_tool | 说明 |
+|------|-----|---------|------|
+| 日志路径查找 | 注册表 + Config + 进程检测 | 注册表 + 进程检测 + 硬coded + 盘符扫描 | bg_tool 兜底更多 |
+| 玩家 BattleTag | HearthMirror MatchInfo | HearthMirror MatchInfo | ✅ 相同方案 |
+| 对手 AccountId.Lo | HearthMirror LobbyInfo | HearthMirror LobbyInfo | ✅ 相同方案 |
+| 英雄信息 | HearthMirror + Power.log | HearthMirror + Power.log | ✅ 相同方案 |
+| 排名获取 | HearthMirror + Power.log | Power.log only | bg_tool 不走 HDT，无内存读取 |
+| 游戏结束检测 | IsInMenu + STATE=COMPLETE | IsInMenu + STATE=COMPLETE | ✅ 相同方案 |
+| 联赛匹配 | 无（HDT 不做联赛） | check-league API | bg_tool 独有 |
+| 断线重连 | 日志 timestamp 跳跃检测 | CREATE_GAME 块 TURN tag 检测 | 不同实现 |
+
+### 关键结论
+
+1. **HDT 也读 Power.log**，不是纯内存方案。HearthMirror 补充了日志无法获取的实时数据。
+2. **日志路径查找是通用问题**，HDT 用进程检测解决，bg_tool 已采纳。
+3. **行前缀过滤是必要的优化**，Power.log 冗余数据量大，不过滤会影响性能。
+4. **bg_tool 的排名获取是瓶颈**——HDT 有 HearthMirror 双重保障，bg_tool 只有 Power.log，`PLAYER_LEADERBOARD_PLACE` 延迟问题无法绕过（服务端 80 分钟超时兜底）。
+
+---
+
 ## 15. 更新记录
 
 <details>
@@ -865,6 +988,18 @@ BO N 下每局积分不变，N 局累加。公式：`points = placement == 1 ? 9
 ### C# 插件
 
 ### bg_tool
+
+#### v0.2.6 (2026-04-23) — HDT 方案借鉴：进程检测 + 日志轮询优化
+- LogPathFinder 新增 `FindHsDirFromProcess()`：从运行中的炉石进程获取安装目录（HDT 同款方案）
+  - `Process.GetProcessesByName("Hearthstone")` → `MainModule.FileName` → 推导安装目录 → 拼 `\Logs`
+  - 结果缓存（`_processDirCached`），不重复扫描
+  - 注册表找不到时自动触发，作为第三级兜底（在硬coded路径之前）
+- 国服常见中文路径兜底：`D:\暴雪战网\炉石传说\Hearthstone\Logs` 等 6 个组合
+- 盘符扫描：自动扫描所有固定盘符根目录下 `*Hearthstone*` 和 `*炉石*` 子目录
+- 日志轮询优化（参考 HDT LogFileWatcher）：
+  - 文件大小预检：`FileInfo.Length` 先检查，无新数据不打开 FileStream（减少 90% IO）
+  - 行前缀过滤：跳过 `PowerTaskList.DebugDump()` 冗余行（占日志 90%+），只保留 `GameState.` 和 `PowerTaskList.DebugPrintPower()` 再进 Parser
+- 新增 DEV_NOTES §16：HDT 日志读取方案对比分析（重要参考资料）
 
 #### 2026-04-21 bg_tool 对接 Flask API
 - 新增 `ApiClient.cs`：极简 HTTP 客户端，无第三方 JSON 库依赖，手写序列化
