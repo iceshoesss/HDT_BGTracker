@@ -910,8 +910,9 @@ HearthMirror 的 `Reflection.GetBattlegroundsLobbyInfo()` 返回 `HearthMirror.O
 #### v0.2.5 (2026-04-23)
 - 玩家身份（BattleTag + AccountIdLo）改用 HearthMirror 为主力，Power.log 降为 fallback
 - 新增 `HearthMirrorClient.FetchMatchInfo()`：从 `MatchInfo.LocalPlayer.BattleTag` 获取完整 BattleTag（Name#Number）
-- STEP 13 流程：FetchMatchInfo → 覆盖 PlayerTag → FetchLobbyPlayers → 覆盖 AccountIdLo
-- Power.log 的 `PlayerName` 和 `GameAccountId` 保留作为 fallback（HearthMirror 不可用时兜底）
+- STEP 13 流程：FetchMatchInfo → FetchLobbyPlayers → 两者都成功才触发 check-league
+- **关键**：BattleTag 或 Lo 任一未被 HearthMirror 确认 → 跳过 check-league，不发请求，避免用错误 ID 创建对局记录
+- Power.log 的 `PlayerName` 和 `GameAccountId` 保留作为初始值（HearthMirror 不可用时兜底，但不会触发 check-league）
 
 #### v0.2.4 (2026-04-23)
 - 修复本地玩家 ID 获取到观战好友 ID 的 bug：Power.log CREATE_GAME 块中观战者也可能有非零 GameAccountId.Lo，Parser 取第一个非零值会命中观战者。改为 STEP 13 时通过 HearthMirror LobbyInfo 按名字匹配本地玩家，用匹配到的 Lo 覆盖 Power.log 的值

@@ -311,37 +311,41 @@ public class Parser
                     _loFetched = true;
 
                     // 1. 从 MatchInfo 获取完整 BattleTag（Name#Number）
-                    HearthMirrorClient.FetchMatchInfo();
+                    var matchOk = HearthMirrorClient.FetchMatchInfo();
 
-                    // 用 HearthMirror 的 BattleTag 覆盖 Power.log 的值
-                    if (!string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
+                    if (matchOk && !string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
                     {
-                        if (Game.PlayerTag != HearthMirrorClient.LocalPlayerBattleTag)
-                        {
-                            Console.WriteLine($"[Parser] 🔧 修正 BattleTag: {Game.PlayerTag} → {HearthMirrorClient.LocalPlayerBattleTag}");
-                            Game.PlayerTag = HearthMirrorClient.LocalPlayerBattleTag;
-                            var hashIdx = Game.PlayerTag.IndexOf('#');
-                            Game.PlayerDisplayName = hashIdx > 0
-                                ? Game.PlayerTag.Substring(0, hashIdx)
-                                : Game.PlayerTag;
-                        }
+                        Game.PlayerTag = HearthMirrorClient.LocalPlayerBattleTag;
+                        var hashIdx = Game.PlayerTag.IndexOf('#');
+                        Game.PlayerDisplayName = hashIdx > 0
+                            ? Game.PlayerTag.Substring(0, hashIdx)
+                            : Game.PlayerTag;
                     }
 
                     // 2. 从 LobbyInfo 获取 8 个玩家 + 本地玩家 Lo（用 BattleTag 匹配）
                     Game.LobbyPlayers = HearthMirrorClient.FetchLobbyPlayers(Game.PlayerTag);
                     Game.GameUuid = HearthMirrorClient.LastGameUuid;
 
-                    // 用 HearthMirror 名字匹配的 Lo 覆盖 Power.log 的值
-                    if (HearthMirrorClient.LocalPlayerLo != 0 && HearthMirrorClient.LocalPlayerLo != Game.AccountIdLo)
-                    {
-                        Console.WriteLine($"[Parser] 🔧 修正本地玩家 Lo: {Game.AccountIdLo} → {HearthMirrorClient.LocalPlayerLo}");
+                    var loConfirmed = HearthMirrorClient.LocalPlayerLo != 0;
+                    if (loConfirmed)
                         Game.AccountIdLo = HearthMirrorClient.LocalPlayerLo;
-                    }
 
-                    if (Game.LobbyPlayers.Count > 0)
+                    // 3. 只有 BattleTag 和 Lo 都被 HearthMirror 确认才触发 check-league
+                    //    任一失败 → 不发请求，避免用错误 ID 创建对局记录
+                    if (matchOk && loConfirmed && Game.LobbyPlayers.Count > 0)
                     {
-                        Console.WriteLine($"[HearthMirror] 📋 获取到 {Game.LobbyPlayers.Count} 个玩家");
+                        Console.WriteLine($"[HearthMirror] 📋 获取到 {Game.LobbyPlayers.Count} 个玩家 | Lo={Game.AccountIdLo} | Tag={Game.PlayerTag}");
                         return "check_league";
+                    }
+                    else
+                    {
+                        // 诊断：哪个环节失败了
+                        if (!matchOk)
+                            Console.WriteLine("[HearthMirror] ❌ MatchInfo 不可用，跳过 check-league");
+                        else if (!loConfirmed)
+                            Console.WriteLine("[HearthMirror] ❌ 本地玩家 Lo 未匹配，跳过 check-league");
+                        else if (Game.LobbyPlayers.Count == 0)
+                            Console.WriteLine("[HearthMirror] ❌ LobbyInfo 无玩家数据，跳过 check-league");
                     }
                 }
             }
