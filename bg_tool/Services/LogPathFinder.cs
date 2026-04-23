@@ -33,7 +33,6 @@ public static class LogPathFinder
         {
             var logPath = FindLogInDir(Path.Combine(installDir, "Logs"));
             if (logPath != null) return logPath;
-            Console.WriteLine($"[LogPath] 注册表路径: {installDir}，Logs 下无 Power.log");
         }
 
         // 从运行中的炉石进程获取安装路径（HDT 同款方案）
@@ -42,7 +41,6 @@ public static class LogPathFinder
         {
             var logPath = FindLogInDir(Path.Combine(processDir, "Logs"));
             if (logPath != null) return logPath;
-            Console.WriteLine($"[LogPath] 进程路径: {processDir}，Logs 下无 Power.log");
         }
 
         // 常见路径兜底
@@ -100,7 +98,6 @@ public static class LogPathFinder
         if (!_diagnosed)
         {
             _diagnosed = true;
-            Console.WriteLine($"[LogPath] ❌ 未找到 Power.log，已检查: 注册表={installDir ?? "无"} | {string.Join(" | ", triedPaths)}");
         }
         return null;
     }
@@ -204,7 +201,6 @@ public static class LogPathFinder
             if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
             {
                 _processDir = dir;
-                Console.WriteLine($"[LogPath] ✅ 从炉石进程找到安装目录: {dir}");
                 return dir;
             }
         }

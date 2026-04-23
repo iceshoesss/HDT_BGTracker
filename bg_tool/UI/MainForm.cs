@@ -486,12 +486,12 @@ public class MainForm : Form
             if (logPath == null)
             {
                 waitCount++;
-                if (waitCount % 5 == 1) // 每 15 秒打一次，避免刷屏
-                    Console.WriteLine($"[日志] ⏳ 未找到 Power.log（已等待 {waitCount * 3} 秒），请确认炉石已启动");
+                if (waitCount % 10 == 1) // 每 30 秒打一次
+                    Console.WriteLine($"[日志] ⏳ 等待 Power.log...（已等待 {waitCount * 3} 秒）");
                 Thread.Sleep(3000);
             }
         }
-        Console.WriteLine($"[日志] ✅ 找到: {logPath}");
+        Console.WriteLine("[日志] ✅ 已找到 Power.log");
 
         _parser = new Parser();
         long pos;
