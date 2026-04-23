@@ -168,6 +168,48 @@ public static class ApiClient
     }
 
     /// <summary>
+    /// 启动时调用，上报评分获取验证码（无需进入对局）
+    /// </summary>
+    public static async Task<bool> UploadRatingAsync(
+        string playerId,
+        ulong accountIdLo,
+        int rating = 0,
+        string region = "CN",
+        string mode = "solo")
+    {
+        LastError = "";
+
+        var body = new Dictionary<string, object>
+        {
+            ["playerId"] = playerId,
+            ["accountIdLo"] = accountIdLo.ToString(),
+            ["rating"] = rating,
+            ["mode"] = mode,
+            ["region"] = region
+        };
+
+        try
+        {
+            var (ok, json) = await PostAsync("/api/plugin/upload-rating", body);
+            if (!ok) return false;
+
+            var vc = ExtractJsonString(json, "verificationCode");
+            if (!string.IsNullOrEmpty(vc))
+            {
+                VerificationCode = vc;
+                Console.WriteLine("[API] ✅ 验证码: " + VerificationCode + "（upload-rating）");
+                return true;
+            }
+        }
+        catch (Exception e)
+        {
+            LastError = "upload-rating 异常: " + e.Message;
+            Console.WriteLine("[API] ⚠️ " + LastError);
+        }
+        return false;
+    }
+
+    /// <summary>
     /// 游戏结束时调用，上报排名
     /// </summary>
     public static async Task<bool> UpdatePlacementAsync(

@@ -53,6 +53,52 @@ public static class HearthMirrorClient
     }
 
     /// <summary>
+    /// 从 HearthMirror 获取本地玩家 BattleTag（主菜单即可调用，无需进入对局）
+    /// </summary>
+    public static bool FetchBattleTag()
+    {
+        if (!TryInit() || _reflection == null) return false;
+        try
+        {
+            var bt = _reflection.GetBattleTag();
+            if (bt != null)
+            {
+                LocalPlayerBattleTag = bt.Name + "#" + bt.Number;
+                Console.WriteLine("[HearthMirror] ✅ BattleTag=" + LocalPlayerBattleTag + "（GetBattleTag）");
+                return true;
+            }
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("[HearthMirror] GetBattleTag 失败: " + e.Message);
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// 从 HearthMirror 获取本地玩家 AccountId.Lo（主菜单即可调用，无需进入对局）
+    /// </summary>
+    public static bool FetchAccountId()
+    {
+        if (!TryInit() || _reflection == null) return false;
+        try
+        {
+            var accountId = _reflection.GetAccountId();
+            if (accountId != null && accountId.Lo != 0)
+            {
+                LocalPlayerLo = accountId.Lo;
+                Console.WriteLine("[HearthMirror] ✅ AccountId.Lo=" + LocalPlayerLo + "（GetAccountId）");
+                return true;
+            }
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("[HearthMirror] GetAccountId 失败: " + e.Message);
+        }
+        return false;
+    }
+
+    /// <summary>
     /// 诊断：尝试从 HearthMirror 读取所有可用数据（主菜单/对局中均可调用）
     /// 用于测试主菜单时能否获取 BattleTag + AccountId.Lo
     /// </summary>

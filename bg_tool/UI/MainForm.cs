@@ -94,6 +94,37 @@ public class MainForm : Form
         // 启动时诊断 HearthMirror（结果写入 bg_tool.log + 日志面板）
         HearthMirrorClient.Diagnose();
 
+        // 启动时尝试从 HearthMirror 获取玩家信息（主菜单即可）
+        Task.Run(async () =>
+        {
+            var tagOk = HearthMirrorClient.FetchBattleTag();
+            var loOk = HearthMirrorClient.FetchAccountId();
+
+            if (tagOk && loOk && !string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
+            {
+                _playerTag = HearthMirrorClient.LocalPlayerBattleTag;
+                Console.WriteLine("[启动] ✅ 玩家信息已获取: " + _playerTag + " Lo=" + HearthMirrorClient.LocalPlayerLo);
+
+                // 调 upload-rating 获取验证码
+                await ApiClient.UploadRatingAsync(
+                    HearthMirrorClient.LocalPlayerBattleTag,
+                    HearthMirrorClient.LocalPlayerLo,
+                    0, _config.Region, _config.Mode);
+
+                if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
+                    _verifyCode = ApiClient.VerificationCode;
+
+                BeginInvoke(new Action(UpdateUI));
+            }
+            else
+            {
+                Console.WriteLine("[启动] ⚠️ 主菜单无法获取玩家信息，等待对局中自动获取");
+            }
+        });
+
+        // 启动时诊断 HearthMirror（结果写入 bg_tool.log + 日志面板）
+        HearthMirrorClient.Diagnose();
+
         // 异步测试 API 连通性
         Task.Run(async () =>
         {
