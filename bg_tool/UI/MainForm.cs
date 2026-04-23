@@ -435,12 +435,19 @@ public class MainForm : Form
     {
         // 等待日志出现
         string? logPath = null;
+        var waitCount = 0;
         while (logPath == null)
         {
             logPath = LogPathFinder.Find(null);
             if (logPath == null)
+            {
+                waitCount++;
+                if (waitCount % 5 == 1) // 每 15 秒打一次，避免刷屏
+                    Console.WriteLine($"[日志] ⏳ 未找到 Power.log（已等待 {waitCount * 3} 秒），请确认炉石已启动");
                 Thread.Sleep(3000);
+            }
         }
+        Console.WriteLine($"[日志] ✅ 找到: {logPath}");
 
         _parser = new Parser();
         long pos;
@@ -457,18 +464,25 @@ public class MainForm : Form
                 && string.IsNullOrEmpty(_parser.Game.PlayerTag)
                 && _parser.Game.AccountIdLo == 0)
             {
+                Console.WriteLine("[日志] 📦 检测到旧数据（无有效信息），跳到文件尾等待新对局");
                 _parser.Game.IsActive = false;
                 pos = GetFileEnd(logPath);
             }
             else if (_parser.Game.IsActive)
             {
+                Console.WriteLine($"[日志] 🔄 检测到进行中对局: {_parser.Game.PlayerTag} | 英雄={_parser.Game.HeroName} | Lo={_parser.Game.AccountIdLo}");
                 _parser.ResetLobbyState(); // 扫描跳过 check_league，实时监控中重新触发
                 _state = AppState.InGame;
                 _playerTag = _parser.Game.PlayerTag;
             }
+            else
+            {
+                Console.WriteLine("[日志] 📭 无进行中对局，等待新游戏开始...");
+            }
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"[日志] ⚠️ 扫描异常: {ex.Message}，跳到文件尾");
             _parser = new Parser();
             pos = GetFileEnd(logPath);
         }
@@ -476,6 +490,7 @@ public class MainForm : Form
         UpdateUI();
 
         // 实时监控
+        Console.WriteLine("[日志] 👁 开始实时监控，等待游戏事件...");
         var currentPath = logPath;
         var fileCheckCounter = 0;
 

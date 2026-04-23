@@ -32,9 +32,11 @@ public static class LogPathFinder
         {
             var logPath = FindLogInDir(Path.Combine(installDir, "Logs"));
             if (logPath != null) return logPath;
+            Console.WriteLine($"[LogPath] 注册表路径: {installDir}，Logs 下无 Power.log");
         }
 
         // 常见路径兜底
+        var triedPaths = new List<string>();
         foreach (var logsDir in new[]
         {
             @"D:\Battle.net\Hearthstone\Logs",
@@ -45,10 +47,22 @@ public static class LogPathFinder
         {
             var logPath = FindLogInDir(logsDir);
             if (logPath != null) return logPath;
+            if (Directory.Exists(logsDir))
+                triedPaths.Add($"{logsDir}（存在但无 Power.log）");
+            else
+                triedPaths.Add($"{logsDir}（不存在）");
         }
 
+        // 首次失败时输出诊断，避免每次重试都刷屏
+        if (!_diagnosed)
+        {
+            _diagnosed = true;
+            Console.WriteLine($"[LogPath] ❌ 未找到 Power.log，已检查: 注册表={installDir ?? "无"} | {string.Join(" | ", triedPaths)}");
+        }
         return null;
     }
+
+    private static bool _diagnosed;
 
     /// <summary>
     /// 检查是否有更新的日志文件（游戏重启时切换）
