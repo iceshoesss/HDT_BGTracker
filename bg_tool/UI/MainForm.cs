@@ -108,6 +108,7 @@ public class MainForm : Form
                 {
                     _playerTag = HearthMirrorClient.LocalPlayerBattleTag;
                     Console.WriteLine("[启动] ✅ 玩家信息已获取: " + _playerTag + " Lo=" + HearthMirrorClient.LocalPlayerLo);
+                    BeginInvoke(new Action(UpdateUI));
 
                     await ApiClient.UploadRatingAsync(
                         HearthMirrorClient.LocalPlayerBattleTag,
@@ -115,9 +116,10 @@ public class MainForm : Form
                         0, _config.Region, _config.Mode);
 
                     if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
+                    {
                         _verifyCode = ApiClient.VerificationCode;
-
-                    BeginInvoke(new Action(UpdateUI));
+                        BeginInvoke(new Action(UpdateUI));
+                    }
                     break;
                 }
 
