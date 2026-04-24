@@ -54,8 +54,7 @@ public class MainForm : Form
     string _verifyCode = "待接入";
     Parser? _parser;
     Config _config = null!;
-    bool _leagueChecked = false;
-    System.Windows.Forms.Timer? _lobbyPollTimer; // 当前对局是否已调过 check-league
+    bool _leagueChecked = false; // 当前对局是否已调过 check-league
     string _currentGameUuid = "";
     bool _scanning = false; // 扫描旧日志期间不触发 check_league
 
@@ -91,47 +90,6 @@ public class MainForm : Form
 
         BuildUI();
         UpdateUI();
-
-        // LobbyInfo 轮询定时器（好友房 LobbyInfo 延迟加载时使用）
-        _lobbyPollTimer = new System.Windows.Forms.Timer { Interval = 1000 };
-        _lobbyPollTimer.Tick += (s, e) =>
-        {
-            if (_parser == null) return;
-            var result = _parser.LobbyPollTick();
-            if (result == "check_league")
-            {
-                _lobbyPollTimer.Stop();
-                // 触发 check-league（和正常 STEP 13 流程一致）
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        var game = _parser.Game;
-                        if (!string.IsNullOrEmpty(game.GameUuid) && game.LobbyPlayers.Count > 0)
-                        {
-                            Console.WriteLine($"[轮询] 📋 触发 check-league | {game.LobbyPlayers.Count} 人 | Tag={game.PlayerTag}");
-                            var isLeague = await ApiClient.CheckLeagueAsync(
-                                game.GameUuid, game.PlayerTag, game.AccountIdLo,
-                                game.LobbyPlayers!, _config.Region, _config.Mode,
-                                DateTime.UtcNow.ToString("o"));
-                            if (_config.TestMode) isLeague = true;
-                            if (isLeague && !_leagueChecked)
-                            {
-                                _leagueChecked = true;
-                                _state = AppState.LeagueGame;
-                                Console.WriteLine("[轮询] ★ 联赛对局确认！");
-                            }
-                            if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
-                            {
-                                _verifyCode = ApiClient.VerificationCode;
-                                BeginInvoke(new Action(UpdateUI));
-                            }
-                        }
-                    }
-                    catch (Exception ex) { Console.WriteLine($"[轮询] ⚠️ check-league 异常: {ex.Message}"); }
-                });
-            }
-        };
 
         // 获取玩家信息 + 验证码
         Task.Run(async () =>
@@ -671,13 +629,6 @@ public class MainForm : Form
                         case "check_league":
                             if (!_leagueChecked && !_scanning)
                             {
-                                // 如果 LobbyInfo 为空（轮询模式），启动定时器
-                                if (_parser.Game.LobbyPlayers.Count == 0)
-                                {
-                                    Console.WriteLine("[MainForm] ⏳ LobbyInfo 为空，启动轮询定时器");
-                                    _lobbyPollTimer?.Start();
-                                    break;
-                                }
                                 _leagueChecked = true;
                                 var game = _parser.Game;
 
@@ -736,7 +687,6 @@ public class MainForm : Form
                             break;
                         case "game_end":
                         case "concede":
-                            _lobbyPollTimer?.Stop();
                             // 如果是联赛对局，上报排名
                             if (_state == AppState.LeagueGame && _parser.Game.HeroPlacement > 0)
                             {
