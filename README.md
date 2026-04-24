@@ -236,6 +236,10 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 ## 当前开发状态
 
+### bg_tool v0.2.9 (2026-04-24)
+- 修复好友房 GameType 识别：精确匹配 `GT_BATTLEGROUNDS` 改为 `StartsWith` 前缀匹配，支持 `GT_BATTLEGROUNDS_FRIENDLY`
+- 同步修复 bg_parser
+
 ### bg_tool v0.2.8 (2026-04-24)
 - 移除 Diagnose() 诊断代码
 - 启动先检测炉石进程，再获取 ID
