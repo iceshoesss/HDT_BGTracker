@@ -207,7 +207,7 @@ public class Parser
         var m = ReGameType.Match(line);
         if (m.Success && line.Contains("DebugPrintGame()"))
         {
-            if (!m.Groups[1].Value.StartsWith("GT_BATTLEGROUNDS"))
+            if (m.Groups[1].Value != "GT_BATTLEGROUNDS")
             {
                 EndGame();
                 return "not_bg";
