@@ -479,12 +479,17 @@ public class MainForm : Form
     {
         // 等待日志出现
         string? logPath = null;
-        Console.WriteLine("[日志] ⏳ 等待炉石启动...");
+        var waitCount = 0;
         while (logPath == null)
         {
             logPath = LogPathFinder.Find(null);
             if (logPath == null)
+            {
+                waitCount++;
+                if (waitCount % 10 == 1) // 每 30 秒打一次
+                    Console.WriteLine($"[日志] ⏳ 等待 Power.log...（已等待 {waitCount * 3} 秒）");
                 Thread.Sleep(3000);
+            }
         }
         Console.WriteLine("[日志] ✅ 已定位炉石日志");
 
