@@ -236,6 +236,12 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 ## 当前开发状态
 
+### bg_tool v0.3.0 (2026-04-24)
+- 确定性 gameUuid：用 Lo 集合 SHA256 生成，同一局所有人一致
+- 移除 HearthMirror GameUuid 依赖，省去最多 9 秒等待
+- 好友房 GameType 前缀匹配（支持 GT_BATTLEGROUNDS_FRIENDLY）
+- 去掉等待 Power.log 刷屏日志
+
 ### bg_tool v0.2.9 (2026-04-24)
 - 修复好友房 GameType 识别：精确匹配 `GT_BATTLEGROUNDS` 改为 `StartsWith` 前缀匹配，支持 `GT_BATTLEGROUNDS_FRIENDLY`
 - 同步修复 bg_parser
