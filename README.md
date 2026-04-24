@@ -236,6 +236,15 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 ## 当前开发状态
 
+### bg_tool v0.4.0 (2026-04-24)
+- **gameUuid 改为服务端生成**：修复同一局不同玩家生成不同 UUID 导致淘汰赛匹配失败
+- 移除 `GenerateDeterministicUuid`，check-league 不再发送 gameUuid
+- 使用服务端返回的 `gameUuid` 进行 update-placement
+
+### HDT 插件 v0.7.0 (2026-04-24)
+- **gameUuid 改为服务端生成**：同 bg_tool v0.4.0
+- 移除本地 SHA256 UUID 计算，从 check-league 响应中提取服务端 gameUuid
+
 ### bg_tool v0.3.1 (2026-04-24)
 - HttpClient 禁用系统代理：修复玩家开代理/加速器时 API 请求失败（浏览器能访问但 bg_tool 报"发送请求时出错"）
 - 强制 TLS 1.2：兼容将来切 HTTPS

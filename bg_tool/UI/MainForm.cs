@@ -638,24 +638,25 @@ public class MainForm : Form
 
                                 Task.Run(async () =>
                                 {
-                                    // 用 Lo 集合生成确定性 UUID（同一局所有人算出同一个值）
+                                    // 淘汰赛 gameUuid 由服务端生成，不再本地计算
                                     if (game.LobbyPlayers == null || game.LobbyPlayers.Count == 0)
                                     {
                                         Console.WriteLine("[MainForm] ⚠️ LobbyPlayers 为空，跳过 check-league");
                                         _leagueChecked = false;
                                         return;
                                     }
-                                    _currentGameUuid = ApiClient.GenerateDeterministicUuid(game.LobbyPlayers);
-                                    Console.WriteLine($"[MainForm] 确定性 gameUuid: {_currentGameUuid}");
 
                                     var isLeague = await ApiClient.CheckLeagueAsync(
-                                        _currentGameUuid,
                                         game.PlayerTag,
                                         game.AccountIdLo,
                                         game.LobbyPlayers,
                                         _config.Region,
                                         _config.Mode,
                                         DateTime.UtcNow.ToString("o"));
+
+                                    // 使用服务端返回的 gameUuid（淘汰赛）
+                                    if (!string.IsNullOrEmpty(ApiClient.ServerGameUuid))
+                                        _currentGameUuid = ApiClient.ServerGameUuid;
 
                                     if (_config.TestMode)
                                     {
@@ -773,24 +774,24 @@ public class MainForm : Form
                 return;
             }
 
-            // 用 Lo 集合生成确定性 UUID（同一局所有人算出同一个值）
             if (game.LobbyPlayers == null || game.LobbyPlayers.Count == 0)
             {
                 Console.WriteLine("[MainForm] ⚠️ LobbyPlayers 为空，跳过补发 check-league");
                 _leagueChecked = false;
                 return;
             }
-            _currentGameUuid = ApiClient.GenerateDeterministicUuid(game.LobbyPlayers);
-            Console.WriteLine($"[MainForm] 确定性 gameUuid: {_currentGameUuid}");
 
             var isLeague = await ApiClient.CheckLeagueAsync(
-                _currentGameUuid,
                 game.PlayerTag,
                 game.AccountIdLo,
                 game.LobbyPlayers!,
                 _config.Region,
                 _config.Mode,
                 DateTime.UtcNow.ToString("o"));
+
+            // 使用服务端返回的 gameUuid
+            if (!string.IsNullOrEmpty(ApiClient.ServerGameUuid))
+                _currentGameUuid = ApiClient.ServerGameUuid;
 
             if (_config.TestMode)
             {

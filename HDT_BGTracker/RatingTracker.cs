@@ -352,21 +352,7 @@ namespace HDT_BGTracker
 
                     Log($"CheckLeagueQueue: 本局玩家 accountIdLo = [{string.Join(", ", accountIdList)}]");
 
-                    // 用 Lo 集合生成确定性 UUID（同一局所有人算出同一个值）
-                    var sortedLos = accountIdList.Where(id => id != "0").OrderBy(id => id).ToList();
-                    var loInput = string.Join(",", sortedLos);
-                    using (var sha = System.Security.Cryptography.SHA256.Create())
-                    {
-                        var hash = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(loInput));
-                        _cachedGameUuid = string.Format("{0:x2}{1:x2}{2:x2}{3:x2}-{4:x2}{5:x2}-{6:x2}{7:x2}-{8:x2}{9:x2}-{10:x2}{11:x2}{12:x2}{13:x2}{14:x2}{15:x2}",
-                            hash[0], hash[1], hash[2], hash[3],
-                            hash[4], hash[5],
-                            hash[6], hash[7],
-                            hash[8], hash[9],
-                            hash[10], hash[11], hash[12], hash[13], hash[14], hash[15]);
-                    }
-                    Log($"CheckLeagueQueue: 确定性 gameUuid = {_cachedGameUuid}");
-                    string gameUuid = _cachedGameUuid;
+                    // 淘汰赛 gameUuid 由服务端生成，不再本地计算
                     string mode = Core.Game.IsBattlegroundsDuosMatch ? "duo" : "solo";
                     string region = GetRegion();
                     string startedAt = _bgGameStartTime != DateTime.MinValue
@@ -377,7 +363,6 @@ namespace HDT_BGTracker
                     {
                         ["playerId"] = _cachedPlayerId ?? "",
                         ["accountIdLo"] = _cachedAccountIdLo ?? "",
-                        ["gameUuid"] = gameUuid,
                         ["accountIdLoList"] = accountIdList,
                         ["players"] = playerDetails,
                         ["mode"] = mode,
@@ -416,6 +401,13 @@ namespace HDT_BGTracker
                                 Log("CheckLeagueQueue: 未匹配到等待组，普通天梯局");
                             }
                             // <<< END TEST_MODE
+
+                            // 提取服务端返回的 gameUuid（淘汰赛由服务端生成）
+                            if (dict != null && dict.ContainsKey("gameUuid"))
+                            {
+                                _cachedGameUuid = dict["gameUuid"]?.ToString() ?? "";
+                                Log($"CheckLeagueQueue: 服务端 gameUuid = {_cachedGameUuid}");
+                            }
 
                             // 验证码（首次上传时服务端生成）
                             if (dict != null && dict.ContainsKey("verificationCode"))

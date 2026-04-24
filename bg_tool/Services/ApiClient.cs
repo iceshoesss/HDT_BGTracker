@@ -24,7 +24,7 @@ public static class ApiClient
     // 发布前需替换为实际 Key
     private const string ApiKey = "";
 
-    private static string _pluginVersion = "0.6.1"; // 服务端兼容版本，bg_tool 实际版本另算
+    private static string _pluginVersion = "0.7.0"; // 服务端兼容版本，bg_tool 实际版本另算
 
     static ApiClient()
     {
@@ -63,6 +63,7 @@ public static class ApiClient
     public static string VerificationCode { get; private set; } = "";
     public static bool LastLeagueResult { get; private set; }
     public static string LastError { get; private set; } = "";
+    public static string ServerGameUuid { get; private set; } = "";  // 服务端返回的 gameUuid
 
     /// <summary>
     /// 初始化配置（从配置文件或默认值）
@@ -97,7 +98,6 @@ public static class ApiClient
     /// 英雄选定后调用，检查是否为联赛对局
     /// </summary>
     public static async Task<bool> CheckLeagueAsync(
-        string gameUuid,
         string playerId,
         ulong accountIdLo,
         List<LobbyPlayer> lobbyPlayers,
@@ -106,13 +106,7 @@ public static class ApiClient
         string startedAt = "")
     {
         LastError = "";
-
-        // gameUuid 为空时跳过，不发无效请求
-        if (string.IsNullOrEmpty(gameUuid))
-        {
-            Console.WriteLine("[API] gameUuid 为空，跳过 check-league");
-            return false;
-        }
+        ServerGameUuid = "";
 
         // Lo 全为 0 时跳过（HearthMirror 未就绪）
         var validPlayers = lobbyPlayers.Where(p => p.Lo != 0).ToList();
@@ -153,7 +147,6 @@ public static class ApiClient
 
         var body = new Dictionary<string, object>
         {
-            ["gameUuid"] = gameUuid,
             ["accountIdLoList"] = loList,
             ["playerId"] = playerId,
             ["accountIdLo"] = accountIdLo.ToString(),
@@ -176,6 +169,14 @@ public static class ApiClient
             {
                 VerificationCode = vc;
                 Console.WriteLine($"[API] ✅ 验证码: {VerificationCode}");
+            }
+
+            // 提取服务端返回的 gameUuid（淘汰赛由服务端生成）
+            var serverUuid = ExtractJsonString(json, "gameUuid");
+            if (!string.IsNullOrEmpty(serverUuid))
+            {
+                ServerGameUuid = serverUuid;
+                Console.WriteLine($"[API] ✅ 服务端 gameUuid: {ServerGameUuid}");
             }
 
             var isLeague = json.Contains("\"isLeague\"") && json.Contains("true");
