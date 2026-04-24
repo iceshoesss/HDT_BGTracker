@@ -23,7 +23,7 @@ public static class ApiClient
     // 发布前需替换为实际 Key
     private const string ApiKey = "";
 
-    private static string _pluginVersion = "0.5.8"; // 服务端兼容版本，bg_tool 实际版本另算
+    private static string _pluginVersion = "0.6.0"; // 服务端兼容版本，bg_tool 实际版本另算
 
     private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
 
