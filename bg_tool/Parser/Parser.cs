@@ -28,6 +28,8 @@ public class Parser
     // HearthMirror 只取一次
     private bool _loFetched;
     public bool IsScanning { get; set; }
+    private bool _lobbyPolling;  // LobbyInfo 轮询中
+    private int _lobbyPollCount; // 轮询次数
 
     // ═══════════════════════════════════════
     //  英雄卡牌过滤
@@ -307,54 +309,32 @@ public class Parser
             }
             if (step == "MAIN_CLEANUP")
             {
+                // 首次遇到 STEP 13：尝试获取 LobbyInfo，为空则启动轮询（好友房 LobbyInfo 可能延迟加载）
                 if (!_loFetched && !IsScanning)
                 {
                     _loFetched = true;
+                    _tryFetchLobbyInfo();
 
-                    // 1. 使用启动时已获取的 BattleTag（GetBattleTag）和 Lo（GetAccountId）
-                    //    MatchInfo 在 BG STEP 13 不可靠，不再依赖
-                    if (!string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
-                    {
-                        Game.PlayerTag = HearthMirrorClient.LocalPlayerBattleTag;
-                        var hashIdx = Game.PlayerTag.IndexOf('#');
-                        Game.PlayerDisplayName = hashIdx > 0
-                            ? Game.PlayerTag.Substring(0, hashIdx)
-                            : Game.PlayerTag;
-                    }
-
-                    // 2. 从 LobbyInfo 获取 8 个玩家的 Lo 列表（check-league 核心数据）
-                    Game.LobbyPlayers = HearthMirrorClient.FetchLobbyPlayers(Game.PlayerTag);
-                    Game.GameUuid = HearthMirrorClient.LastGameUuid;
-
-                    // FetchLobbyPlayers 内部会重置 LocalPlayerLo，如果名字匹配失败 Lo 会变 0
-                    // 此时 fallback 到启动时 FetchAccountId 的结果
-                    if (HearthMirrorClient.LocalPlayerLo == 0 && Game.AccountIdLo != 0)
-                    {
-                        Console.WriteLine("[HearthMirror] ⚠️ LobbyInfo 未匹配到本地玩家 Lo，使用启动时 GetAccountId 的结果: " + Game.AccountIdLo);
-                    }
-                    else if (HearthMirrorClient.LocalPlayerLo != 0)
-                    {
-                        Game.AccountIdLo = HearthMirrorClient.LocalPlayerLo;
-                    }
-                    var loConfirmed = Game.AccountIdLo != 0;
-
-                    // 3. BattleTag 和 Lo 都有效才触发 check-league
-                    var tagConfirmed = !string.IsNullOrEmpty(Game.PlayerTag);
-                    if (tagConfirmed && loConfirmed && Game.LobbyPlayers.Count > 0)
+                    if (Game.LobbyPlayers.Count > 0)
                     {
                         Console.WriteLine($"[HearthMirror] 📋 获取到 {Game.LobbyPlayers.Count} 个玩家 | Lo={Game.AccountIdLo} | Tag={Game.PlayerTag}");
                         return "check_league";
                     }
                     else
                     {
-                        // 诊断：哪个环节失败了
-                        if (!tagConfirmed)
-                            Console.WriteLine("[HearthMirror] ❌ BattleTag 不可用（启动时未获取），跳过 check-league");
-                        else if (!loConfirmed)
-                            Console.WriteLine("[HearthMirror] ❌ 本地玩家 Lo 未匹配，跳过 check-league");
-                        else if (Game.LobbyPlayers.Count == 0)
-                            Console.WriteLine("[HearthMirror] ❌ LobbyInfo 无玩家数据，跳过 check-league");
+                        // LobbyInfo 为空（好友房常见），启动后台轮询
+                        _lobbyPolling = true;
+                        _lobbyPollCount = 0;
+                        Console.WriteLine("[HearthMirror] ⏳ LobbyInfo 暂不可用，启动后台轮询（每秒重试）...");
                     }
+                }
+
+                // 后续 STEP 13：检查轮询是否已拿到数据
+                if (_lobbyPolling && Game.LobbyPlayers.Count > 0)
+                {
+                    _lobbyPolling = false;
+                    Console.WriteLine($"[HearthMirror] 📋 轮询获取到 {Game.LobbyPlayers.Count} 个玩家 | Lo={Game.AccountIdLo} | Tag={Game.PlayerTag}");
+                    return "check_league";
                 }
             }
             return null;
