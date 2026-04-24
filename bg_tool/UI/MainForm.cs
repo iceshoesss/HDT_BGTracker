@@ -752,7 +752,7 @@ public class MainForm : Form
     void TriggerCheckLeagueIfNeeded()
     {
         if (_leagueChecked) return;
-        if (!_parser.Game.IsActive) return;
+        if (_parser == null || !_parser.Game.IsActive) return;
 
         var game = _parser.Game;
 
@@ -805,7 +805,7 @@ public class MainForm : Form
                 _currentGameUuid,
                 game.PlayerTag,
                 game.AccountIdLo,
-                game.LobbyPlayers,
+                game.LobbyPlayers!,
                 _config.Region,
                 _config.Mode,
                 DateTime.UtcNow.ToString("o"));

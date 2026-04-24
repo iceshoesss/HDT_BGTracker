@@ -170,7 +170,7 @@ public static class HearthMirrorClient
 
             if (!string.IsNullOrEmpty(tagSource))
             {
-                var hashIdx = tagSource.IndexOf('#');
+                var hashIdx = tagSource!.IndexOf('#');
                 localDisplayName = hashIdx > 0
                     ? tagSource.Substring(0, hashIdx)
                     : tagSource;
