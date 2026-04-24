@@ -110,7 +110,9 @@ namespace HDT_BGTracker
                 Directory.CreateDirectory(LogDir);
                 CleanOldLogs();
 
-                _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+                _httpClient = new HttpClient(
+                    new System.Net.Http.HttpClientHandler { UseProxy = false }
+                ) { Timeout = TimeSpan.FromSeconds(15) };
                 _httpClient.DefaultRequestHeaders.Add(PluginHeaderName, PluginHeaderValue);
                 _httpClient.DefaultRequestHeaders.Authorization =
                     new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", PluginApiKey);

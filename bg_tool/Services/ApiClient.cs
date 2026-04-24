@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
@@ -25,7 +26,14 @@ public static class ApiClient
 
     private static string _pluginVersion = "0.6.0"; // 服务端兼容版本，bg_tool 实际版本另算
 
-    private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+    static ApiClient()
+    {
+        ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+    }
+
+    private static readonly HttpClient _http = new HttpClient(
+        new HttpClientHandler { UseProxy = false }
+    ) { Timeout = TimeSpan.FromSeconds(15) };
 
     /// <summary>
     /// 用 Lo 集合生成确定性 UUID（同一局游戏的 8 个 Lo → 同一个 UUID）
