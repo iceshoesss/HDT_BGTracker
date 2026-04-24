@@ -487,7 +487,7 @@ public class MainForm : Form
             {
                 waitCount++;
                 if (waitCount % 10 == 1) // 每 30 秒打一次
-                    Console.WriteLine($"[日志] ⏳ 等待 Power.log...（已等待 {waitCount * 3} 秒）");
+                    Console.WriteLine($"[日志] ⏳ 等待炉石启动...（已等待 {waitCount * 3} 秒）");
                 Thread.Sleep(3000);
             }
         }
