@@ -561,6 +561,7 @@ python bg_parser/bg_parser.py
 
 ### 待办
 
+- [ ] **好友房支持**（2026-04-24 分析）：好友房 GameType 为 `GT_BATTLEGROUNDS_FRIENDLY`，Parser 精确匹配 `GT_BATTLEGROUNDS` 会直接丢弃（返回 not_bg）。需改为 `StartsWith("GT_BATTLEGROUNDS")` 前缀匹配。另外好友房 Power.log 结构不同：只有 2 个 Player 实体（本地玩家 + 旅店老板），所有对手英雄分配到 player=16（旅店老板），无法从日志获取对手 Lo。HearthMirror 的 LobbyInfo 在好友房下可能也拿不到对手数据（需验证）。待实现。
 - [x] bg_tool 对接 Flask API（check-league / update-placement）— v0.2.0
 - [x] bg_tool WinForms 独立软件改造 — v0.2.0 框架完成，UI 细节优化中
 - [x] UUID 问题 — 已解决，双方均从 HearthMirror 读取 GameUuid，值一致
