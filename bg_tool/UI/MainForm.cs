@@ -633,24 +633,15 @@ public class MainForm : Form
 
                                 Task.Run(async () =>
                                 {
-                                    // gameUuid 可能延迟加载，最多重试 3 次共 ~9 秒
-                                    for (int attempt = 0; attempt < 3; attempt++)
+                                    // 用 Lo 集合生成确定性 UUID（同一局所有人算出同一个值）
+                                    if (game.LobbyPlayers == null || game.LobbyPlayers.Count == 0)
                                     {
-                                        if (!string.IsNullOrEmpty(game.GameUuid)) break;
-                                        Console.WriteLine($"[MainForm] gameUuid 为空，等待 3 秒后重试...（第 {attempt + 1}/3 次）");
-                                        await Task.Delay(3000);
-                                        var freshUuid = HearthMirrorClient.LastGameUuid;
-                                        if (!string.IsNullOrEmpty(freshUuid))
-                                            game.GameUuid = freshUuid;
-                                    }
-                                    // gameUuid 仍为空 → 不发请求，避免脏数据
-                                    if (string.IsNullOrEmpty(game.GameUuid))
-                                    {
-                                        Console.WriteLine("[MainForm] ⚠️ gameUuid 最终为空，跳过 check-league（不发送脏数据）");
+                                        Console.WriteLine("[MainForm] ⚠️ LobbyPlayers 为空，跳过 check-league");
                                         _leagueChecked = false;
                                         return;
                                     }
-                                    _currentGameUuid = game.GameUuid;
+                                    _currentGameUuid = ApiClient.GenerateDeterministicUuid(game.LobbyPlayers);
+                                    Console.WriteLine($"[MainForm] 确定性 gameUuid: {_currentGameUuid}");
 
                                     var isLeague = await ApiClient.CheckLeagueAsync(
                                         _currentGameUuid,
@@ -768,33 +759,24 @@ public class MainForm : Form
 
         Task.Run(async () =>
         {
-            for (int attempt = 0; attempt < 3; attempt++)
-            {
-                if (!string.IsNullOrEmpty(game.GameUuid)) break;
-                Console.WriteLine($"[MainForm] gameUuid 为空，等待 3 秒后重试...（第 {attempt + 1}/3 次）");
-                await Task.Delay(3000);
-                var freshUuid = HearthMirrorClient.LastGameUuid;
-                if (!string.IsNullOrEmpty(freshUuid))
-                    game.GameUuid = freshUuid;
-            }
-
             // 数据不可用 → 解锁 _leagueChecked，等真正的 STEP 13 重试
             var hasValidLo = game.LobbyPlayers != null && game.LobbyPlayers.Any(p => p.Lo != 0);
-            if (string.IsNullOrEmpty(game.GameUuid) && game.AccountIdLo == 0 && !hasValidLo)
+            if (game.AccountIdLo == 0 && !hasValidLo)
             {
-                Console.WriteLine("[MainForm] ⚠️ 补发 check-league 数据不可用（gameUuid 空 + Lo 全 0），等待实时 STEP 13 重试");
+                Console.WriteLine("[MainForm] ⚠️ 补发 check-league 数据不可用（Lo 全 0），等待实时 STEP 13 重试");
                 _leagueChecked = false;
                 return;
             }
 
-            // gameUuid 仍为空 → 不发请求，避免脏数据
-            if (string.IsNullOrEmpty(game.GameUuid))
+            // 用 Lo 集合生成确定性 UUID（同一局所有人算出同一个值）
+            if (game.LobbyPlayers == null || game.LobbyPlayers.Count == 0)
             {
-                Console.WriteLine("[MainForm] ⚠️ gameUuid 最终为空，跳过补发 check-league（不发送脏数据）");
+                Console.WriteLine("[MainForm] ⚠️ LobbyPlayers 为空，跳过补发 check-league");
                 _leagueChecked = false;
                 return;
             }
-            _currentGameUuid = game.GameUuid;
+            _currentGameUuid = ApiClient.GenerateDeterministicUuid(game.LobbyPlayers);
+            Console.WriteLine($"[MainForm] 确定性 gameUuid: {_currentGameUuid}");
 
             var isLeague = await ApiClient.CheckLeagueAsync(
                 _currentGameUuid,

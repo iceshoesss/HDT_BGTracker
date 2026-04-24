@@ -179,8 +179,6 @@ namespace HDT_BGTracker
                             _cachedPlayerId = GetPlayerId();
                         if (string.IsNullOrEmpty(_cachedAccountIdLo))
                             _cachedAccountIdLo = GetAccountIdLo();
-                        if (string.IsNullOrEmpty(_cachedGameUuid))
-                            _cachedGameUuid = GetGameUuid();
                     }
 
                     // lobby 玩家名单（不带英雄）
@@ -352,19 +350,21 @@ namespace HDT_BGTracker
 
                     Log($"CheckLeagueQueue: 本局玩家 accountIdLo = [{string.Join(", ", accountIdList)}]");
 
-                    // 等待 gameUuid 就绪（HearthMirror 偶尔延迟加载，最多重试 3 次共 ~9 秒）
-                    string gameUuid = lobbyInfo.GameUuid ?? _cachedGameUuid ?? "";
-                    for (int retry = 0; string.IsNullOrEmpty(gameUuid) && retry < 3; retry++)
+                    // 用 Lo 集合生成确定性 UUID（同一局所有人算出同一个值）
+                    var sortedLos = accountIdList.Where(id => id != "0").OrderBy(id => id).ToList();
+                    var loInput = string.Join(",", sortedLos);
+                    using (var sha = System.Security.Cryptography.SHA256.Create())
                     {
-                        Log($"CheckLeagueQueue: gameUuid 为空，等待 3 秒后重试...（第 {retry + 1}/3 次）");
-                        System.Threading.Thread.Sleep(3000);
-                        gameUuid = lobbyInfo.GameUuid ?? _cachedGameUuid ?? "";
+                        var hash = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(loInput));
+                        _cachedGameUuid = string.Format("{0:x2}{1:x2}{2:x2}{3:x2}-{4:x2}{5:x2}-{6:x2}{7:x2}-{8:x2}{9:x2}-{10:x2}{11:x2}{12:x2}{13:x2}{14:x2}{15:x2}",
+                            hash[0], hash[1], hash[2], hash[3],
+                            hash[4], hash[5],
+                            hash[6], hash[7],
+                            hash[8], hash[9],
+                            hash[10], hash[11], hash[12], hash[13], hash[14], hash[15]);
                     }
-                    if (string.IsNullOrEmpty(gameUuid))
-                    {
-                        Log("CheckLeagueQueue: gameUuid 重试耗尽（9 秒），跳过本次检查");
-                        return;
-                    }
+                    Log($"CheckLeagueQueue: 确定性 gameUuid = {_cachedGameUuid}");
+                    string gameUuid = _cachedGameUuid;
                     string mode = Core.Game.IsBattlegroundsDuosMatch ? "duo" : "solo";
                     string region = GetRegion();
                     string startedAt = _bgGameStartTime != DateTime.MinValue
