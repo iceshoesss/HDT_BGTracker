@@ -236,6 +236,13 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 ## 当前开发状态
 
+### bg_tool v0.3.1 (2026-04-24)
+- HttpClient 禁用系统代理：修复玩家开代理/加速器时 API 请求失败（浏览器能访问但 bg_tool 报"发送请求时出错"）
+- 强制 TLS 1.2：兼容将来切 HTTPS
+
+### HDT 插件 v0.6.1 (2026-04-24)
+- HttpClient 禁用系统代理：同 bg_tool v0.3.1
+
 ### bg_tool v0.3.0 (2026-04-24)
 - 确定性 gameUuid：用 Lo 集合 SHA256 生成，同一局所有人一致
 - 移除 HearthMirror GameUuid 依赖，省去最多 9 秒等待
@@ -318,6 +325,9 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 - 启动 Ping 服务检测、日志面板
 - 统一配置 shared_config.json
 - mock_server.py 支持状态追踪
+
+### v0.6.1 (2026-04-24)
+- HttpClient 禁用系统代理：修复玩家开代理/加速器时 API 请求失败
 
 ### v0.5.8 (2026-04-23)
 - check-league LobbyInfo 延迟加载保护加强：gameUuid 为空重试 3 次（共 ~9 秒），accountIdLo 全为 0 时等 3 秒后重新读取 LobbyInfo
