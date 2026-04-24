@@ -27,6 +27,7 @@ public class Parser
 
     // HearthMirror 只取一次
     private bool _loFetched;
+    public bool IsScanning { get; set; }
 
     // ═══════════════════════════════════════
     //  英雄卡牌过滤
