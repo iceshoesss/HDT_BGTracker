@@ -299,7 +299,7 @@ class Parser:
         # GameType
         m = _RE_GAME_TYPE.search(line)
         if m and 'DebugPrintGame()' in line:
-            if m.group(1) != 'GT_BATTLEGROUNDS':
+            if not m.group(1).startswith('GT_BATTLEGROUNDS'):
                 self._end_game()
                 return 'not_bg'
             return None
