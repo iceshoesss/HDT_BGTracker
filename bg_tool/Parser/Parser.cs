@@ -310,10 +310,9 @@ public class Parser
                 {
                     _loFetched = true;
 
-                    // 1. 从 MatchInfo 获取完整 BattleTag（Name#Number）
-                    var matchOk = HearthMirrorClient.FetchMatchInfo();
-
-                    if (matchOk && !string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
+                    // 1. 使用启动时已获取的 BattleTag（GetBattleTag）和 Lo（GetAccountId）
+                    //    MatchInfo 在 BG STEP 13 不可靠，不再依赖
+                    if (!string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
                     {
                         Game.PlayerTag = HearthMirrorClient.LocalPlayerBattleTag;
                         var hashIdx = Game.PlayerTag.IndexOf('#');
@@ -322,17 +321,25 @@ public class Parser
                             : Game.PlayerTag;
                     }
 
-                    // 2. 从 LobbyInfo 获取 8 个玩家 + 本地玩家 Lo（用 BattleTag 匹配）
+                    // 2. 从 LobbyInfo 获取 8 个玩家的 Lo 列表（check-league 核心数据）
                     Game.LobbyPlayers = HearthMirrorClient.FetchLobbyPlayers(Game.PlayerTag);
                     Game.GameUuid = HearthMirrorClient.LastGameUuid;
 
-                    var loConfirmed = HearthMirrorClient.LocalPlayerLo != 0;
-                    if (loConfirmed)
+                    // FetchLobbyPlayers 内部会重置 LocalPlayerLo，如果名字匹配失败 Lo 会变 0
+                    // 此时 fallback 到启动时 FetchAccountId 的结果
+                    if (HearthMirrorClient.LocalPlayerLo == 0 && Game.AccountIdLo != 0)
+                    {
+                        Console.WriteLine("[HearthMirror] ⚠️ LobbyInfo 未匹配到本地玩家 Lo，使用启动时 GetAccountId 的结果: " + Game.AccountIdLo);
+                    }
+                    else if (HearthMirrorClient.LocalPlayerLo != 0)
+                    {
                         Game.AccountIdLo = HearthMirrorClient.LocalPlayerLo;
+                    }
+                    var loConfirmed = Game.AccountIdLo != 0;
 
-                    // 3. 只有 BattleTag 和 Lo 都被 HearthMirror 确认才触发 check-league
-                    //    任一失败 → 不发请求，避免用错误 ID 创建对局记录
-                    if (matchOk && loConfirmed && Game.LobbyPlayers.Count > 0)
+                    // 3. BattleTag 和 Lo 都有效才触发 check-league
+                    var tagConfirmed = !string.IsNullOrEmpty(Game.PlayerTag);
+                    if (tagConfirmed && loConfirmed && Game.LobbyPlayers.Count > 0)
                     {
                         Console.WriteLine($"[HearthMirror] 📋 获取到 {Game.LobbyPlayers.Count} 个玩家 | Lo={Game.AccountIdLo} | Tag={Game.PlayerTag}");
                         return "check_league";
@@ -340,8 +347,8 @@ public class Parser
                     else
                     {
                         // 诊断：哪个环节失败了
-                        if (!matchOk)
-                            Console.WriteLine("[HearthMirror] ❌ MatchInfo 不可用，跳过 check-league");
+                        if (!tagConfirmed)
+                            Console.WriteLine("[HearthMirror] ❌ BattleTag 不可用（启动时未获取），跳过 check-league");
                         else if (!loConfirmed)
                             Console.WriteLine("[HearthMirror] ❌ 本地玩家 Lo 未匹配，跳过 check-league");
                         else if (Game.LobbyPlayers.Count == 0)

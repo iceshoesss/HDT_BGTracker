@@ -556,6 +556,7 @@ python bg_parser/bg_parser.py
 - [x] **bg_tool 缺少 HearthDb 引用**（2026-04-20）：最初移除了 `ResolveHeroName()` 对 HearthDb 的依赖，改由服务端解析英雄名。2026-04-22 重新加回 csproj 引用。2026-04-23 改用内置 JSON 替代：删除 HearthDb.dll 引用，`HeroNameResolver.cs` 从嵌入资源 `bg_heroes.json`（~40KB）加载静态字典，手写极简 JSON 解析器，零外部依赖。同时修复 `ApiClient.CheckLeagueAsync` 中 players dict 匿名对象序列化 bug（`ToString()` 输出 C# 对象格式而非 JSON），改为 `Dictionary<string, object>`。
 - [x] **check-league 400 空参数**（2026-04-22）：HearthMirror 的 LobbyInfo 在 STEP 13 偶尔延迟加载，gameUuid 为空时插件仍发送请求导致服务端 400。修复方案：HDT 插件 CheckLeagueQueue 中 gameUuid 为空时等待 3 秒重试，仍为空则跳过；bg_tool ApiClient.CheckLeagueAsync 中 gameUuid 为空直接跳过。已修复。
 - [x] **联赛对局玩家名字为空**（2026-04-22）：HearthMirror 只有本地玩家有 Name（显示名，无 #tag），插件发送的 players dict 中其他 7 人 battleTag 为空串。服务端 check-league 构建 players 时 `detail.get("battleTag", fallback)` 因 detail dict 存在（有 heroCardId）导致空串覆盖了 fallback。修复方案：服务端改用 `or` 三级 fallback（请求数据 → 等待组 name → player_records.playerId 查库）。注意必须查 player_records 而非 league_players，因为 player_records.playerId 是插件上传的完整 battleTag（带 #tag），league_players.battleTag 可能缺 #tag。已修复。
+- [x] **bg_tool STEP 13 MatchInfo 不可用导致 check-league 被跳过**（2026-04-24）：bg_tool 在 STEP 13 时调用 `FetchMatchInfo()` 获取 BattleTag，但 BG 模式下 MatchInfo 在此时机不可用，导致 `matchOk=false` 直接短路，8 个玩家全部无法上报联赛对局。实际启动时已通过 `GetBattleTag()` 和 `GetAccountId()` 获取了 BattleTag 和 Lo，`FetchMatchInfo()` 完全多余。修复方案：去掉 STEP 13 的 `FetchMatchInfo()` 调用，直接用启动时缓存的 `LocalPlayerBattleTag`；`FetchLobbyPlayers` 匹配 Lo 失败时 fallback 到启动时的 `Game.AccountIdLo`。已修复。
 - [ ] **bg_parser 游戏结束检测不完全可靠**（2026-04-16）：Python 参考实现，仅用于测试验证，不做修改。
 
 ### 待办

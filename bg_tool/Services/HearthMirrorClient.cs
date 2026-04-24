@@ -138,7 +138,7 @@ public static class HearthMirrorClient
     /// </summary>
     /// <param name="localPlayerName">
     /// 本地玩家 BattleTag（含 #tag），用于在 LobbyInfo 中名字匹配。
-    /// 优先使用 FetchMatchInfo() 获取的 LocalPlayerBattleTag。
+    /// 优先使用启动时 GetBattleTag() 获取的 LocalPlayerBattleTag。
     /// </param>
     public static List<LobbyPlayer> FetchLobbyPlayers(string? localPlayerName = null)
     {
