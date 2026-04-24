@@ -306,7 +306,7 @@ public class Parser
             }
             if (step == "MAIN_CLEANUP")
             {
-                if (!_loFetched)
+                if (!_loFetched && !IsScanning)
                 {
                     _loFetched = true;
 

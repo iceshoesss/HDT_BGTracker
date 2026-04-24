@@ -829,6 +829,7 @@ public class MainForm : Form
     static void ScanExisting(string filePath, out Parser parser, out long pos)
     {
         parser = new Parser();
+        parser.IsScanning = true;  // 扫描阶段不做 HearthMirror 调用（游戏未就绪），留给实时阶段
         var cgPos = FindLastCreateGamePos(filePath);
         PreloadPlayerInfo(filePath, parser);
 
@@ -840,6 +841,7 @@ public class MainForm : Form
                 parser.ProcessLine(reader.ReadLine());
             pos = fs.Position;
         }
+        parser.IsScanning = false;
     }
 
     static void PreloadPlayerInfo(string filePath, Parser parser)
