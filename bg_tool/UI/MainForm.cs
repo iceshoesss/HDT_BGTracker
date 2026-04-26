@@ -583,6 +583,12 @@ public class MainForm : Form
                 long fileLen;
                 try { fileLen = new FileInfo(currentPath).Length; }
                 catch { Thread.Sleep(200); continue; }
+                if (fileLen < pos)
+                {
+                    // 文件被截断（炉石重启时 Power.log 重写），重置位置
+                    Console.WriteLine($"[日志] 🔄 检测到日志文件被截断（{pos}→{fileLen}），重置读取位置");
+                    pos = 0;
+                }
                 if (fileLen <= pos) { Thread.Sleep(100); continue; }
 
                 string[] lines;

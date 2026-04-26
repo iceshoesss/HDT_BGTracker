@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 #nullable enable
 
@@ -14,6 +15,7 @@ public static class HearthMirrorClient
 {
     private static bool _available;
     private static HearthMirror.Reflection? _reflection;
+    private static int _hsProcessId;  // 记录初始化时的炉石进程 ID
 
     /// <summary>
     /// 最后一次获取到的 GameUuid
@@ -32,12 +34,52 @@ public static class HearthMirrorClient
 
     public static bool TryInit()
     {
-        if (_available) return true;
+        if (_available)
+        {
+            // 检查炉石进程是否还活着，进程变了则重新初始化
+            try
+            {
+                var procs = Process.GetProcessesByName("Hearthstone");
+                if (procs.Length == 0)
+                {
+                    // 炉石已关闭，重置状态
+                    Console.WriteLine("[HearthMirror] ⚠️ 炉石进程已退出，重置连接");
+                    Reset();
+                    return false;
+                }
+                var currentPid = procs[0].Id;
+                if (currentPid != _hsProcessId)
+                {
+                    // 炉石重启了（进程 ID 变了），重新初始化
+                    Console.WriteLine($"[HearthMirror] 🔄 炉石进程已重启（PID {_hsProcessId}→{currentPid}），重新初始化");
+                    Reset();
+                    // 继续往下走，重新创建 Reflection
+                }
+                else
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // 进程检查失败，保守重置
+                Reset();
+                return false;
+            }
+        }
 
         try
         {
             _reflection = new HearthMirror.Reflection();
             _available = true;
+            // 记录当前炉石进程 ID
+            try
+            {
+                var procs = Process.GetProcessesByName("Hearthstone");
+                if (procs.Length > 0)
+                    _hsProcessId = procs[0].Id;
+            }
+            catch { }
             Console.WriteLine("[HearthMirror] ✅ 已加载，可获取对手 Lo");
             return true;
         }
@@ -55,6 +97,7 @@ public static class HearthMirrorClient
     {
         _available = false;
         _reflection = null;
+        _hsProcessId = 0;
         LocalPlayerBattleTag = "";
         LocalPlayerLo = 0;
         LastGameUuid = "";
