@@ -29,7 +29,7 @@
 | 组件 | 位置 | 当前版本 |
 |------|------|----------|
 | HDT 插件 | `BGTrackerPlugin.cs` + `HDT_BGTracker.csproj` | v0.7.0 |
-| bg_tool | `bg_tool/Properties/AssemblyInfo.cs` | v0.4.0 |
+| bg_tool | `bg_tool/Properties/AssemblyInfo.cs` | v0.4.1 |
 
 修改版本号必须同步两处：csproj 的 `<Version>` 和代码中的 `new Version(x, y, z)`。
 

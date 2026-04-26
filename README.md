@@ -319,6 +319,10 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 > Web 端更新日志已迁移至 [LeagueWeb](https://github.com/iceshoesss/LeagueWeb) 仓库。
 
+### bg_tool v0.4.1 (2026-04-26)
+- 修复炉石重启后 bg_tool 不触发 check-league：HearthMirrorClient.TryInit() 检测进程 ID 变化，炉石重启后自动重新初始化 Reflection 连接
+- 日志监控检测到文件截断时重置读取位置（炉石重启时 Power.log 重写导致 pos 越界）
+
 ### v0.2.2 (2026-04-21)
 - 修复非联赛对局验证码不显示：check-league 回调中验证码更新与 isLeague 判断解耦
 
