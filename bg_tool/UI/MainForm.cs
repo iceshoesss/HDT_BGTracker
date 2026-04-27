@@ -653,6 +653,8 @@ public class MainForm : Form
                             break;
                         case "reconnect":
                             Console.WriteLine($"[游戏] 🔄 断线重连 {DateTime.Now:HH:mm:ss}");
+                            if (_state == AppState.Waiting)
+                                _state = AppState.InGame;
                             break;
                         case "player_info":
                             _playerTag = parser.Game.PlayerTag;
