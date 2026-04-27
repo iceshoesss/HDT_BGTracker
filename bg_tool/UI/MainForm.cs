@@ -747,6 +747,7 @@ public class MainForm : Form
                             StopCheckLeagueRetry();
                             _state = AppState.InGame;
                             _leagueChecked = false;
+                            _currentGameUuid = "";
                             uiChanged = true;
                             break;
                         case "reconnect":
@@ -1037,6 +1038,8 @@ public class MainForm : Form
             Console.WriteLine($"[日志] 🔄 检测到进行中对局: {parser.Game.PlayerTag} | 英雄={parser.Game.HeroName} | Lo={parser.Game.AccountIdLo}");
             parser.ResetLobbyState();
             _state = AppState.InGame;
+            _leagueChecked = false; // 新对局必须重新 check-league（上一局的标记不能带到下一局）
+            _currentGameUuid = "";  // 清空上一局的 gameUuid，等 check-league 返回新的
             _playerTag = parser.Game.PlayerTag;
             TriggerCheckLeagueIfNeeded();
         }

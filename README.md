@@ -319,6 +319,10 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 > Web 端更新日志已迁移至 [LeagueWeb](https://github.com/iceshoesss/LeagueWeb) 仓库。
 
+### bg_tool v0.5.4 (2026-04-27)
+- 修复退出游戏再进后无法 upload-placement：扫描发现新对局时未重置 `_leagueChecked`，导致 check-league 被跳过
+- `game_start` 和扫描检测新对局时同步清空 `_currentGameUuid`，避免残留上一局 gameUuid
+
 ### bg_tool v0.5.3 (2026-04-27)
 - 新增断线重连追踪：ReconnectTimes 列表随 update-placement 上传
 - 修复 update-placement playerTag 为空时回退到 HearthMirror 缓存
