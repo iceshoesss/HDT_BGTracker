@@ -584,6 +584,48 @@ python bg_parser/bg_parser.py
 - [ ] 比赛定制规则：断线重连检测标记（players[].reconnected 字段，将来按需实现）
 - [ ] bg_tool WinForms UI 细节优化
 
+### 边界情况汇总（2026-04-27 梳理）
+
+#### 已处理
+
+| 类别 | 场景 | 处理方式 |
+|------|------|----------|
+| 进程 | 炉石先开、工具后开 | 外层循环检测进程 → 获取玩家信息 → 定位 Power.log → 扫描已有内容 |
+| 进程 | 炉石退出再开（PID 变了） | 实时监控通过 PID 变化检测 → `Reset()` + `ResetProcessDirCache()` → 重新获取 |
+| 进程 | 炉石未启动就开工具 | 外层循环 `while (Process.GetProcessesByName("Hearthstone").Length == 0)` 等待 |
+| 文件 | Power.log 被删除（炉石退出） | `FileNotFoundException` → `LogPathFinder.Find()` 搜索新文件 |
+| 文件 | 新日志在不同子目录 | `CheckNewLogFile` 每 100 次循环扫描 `Hearthstone_*` 子目录 |
+| 文件 | 文件被截断/重写 | `fileLen < pos` 检测 → 重置 pos 到 0 |
+| 文件 | 进程路径变化（安装目录不同） | `ResetProcessDirCache()` 清除缓存 |
+| 游戏 | 中途启动工具（对局进行中） | `ScanExisting` → `FindLastCreateGamePos` → 从最后 CREATE_GAME 解析 → `HandleScannedGameState` |
+| 游戏 | 旧数据残留（无英雄/无名字/无 Lo） | `HandleScannedGameState` 检测三者全空 → `IsActive=false` 跳过 |
+| 游戏 | STEP 13 扫描阶段已过 | `TriggerCheckLeagueIfNeeded` 检测数据就绪则补发；数据不全则等实时 STEP 13 |
+| 游戏 | 非酒馆战棋对局 | `GameType` 不以 `GT_BATTLEGROUNDS` 开头 → `EndGame()` → `return "not_bg"` |
+| 游戏 | 好友房 | `GT_BATTLEGROUNDS_FRIENDLY` 以 `GT_BATTLEGROUNDS` 开头，通过前缀匹配（v0.2.9 修复） |
+| 游戏 | 断线重连 | CREATE_GAME 块内检测 `TURN` 标签 → 回滚到旧局 → `ReconnectTimes` 记录时间 |
+| 游戏 | 投降 | tag 3479/4356 预兆 → tag 4302 确认 → `LEADERBOARD_PLACE=8` → `concede` |
+| API | check-league 失败 | 初始 3 次快速重试 → 15 秒周期重试直到成功或对局结束 |
+| API | update-placement 失败 | 3 次重试，间隔 2 秒 |
+| API | 服务端版本过低 | 403 拒绝（`MIN_PLUGIN_VERSION`） |
+| 数据 | BattleTag 获取失败 | 回退到 `_playerTag`（parser 从 Power.log 解析） |
+| 数据 | AccountIdLo 为 0 | `FetchLobbyPlayers` 匹配失败 → fallback 到启动时 `FetchAccountId` |
+| 数据 | LobbyPlayers 为空 | 跳过 check-league，等下一轮 STEP 13 |
+| 数据 | gameUuid 为空 | check-league 由服务端生成，不依赖客户端 |
+
+#### 未处理 / 潜在风险
+
+| 风险 | 影响 | 优先级 |
+|------|------|--------|
+| 炉石重启 PID 不变（OS 复用 PID） | `HearthMirrorClient` 不会 Reset → 可能读到旧进程内存数据 | 低 |
+| update-placement 只重试 3 次 | 网络波动覆盖 6 秒窗口则排名丢失，建议加周期重试或本地队列 | 中 |
+| 同名玩家误匹配 | `FetchLobbyPlayers` 用 `displayName` 匹配本地玩家，大厅有两个同名（不含 #tag）玩家时可能匹配错误 Lo | 低 |
+| CheckNewLogFile 找到旧文件 | 旧 `Hearthstone_*` 子目录 Power.log 修改时间异常时可能切到错误文件 | 低 |
+| 扫描阶段 STEP 13 数据不全 | 工具在英雄选定后启动，`TriggerCheckLeagueIfNeeded` 因 HeroName/LobbyPlayers 为空跳过，等不到第二次 STEP 13 | 中 |
+| 非 BG 对局 `game_start` 覆盖 `not_bg` | CREATE_GAME 块内 GameType 检测到非 BG 后 `EndGame()`，但块退出时 `DebugDump()` 仍返回 `game_start`，`_state` 被设为 `InGame`。仅影响 UI 显示，不影响比赛数据 | 低（赛后修） |
+| 非联赛对局 game_end 不清 `_currentGameUuid` | 上一局联赛的 gameUuid 残留，理论上不影响（`_state != LeagueGame` 不走 update-placement），但留着脏数据 | 低 |
+| 多 Hearthstone 进程（PTR + 正式服） | `Process.GetProcessesByName("Hearthstone")[0]` 只取第一个，行为不确定 | 低 |
+| 连接状态只在启动时检测一次 | `lblStatus` 纯 UI 提示，不影响 API 调用，但服务恢复后不会自动变绿。建议用 `PostAsync` 结果实时更新 | 低（赛后改） |
+
 ### 已知限制
 
 - bg_tool 必须 x86 运行（HearthMirror.dll 是 32 位程序集，无法编译为 x64）
