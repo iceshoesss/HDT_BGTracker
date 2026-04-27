@@ -591,6 +591,11 @@ public class MainForm : Form
                 {
                     hsPid = currentHsPid; // 更新缓存（处理首次获取或进程列表变化）
                 }
+                else if (currentHsPid == 0 && hsPid != 0)
+                {
+                    Console.WriteLine("[日志] ⚠️ 炉石进程已退出");
+                    hsPid = 0;
+                }
 
                 // 先检查文件是否有新数据，避免每 100ms 重复打开 FileStream
                 long fileLen;
