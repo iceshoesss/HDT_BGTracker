@@ -282,7 +282,7 @@ public static class ApiClient
                     return false;
                 }
 
-                var finalized = json.Contains("\"finalized\"") && json.Contains("true");
+                var finalized = ExtractJsonBool(json, "finalized");
                 Console.WriteLine($"[API] ✅ 排名已上传: 第 {placement} 名 | finalized={finalized}");
                 return true;
             }
@@ -404,6 +404,18 @@ public static class ApiClient
         var end = json.IndexOf('"', idx);
         if (end < 0) return "";
         return json.Substring(idx, end - idx);
+    }
+
+    private static bool ExtractJsonBool(string json, string key)
+    {
+        var search = $"\"{key}\"";
+        var idx = json.IndexOf(search);
+        if (idx < 0) return false;
+        idx += search.Length;
+        // 跳过 ": "
+        while (idx < json.Length && (json[idx] == ' ' || json[idx] == ':' || json[idx] == '\t'))
+            idx++;
+        return idx < json.Length && json.Substring(idx).StartsWith("true");
     }
 }
 }
