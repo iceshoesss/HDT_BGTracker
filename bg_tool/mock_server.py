@@ -80,9 +80,7 @@ class MockState:
         # 断线重连信息
         reconnect_info = ""
         if reconnect_count > 0:
-            reconnect_info = f" | 🔄 断线{reconnect_count}次"
-            if first_reconnect_at:
-                reconnect_info += f" (首次: {first_reconnect_at})"
+            reconnect_info = f" | 🔄 断线{reconnect_count}次, 首次拔线: {first_reconnect_at or '未知'}"
 
         if finalized:
             print(f"  🏁 对局结束: {game_uuid} ({total}/8 已提交){reconnect_info}")
