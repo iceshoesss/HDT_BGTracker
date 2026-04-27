@@ -579,6 +579,46 @@ public class MainForm : Form
                     }
                 }
 
+                // 炉石重启后重新获取玩家信息 + 验证码
+                if (HearthMirrorClient.RestartDetected)
+                {
+                    Console.WriteLine("[重启] 🔄 检测到炉石重启，重新获取玩家信息...");
+                    var tagOk = HearthMirrorClient.FetchBattleTag();
+                    var loOk = HearthMirrorClient.FetchAccountId();
+                    if (tagOk && loOk && !string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
+                    {
+                        _playerTag = HearthMirrorClient.LocalPlayerBattleTag;
+                        Console.WriteLine("[重启] ✅ 新玩家: " + _playerTag + " Lo=" + HearthMirrorClient.LocalPlayerLo);
+
+                        try
+                        {
+                            ApiClient.UploadRatingAsync(
+                                HearthMirrorClient.LocalPlayerBattleTag,
+                                HearthMirrorClient.LocalPlayerLo,
+                                0, _config.Region, _config.Mode).GetAwaiter().GetResult();
+
+                            if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
+                            {
+                                _verifyCode = ApiClient.VerificationCode;
+                                Console.WriteLine("[重启] ✅ 新验证码: " + _verifyCode);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine("[重启] ⚠️ upload-rating 失败: " + ex.Message);
+                        }
+
+                        _state = AppState.Waiting;
+                        HearthMirrorClient.AckRestart();
+                        BeginInvoke(new Action(UpdateUI));
+                    }
+                    else
+                    {
+                        // HearthMirror 可能还没准备好，下次循环再试
+                        Console.WriteLine("[重启] ⏳ HearthMirror 未就绪，稍后重试...");
+                    }
+                }
+
                 // 先检查文件是否有新数据，避免每 100ms 重复打开 FileStream
                 long fileLen;
                 try { fileLen = new FileInfo(currentPath).Length; }

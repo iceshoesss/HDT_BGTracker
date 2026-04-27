@@ -18,6 +18,11 @@ public static class HearthMirrorClient
     private static int _hsProcessId;  // 记录初始化时的炉石进程 ID
 
     /// <summary>
+    /// 检测到炉石重启后为 true，MainForm 需重新获取玩家信息和验证码
+    /// </summary>
+    public static bool RestartDetected { get; private set; }
+
+    /// <summary>
     /// 最后一次获取到的 GameUuid
     /// </summary>
     public static string LastGameUuid { get; private set; } = "";
@@ -53,6 +58,7 @@ public static class HearthMirrorClient
                     // 炉石重启了（进程 ID 变了），重新初始化
                     Console.WriteLine($"[HearthMirror] 🔄 炉石进程已重启（PID {_hsProcessId}→{currentPid}），重新初始化");
                     Reset();
+                    RestartDetected = true;
                     // 继续往下走，重新创建 Reflection
                 }
                 else
@@ -101,6 +107,14 @@ public static class HearthMirrorClient
         LocalPlayerBattleTag = "";
         LocalPlayerLo = 0;
         LastGameUuid = "";
+    }
+
+    /// <summary>
+    /// 消费重启标记（MainForm 重新获取完玩家信息后调用）
+    /// </summary>
+    public static void AckRestart()
+    {
+        RestartDetected = false;
     }
 
     /// <summary>
