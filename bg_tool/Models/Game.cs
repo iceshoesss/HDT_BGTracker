@@ -58,6 +58,10 @@ public class Game
     public string StartTime { get; set; } = "";
     public string EndTime { get; set; } = "";
 
+    // 断线重连追踪
+    public int ReconnectCount { get; set; }
+    public string FirstReconnectAt { get; set; } = "";
+
     // HearthMirror 对手信息
     public List<LobbyPlayer> LobbyPlayers { get; set; } = new List<LobbyPlayer>();
 }

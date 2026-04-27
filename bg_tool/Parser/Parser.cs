@@ -139,6 +139,9 @@ public class Parser
                         Games.RemoveAt(Games.Count - 1);
                     Game = _pendingNewGame;
                     Game.Reconnected = true;
+                    Game.ReconnectCount++;
+                    if (string.IsNullOrEmpty(Game.FirstReconnectAt))
+                        Game.FirstReconnectAt = DateTime.UtcNow.ToString("o");
                     _pendingNewGame = null;
                 }
                 return null;

@@ -253,7 +253,9 @@ public static class ApiClient
         string gameUuid,
         string playerId,
         ulong accountIdLo,
-        int placement)
+        int placement,
+        int reconnectCount = 0,
+        string firstReconnectAt = "")
     {
         LastError = "";
 
@@ -264,6 +266,12 @@ public static class ApiClient
             ["placement"] = placement,
             ["playerId"] = playerId
         };
+        if (reconnectCount > 0)
+        {
+            body["reconnectCount"] = reconnectCount;
+            if (!string.IsNullOrEmpty(firstReconnectAt))
+                body["firstReconnectAt"] = firstReconnectAt;
+        }
 
         // 重试 3 次
         for (int attempt = 1; attempt <= 3; attempt++)
