@@ -1081,7 +1081,7 @@ HearthMirror 的 `Reflection.GetBattlegroundsLobbyInfo()` 返回 `HearthMirror.O
 3. `Core.Game` 是 HDT 的 `GameV2` 类，Region 来自 Battle.net 客户端的区域配置（不是游戏内存），Mode 来自 HDT 对游戏实体标签的解析
 4. 结论：bg_tool 无法绕过 HDT 框架获取这两项，必须硬编码或从外部配置
 
-#### v0.2.6 (2026-04-27)
+#### bg_tool v0.5.9 (2026-04-27)
 - 新增断线重连追踪：`Game.ReconnectTimes`（`List<string>`），每次重连记录 UTC 时间，随 update-placement 上传 `reconnectTimes` 字段
 - 修复 update-placement 时 playerTag 为空：回退到 `_playerTag`（HearthMirror 缓存）
 - 修复 upload-rating 无验证码时静默忽略：增加警告日志
