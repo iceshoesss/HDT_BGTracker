@@ -793,7 +793,7 @@ public class MainForm : Form
                                 var game = parser.Game;
                                 var placement = game.HeroPlacement;
                                 var gameUuid = _currentGameUuid;
-                                var playerTag = game.PlayerTag;
+                                var playerTag = !string.IsNullOrEmpty(game.PlayerTag) ? game.PlayerTag : _playerTag;
                                 var accountIdLo = game.AccountIdLo;
                                 Task.Run(async () =>
                                 {
