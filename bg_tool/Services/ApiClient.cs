@@ -24,7 +24,7 @@ public static class ApiClient
     // 发布前需替换为实际 Key
     private const string ApiKey = "";
 
-    private static string _pluginVersion = "0.7.2"; // 服务端兼容版本，bg_tool 实际版本另算
+    private static string _pluginVersion = "0.7.0"; // 服务端兼容版本，bg_tool 实际版本另算
 
     static ApiClient()
     {

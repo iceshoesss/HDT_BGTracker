@@ -349,11 +349,7 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 ### v0.6.1 (2026-04-24)
 - HttpClient 禁用系统代理：修复玩家开代理/加速器时 API 请求失败
 
-### v0.7.2 (2026-04-27)
-- 修复 upload-rating 无验证码时静默忽略（增加警告日志）
-- 修复 finalized 解析 bug（误匹配 ok:true）
-
-### bg_tool v0.5.9 (2026-04-27)
+### bg_tool v0.5.3 (2026-04-27)
 - 新增断线重连追踪：ReconnectTimes 列表随 update-placement 上传
 - 修复 update-placement playerTag 为空时回退到 HearthMirror 缓存
 - 修复 TryCheckLeagueWithRetry 参数类型编译错误
