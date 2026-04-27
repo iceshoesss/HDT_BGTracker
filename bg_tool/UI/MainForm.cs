@@ -481,8 +481,25 @@ public class MainForm : Form
     {
         // 等待 Power.log 出现（进入酒馆战棋时生成）
         string? logPath = null;
+        var initHsPid = 0;
+        try { var p = Process.GetProcessesByName("Hearthstone"); if (p.Length > 0) initHsPid = p[0].Id; } catch { }
+
         while (logPath == null)
         {
+            // 检测炉石进程变化（重启/关闭），重置缓存重新搜索
+            var curPid = 0;
+            try { var procs = Process.GetProcessesByName("Hearthstone"); if (procs.Length > 0) curPid = procs[0].Id; } catch { }
+            if (curPid != initHsPid)
+            {
+                if (curPid == 0)
+                    Console.WriteLine("[日志] ⚠️ 炉石进程已退出");
+                else if (initHsPid != 0)
+                    Console.WriteLine($"[日志] 🔄 炉石进程已重启（PID {initHsPid}→{curPid}）");
+                initHsPid = curPid;
+                LogPathFinder.ResetProcessDirCache();
+                HearthMirrorClient.Reset();
+            }
+
             logPath = LogPathFinder.Find(null);
             if (logPath == null)
                 Thread.Sleep(3000);

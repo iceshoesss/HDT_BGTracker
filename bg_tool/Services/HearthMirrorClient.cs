@@ -129,7 +129,7 @@ public static class HearthMirrorClient
             if (bt != null)
             {
                 LocalPlayerBattleTag = bt.Name + "#" + bt.Number;
-                Console.WriteLine("[HearthMirror] ✅ BattleTag=" + LocalPlayerBattleTag + "（GetBattleTag）");
+                Console.WriteLine("[HearthMirror] ✅ BattleTag=" + LocalPlayerBattleTag);
                 return true;
             }
         }
@@ -149,7 +149,7 @@ public static class HearthMirrorClient
             if (accountId != null && accountId.Lo != 0)
             {
                 LocalPlayerLo = accountId.Lo;
-                Console.WriteLine("[HearthMirror] ✅ AccountId.Lo=" + LocalPlayerLo + "（GetAccountId）");
+                Console.WriteLine("[HearthMirror] ✅ AccountId.Lo=" + LocalPlayerLo);
                 return true;
             }
         }
@@ -172,14 +172,14 @@ public static class HearthMirrorClient
             {
                 var bt = matchInfo.LocalPlayer.BattleTag;
                 LocalPlayerBattleTag = $"{bt.Name}#{bt.Number}";
-                Console.WriteLine($"[HearthMirror] ✅ BattleTag={LocalPlayerBattleTag}（MatchInfo）");
+                Console.WriteLine($"[HearthMirror] ✅ BattleTag={LocalPlayerBattleTag}");
                 return true;
             }
             // BattleTag 为 null 时尝试 Name fallback
             if (matchInfo?.LocalPlayer?.Name != null)
             {
                 LocalPlayerBattleTag = matchInfo.LocalPlayer.Name;
-                Console.WriteLine($"[HearthMirror] ✅ BattleTag={LocalPlayerBattleTag}（MatchInfo.Name fallback）");
+                Console.WriteLine($"[HearthMirror] ✅ BattleTag={LocalPlayerBattleTag}");
                 return true;
             }
         }
@@ -247,7 +247,7 @@ public static class HearthMirrorClient
                     && p.Name == localDisplayName)
                 {
                     LocalPlayerLo = lo;
-                    Console.WriteLine($"[HearthMirror] ✅ 本地玩家 Lo={lo}（名字匹配: {p.Name}）");
+                    Console.WriteLine($"[HearthMirror] ✅ 本地玩家 Lo={lo}");
                 }
 
                 result.Add(new LobbyPlayer { Lo = lo, HeroCardId = heroCardId, HeroName = heroName });
