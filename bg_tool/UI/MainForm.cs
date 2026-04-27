@@ -479,21 +479,15 @@ public class MainForm : Form
 
     void LogMonitorLoop()
     {
-        // 等待日志出现
+        // 等待 Power.log 出现（进入酒馆战棋时生成）
         string? logPath = null;
-        var waitCount = 0;
         while (logPath == null)
         {
             logPath = LogPathFinder.Find(null);
             if (logPath == null)
-            {
-                waitCount++;
-                if (waitCount % 10 == 1) // 每 30 秒打一次
-                    Console.WriteLine($"[日志] ⏳ 等待炉石启动...（已等待 {waitCount * 3} 秒）");
                 Thread.Sleep(3000);
-            }
         }
-        Console.WriteLine("[日志] ✅ 已定位炉石日志");
+        Console.WriteLine("[日志] ✅ 已定位 Power.log");
 
         Parser parser;
         long pos;
