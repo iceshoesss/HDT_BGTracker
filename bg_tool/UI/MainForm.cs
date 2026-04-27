@@ -500,6 +500,25 @@ public class MainForm : Form
                 initHsPid = curPid;
                 LogPathFinder.ResetProcessDirCache();
                 HearthMirrorClient.Reset();
+
+                // 炉石在运行时重新获取玩家信息
+                if (curPid != 0)
+                {
+                    var tagOk = HearthMirrorClient.FetchBattleTag();
+                    var loOk = HearthMirrorClient.FetchAccountId();
+                    if (tagOk && loOk && !string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
+                    {
+                        _playerTag = HearthMirrorClient.LocalPlayerBattleTag;
+                        Console.WriteLine("[启动] ✅ 玩家信息已获取: " + _playerTag);
+                        ApiClient.UploadRatingAsync(
+                            HearthMirrorClient.LocalPlayerBattleTag,
+                            HearthMirrorClient.LocalPlayerLo,
+                            0, _config.Region, _config.Mode).GetAwaiter().GetResult();
+                        if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
+                            _verifyCode = ApiClient.VerificationCode;
+                        BeginInvoke(new Action(UpdateUI));
+                    }
+                }
             }
 
             logPath = LogPathFinder.Find(null);
