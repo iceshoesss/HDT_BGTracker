@@ -875,6 +875,16 @@ public class MainForm : Form
         if (!string.IsNullOrEmpty(game.PlayerTag) && game.PlayerTag != _playerTag)
             _playerTag = game.PlayerTag;
 
+        // 重新从 HearthMirror 获取 LobbyPlayers，修正观战时 CREATE_GAME 块的错误 Lo
+        var refreshedPlayers = HearthMirrorClient.FetchLobbyPlayers(game.PlayerTag);
+        if (refreshedPlayers.Count > 0)
+        {
+            game.LobbyPlayers = refreshedPlayers;
+            if (HearthMirrorClient.LocalPlayerLo != 0)
+                game.AccountIdLo = HearthMirrorClient.LocalPlayerLo;
+            Console.WriteLine($"[MainForm] 🔄 补发前刷新 LobbyPlayers: {refreshedPlayers.Count} 人, Lo={game.AccountIdLo}");
+        }
+
         // 数据不可用 → 解锁 _leagueChecked，等真正的 STEP 13 重试
         var hasValidLo = game.LobbyPlayers != null && game.LobbyPlayers.Any(p => p.Lo != 0);
         if (game.AccountIdLo == 0 && !hasValidLo)
