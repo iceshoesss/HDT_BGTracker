@@ -62,7 +62,7 @@ public class MainForm : Form
     // check-league 持续重试（初始 3 次失败后，每 15 秒重试直到成功或对局结束）
     System.Threading.Timer? _checkLeagueRetryTimer;
     string? _pendingPlayerTag;
-    string? _pendingAccountIdLo;
+    ulong? _pendingAccountIdLo;
     List<LobbyPlayer>? _pendingLobbyPlayers;
     string? _pendingRegion;
     string? _pendingMode;
@@ -894,7 +894,7 @@ public class MainForm : Form
     /// <summary>
     /// 尝试 check-league（初始 3 次快速重试）。失败则启动 15 秒周期重试。
     /// </summary>
-    void TryCheckLeagueWithRetry(string playerTag, string accountIdLo,
+    void TryCheckLeagueWithRetry(string playerTag, ulong accountIdLo,
         List<LobbyPlayer> lobbyPlayers, string region, string mode)
     {
         Task.Run(async () =>
