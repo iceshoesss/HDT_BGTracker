@@ -521,6 +521,10 @@ public class MainForm : Form
         var fileCheckCounter = 0;
         var consecutiveFileErrors = 0; // 连续文件不存在计数
 
+        // 追踪炉石进程 PID，主动检测重启（不依赖 TryInit 被调用）
+        var hsPid = 0;
+        try { var p = Process.GetProcessesByName("Hearthstone"); if (p.Length > 0) hsPid = p[0].Id; } catch { }
+
         while (true)
         {
             try
@@ -539,10 +543,17 @@ public class MainForm : Form
                     }
                 }
 
-                // 炉石重启后重新获取玩家信息 + 验证码
-                if (HearthMirrorClient.RestartDetected)
+                // 主动检测炉石进程重启（通过 PID 变化，不依赖 TryInit）
+                var currentHsPid = 0;
+                try { var procs = Process.GetProcessesByName("Hearthstone"); if (procs.Length > 0) currentHsPid = procs[0].Id; } catch { }
+                if (currentHsPid != 0 && currentHsPid != hsPid)
                 {
-                    Console.WriteLine("[重启] 🔄 检测到炉石重启，重新获取玩家信息...");
+                    Console.WriteLine($"[重启] 🔄 检测到炉石进程变化（PID {hsPid}→{currentHsPid}），重新获取玩家信息...");
+                    hsPid = currentHsPid;
+
+                    // 重置 HearthMirror 以便下次 TryInit 重新初始化
+                    HearthMirrorClient.Reset();
+
                     var tagOk = HearthMirrorClient.FetchBattleTag();
                     var loOk = HearthMirrorClient.FetchAccountId();
                     if (tagOk && loOk && !string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
@@ -569,14 +580,16 @@ public class MainForm : Form
                         }
 
                         _state = AppState.Waiting;
-                        HearthMirrorClient.AckRestart();
                         BeginInvoke(new Action(UpdateUI));
                     }
                     else
                     {
-                        // HearthMirror 可能还没准备好，下次循环再试
                         Console.WriteLine("[重启] ⏳ HearthMirror 未就绪，稍后重试...");
                     }
+                }
+                else if (currentHsPid != 0)
+                {
+                    hsPid = currentHsPid; // 更新缓存（处理首次获取或进程列表变化）
                 }
 
                 // 先检查文件是否有新数据，避免每 100ms 重复打开 FileStream
