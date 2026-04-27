@@ -59,6 +59,14 @@ public class MainForm : Form
     string _currentGameUuid = "";
     volatile bool _scanning = false; // 扫描旧日志期间不触发 check_league
 
+    // check-league 持续重试（初始 3 次失败后，每 15 秒重试直到成功或对局结束）
+    System.Threading.Timer? _checkLeagueRetryTimer;
+    string? _pendingPlayerTag;
+    string? _pendingAccountIdLo;
+    List<LobbyPlayer>? _pendingLobbyPlayers;
+    string? _pendingRegion;
+    string? _pendingMode;
+
     // ═══════════════════════════════════════
     //  构造
     // ═══════════════════════════════════════
@@ -736,6 +744,7 @@ public class MainForm : Form
                     switch (evt)
                     {
                         case "game_start":
+                            StopCheckLeagueRetry();
                             _state = AppState.InGame;
                             _leagueChecked = false;
                             uiChanged = true;
@@ -763,49 +772,21 @@ public class MainForm : Form
                                 if (!string.IsNullOrEmpty(game.PlayerTag) && game.PlayerTag != _playerTag)
                                     _playerTag = game.PlayerTag;
 
-                                Task.Run(async () =>
+                                if (game.LobbyPlayers == null || game.LobbyPlayers.Count == 0)
                                 {
-                                    // 淘汰赛 gameUuid 由服务端生成，不再本地计算
-                                    if (game.LobbyPlayers == null || game.LobbyPlayers.Count == 0)
-                                    {
-                                        Console.WriteLine("[MainForm] ⚠️ LobbyPlayers 为空，跳过 check-league");
-                                        _leagueChecked = false;
-                                        return;
-                                    }
+                                    Console.WriteLine("[MainForm] ⚠️ LobbyPlayers 为空，跳过 check-league");
+                                    _leagueChecked = false;
+                                    break;
+                                }
 
-                                    var isLeague = await ApiClient.CheckLeagueAsync(
-                                        game.PlayerTag,
-                                        game.AccountIdLo,
-                                        game.LobbyPlayers,
-                                        _config.Region,
-                                        _config.Mode,
-                                        DateTime.UtcNow.ToString("o"));
-
-                                    // 使用服务端返回的 gameUuid（淘汰赛）
-                                    if (!string.IsNullOrEmpty(ApiClient.ServerGameUuid))
-                                        _currentGameUuid = ApiClient.ServerGameUuid;
-
-                                    if (_config.TestMode)
-                                    {
-                                        // 测试模式：无论服务端返回什么，都强制标记为联赛
-                                        isLeague = true;
-                                        Console.WriteLine("[API] [TEST] 强制标记为联赛对局（忽略 isLeague=false）");
-                                    }
-
-                                    // 验证码无论是否联赛都更新（check-league 总会返回）
-                                    if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
-                                        _verifyCode = ApiClient.VerificationCode;
-
-                                    if (isLeague)
-                                    {
-                                        _state = AppState.LeagueGame;
-                                    }
-                                    BeginInvoke(new Action(UpdateUI));
-                                });
+                                TryCheckLeagueWithRetry(
+                                    game.PlayerTag, game.AccountIdLo, game.LobbyPlayers,
+                                    _config.Region, _config.Mode);
                             }
                             break;
                         case "game_end":
                         case "concede":
+                            StopCheckLeagueRetry();
                             // 如果是联赛对局，上报排名
                             if (_state == AppState.LeagueGame && parser.Game.HeroPlacement > 0)
                             {
@@ -894,52 +875,123 @@ public class MainForm : Form
         if (!string.IsNullOrEmpty(game.PlayerTag) && game.PlayerTag != _playerTag)
             _playerTag = game.PlayerTag;
 
+        // 数据不可用 → 解锁 _leagueChecked，等真正的 STEP 13 重试
+        var hasValidLo = game.LobbyPlayers != null && game.LobbyPlayers.Any(p => p.Lo != 0);
+        if (game.AccountIdLo == 0 && !hasValidLo)
+        {
+            Console.WriteLine("[MainForm] ⚠️ 补发 check-league 数据不可用（Lo 全 0），等待实时 STEP 13 重试");
+            _leagueChecked = false;
+            return;
+        }
+
         Console.WriteLine("[日志] 📋 扫描完成，补发 check-league（STEP 13 已过）");
 
+        TryCheckLeagueWithRetry(
+            game.PlayerTag, game.AccountIdLo, game.LobbyPlayers,
+            _config.Region, _config.Mode);
+    }
+
+    /// <summary>
+    /// 尝试 check-league（初始 3 次快速重试）。失败则启动 15 秒周期重试。
+    /// </summary>
+    void TryCheckLeagueWithRetry(string playerTag, string accountIdLo,
+        List<LobbyPlayer> lobbyPlayers, string region, string mode)
+    {
         Task.Run(async () =>
         {
-            // 数据不可用 → 解锁 _leagueChecked，等真正的 STEP 13 重试
-            var hasValidLo = game.LobbyPlayers != null && game.LobbyPlayers.Any(p => p.Lo != 0);
-            if (game.AccountIdLo == 0 && !hasValidLo)
+            bool ok = false;
+            // 初始 3 次快速重试
+            for (int retry = 0; retry < 3 && _state == AppState.InGame; retry++)
             {
-                Console.WriteLine("[MainForm] ⚠️ 补发 check-league 数据不可用（Lo 全 0），等待实时 STEP 13 重试");
-                _leagueChecked = false;
+                ok = await ApiClient.CheckLeagueAsync(playerTag, accountIdLo, lobbyPlayers, region, mode, DateTime.UtcNow.ToString("o"));
+                if (ok) break;
+                if (retry < 2) await Task.Delay(1000 * (retry + 1));
+            }
+
+            if (ok)
+            {
+                HandleCheckLeagueResult();
                 return;
             }
 
-            if (game.LobbyPlayers == null || game.LobbyPlayers.Count == 0)
+            // 3 次全失败 → 启动 15 秒周期重试
+            Console.WriteLine("[API] ⚠️ check-league 初始重试失败，启动 15 秒周期重试...");
+            _pendingPlayerTag = playerTag;
+            _pendingAccountIdLo = accountIdLo;
+            _pendingLobbyPlayers = lobbyPlayers;
+            _pendingRegion = region;
+            _pendingMode = mode;
+
+            _checkLeagueRetryTimer?.Dispose();
+            _checkLeagueRetryTimer = new System.Threading.Timer(async _ =>
             {
-                Console.WriteLine("[MainForm] ⚠️ LobbyPlayers 为空，跳过补发 check-league");
-                _leagueChecked = false;
-                return;
-            }
+                if (_state != AppState.InGame)
+                {
+                    StopCheckLeagueRetry();
+                    return;
+                }
 
-            var isLeague = await ApiClient.CheckLeagueAsync(
-                game.PlayerTag,
-                game.AccountIdLo,
-                game.LobbyPlayers!,
-                _config.Region,
-                _config.Mode,
-                DateTime.UtcNow.ToString("o"));
+                try
+                {
+                    var retryOk = await ApiClient.CheckLeagueAsync(
+                        _pendingPlayerTag!, _pendingAccountIdLo!, _pendingLobbyPlayers!,
+                        _pendingRegion!, _pendingMode!, DateTime.UtcNow.ToString("o"));
 
-            // 使用服务端返回的 gameUuid
-            if (!string.IsNullOrEmpty(ApiClient.ServerGameUuid))
-                _currentGameUuid = ApiClient.ServerGameUuid;
-
-            if (_config.TestMode)
-            {
-                isLeague = true;
-                Console.WriteLine("[API] [TEST] 强制标记为联赛对局（忽略 isLeague=false）");
-            }
-
-            if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
-                _verifyCode = ApiClient.VerificationCode;
-
-            if (isLeague)
-                _state = AppState.LeagueGame;
-
-            BeginInvoke(new Action(UpdateUI));
+                    if (retryOk)
+                    {
+                        HandleCheckLeagueResult();
+                        StopCheckLeagueRetry();
+                        Console.WriteLine("[API] ✅ check-league 周期重试成功");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[API] ⏳ check-league 重试失败，15 秒后继续...");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[API] ⏳ check-league 重试异常: {ex.Message}，15 秒后继续...");
+                }
+            }, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
         });
+    }
+
+    /// <summary>
+    /// 处理 check-league 成功响应（提取 gameUuid、验证码、设置状态）
+    /// </summary>
+    void HandleCheckLeagueResult()
+    {
+        if (!string.IsNullOrEmpty(ApiClient.ServerGameUuid))
+            _currentGameUuid = ApiClient.ServerGameUuid;
+
+        if (_config.TestMode)
+        {
+            Console.WriteLine("[API] [TEST] 强制标记为联赛对局（忽略 isLeague=false）");
+            _state = AppState.LeagueGame;
+        }
+        else if (ApiClient.LastLeagueResult)
+        {
+            _state = AppState.LeagueGame;
+        }
+
+        if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
+            _verifyCode = ApiClient.VerificationCode;
+
+        BeginInvoke(new Action(UpdateUI));
+    }
+
+    /// <summary>
+    /// 停止 check-league 周期重试
+    /// </summary>
+    void StopCheckLeagueRetry()
+    {
+        _checkLeagueRetryTimer?.Dispose();
+        _checkLeagueRetryTimer = null;
+        _pendingPlayerTag = null;
+        _pendingAccountIdLo = null;
+        _pendingLobbyPlayers = null;
+        _pendingRegion = null;
+        _pendingMode = null;
     }
 
     /// <summary>
