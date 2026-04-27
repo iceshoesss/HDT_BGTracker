@@ -551,8 +551,9 @@ public class MainForm : Form
                     Console.WriteLine($"[重启] 🔄 检测到炉石进程变化（PID {hsPid}→{currentHsPid}），重新获取玩家信息...");
                     hsPid = currentHsPid;
 
-                    // 重置 HearthMirror 以便下次 TryInit 重新初始化
+                    // 重置 HearthMirror + LogPathFinder 缓存
                     HearthMirrorClient.Reset();
+                    LogPathFinder.ResetProcessDirCache();
 
                     var tagOk = HearthMirrorClient.FetchBattleTag();
                     var loOk = HearthMirrorClient.FetchAccountId();
@@ -595,6 +596,7 @@ public class MainForm : Form
                 {
                     Console.WriteLine("[日志] ⚠️ 炉石进程已退出");
                     hsPid = 0;
+                    LogPathFinder.ResetProcessDirCache();
                 }
 
                 // 先检查文件是否有新数据，避免每 100ms 重复打开 FileStream

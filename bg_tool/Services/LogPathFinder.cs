@@ -214,6 +214,15 @@ public static class LogPathFinder
     private static string? _processDir;
     private static bool _processDirCached;
 
+    /// <summary>
+    /// 重置进程路径缓存（炉石重启后调用，允许重新查找安装目录）
+    /// </summary>
+    public static void ResetProcessDirCache()
+    {
+        _processDirCached = false;
+        _processDir = null;
+    }
+
     private static string? FindLogInDir(string logsDir)
     {
         if (!Directory.Exists(logsDir)) return null;
