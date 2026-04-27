@@ -319,6 +319,12 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 > Web 端更新日志已迁移至 [LeagueWeb](https://github.com/iceshoesss/LeagueWeb) 仓库。
 
+### bg_tool v0.5.3 (2026-04-27)
+- 新增断线重连追踪：ReconnectTimes 列表随 update-placement 上传
+- 修复 update-placement playerTag 为空时回退到 HearthMirror 缓存
+- 修复 TryCheckLeagueWithRetry 参数类型编译错误
+- mock_server 新增 upload-rating 端点、返回服务端 gameUuid、展示断线信息
+
 ### bg_tool v0.5.2 (2026-04-26)
 - check-league 失败后持续重试直到成功或对局结束
 
@@ -355,12 +361,6 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 ### v0.6.1 (2026-04-24)
 - HttpClient 禁用系统代理：修复玩家开代理/加速器时 API 请求失败
-
-### bg_tool v0.5.3 (2026-04-27)
-- 新增断线重连追踪：ReconnectTimes 列表随 update-placement 上传
-- 修复 update-placement playerTag 为空时回退到 HearthMirror 缓存
-- 修复 TryCheckLeagueWithRetry 参数类型编译错误
-- mock_server 新增 upload-rating 端点、返回服务端 gameUuid、展示断线信息
 
 ### v0.5.8 (2026-04-23)
 - check-league LobbyInfo 延迟加载保护加强：gameUuid 为空重试 3 次（共 ~9 秒），accountIdLo 全为 0 时等 3 秒后重新读取 LobbyInfo
