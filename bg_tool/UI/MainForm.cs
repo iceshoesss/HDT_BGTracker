@@ -504,28 +504,7 @@ public class MainForm : Form
             lock (_parserLock) { ScanExisting(logPath, out _parser, out pos); parser = _parser; }
             _scanning = false;
 
-            // 检测空壳旧数据
-            if (parser.Game.IsActive
-                && string.IsNullOrEmpty(parser.Game.HeroName)
-                && string.IsNullOrEmpty(parser.Game.PlayerTag)
-                && parser.Game.AccountIdLo == 0)
-            {
-                Console.WriteLine("[日志] 📦 检测到旧数据（无有效信息），跳到文件尾等待新对局");
-                parser.Game.IsActive = false;
-                pos = GetFileEnd(logPath);
-            }
-            else if (parser.Game.IsActive)
-            {
-                Console.WriteLine($"[日志] 🔄 检测到进行中对局: {parser.Game.PlayerTag} | 英雄={parser.Game.HeroName} | Lo={parser.Game.AccountIdLo}");
-                parser.ResetLobbyState();
-                _state = AppState.InGame;
-                _playerTag = parser.Game.PlayerTag;
-                TriggerCheckLeagueIfNeeded();
-            }
-            else
-            {
-                Console.WriteLine("[日志] 📭 无进行中对局，等待新游戏开始...");
-            }
+            HandleScannedGameState(parser);
         }
         catch (Exception ex)
         {
@@ -540,6 +519,7 @@ public class MainForm : Form
         Console.WriteLine("[日志] 👁 开始实时监控，等待游戏事件...");
         var currentPath = logPath;
         var fileCheckCounter = 0;
+        var consecutiveFileErrors = 0; // 连续文件不存在计数
 
         while (true)
         {
@@ -552,32 +532,10 @@ public class MainForm : Form
                     var newPath = LogPathFinder.CheckNewLogFile(currentPath);
                     if (newPath != null)
                     {
+                        Console.WriteLine($"[日志] 🔄 发现新日志文件: {newPath}");
                         currentPath = newPath;
-                        _scanning = true;
-                        lock (_parserLock) { ScanExisting(currentPath, out _parser, out pos); parser = _parser; }
-                        _scanning = false;
-
-                        if (parser.Game.IsActive
-                            && string.IsNullOrEmpty(parser.Game.HeroName)
-                            && string.IsNullOrEmpty(parser.Game.PlayerTag)
-                            && parser.Game.AccountIdLo == 0)
-                        {
-                            parser.Game.IsActive = false;
-                            pos = GetFileEnd(currentPath);
-                        }
-                        else if (parser.Game.IsActive)
-                        {
-                            parser.ResetLobbyState();
-                            _state = AppState.InGame;
-                            _playerTag = parser.Game.PlayerTag;
-                            TriggerCheckLeagueIfNeeded();
-                        }
-                        else
-                        {
-                            _state = AppState.Waiting;
-                            pos = GetFileEnd(currentPath);
-                        }
-                        UpdateUI();
+                        if (TryScanAndSwitch(currentPath, ref parser, ref pos))
+                            UpdateUI();
                     }
                 }
 
@@ -624,11 +582,41 @@ public class MainForm : Form
                 // 先检查文件是否有新数据，避免每 100ms 重复打开 FileStream
                 long fileLen;
                 try { fileLen = new FileInfo(currentPath).Length; }
-                catch { Thread.Sleep(200); continue; }
+                catch (FileNotFoundException)
+                {
+                    // Power.log 被删除（炉石退出），立即搜索新日志
+                    consecutiveFileErrors++;
+                    if (consecutiveFileErrors == 1)
+                        Console.WriteLine("[日志] ⚠️ Power.log 已删除（炉石可能已退出），搜索新日志...");
+
+                    var newPath = LogPathFinder.Find(null);
+                    if (newPath != null && !string.Equals(
+                        Path.GetFullPath(newPath), Path.GetFullPath(currentPath),
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.WriteLine($"[日志] ✅ 找到新日志: {newPath}");
+                        currentPath = newPath;
+                        consecutiveFileErrors = 0;
+                        if (TryScanAndSwitch(currentPath, ref parser, ref pos))
+                            UpdateUI();
+                    }
+                    else
+                    {
+                        // 没找到新日志，等一会再找（炉石可能还在启动中）
+                        Thread.Sleep(2000);
+                    }
+                    continue;
+                }
+                catch
+                {
+                    Thread.Sleep(200);
+                    continue;
+                }
+                consecutiveFileErrors = 0;
                 if (fileLen < pos)
                 {
-                    // 文件被截断（炉石重启时 Power.log 重写），重置位置
-                    Console.WriteLine($"[日志] 🔄 检测到日志文件被截断（{pos}→{fileLen}），重置读取位置");
+                    // 文件被截断或切换了新文件，重置位置
+                    Console.WriteLine($"[日志] 🔄 检测到日志文件变化（{pos}→{fileLen}），重置读取位置");
                     pos = 0;
                 }
                 if (fileLen <= pos) { Thread.Sleep(100); continue; }
@@ -773,7 +761,10 @@ public class MainForm : Form
             }
             catch (FileNotFoundException)
             {
-                Thread.Sleep(2000);
+                // 文件在 FileInfo 检查后、FileStream 读取前被删除（竞态）
+                // 下一轮循环的 FileInfo 检查会处理，这里只做短暂等待
+                Console.WriteLine("[日志] ⚠️ 读取时日志文件消失，下轮重试");
+                Thread.Sleep(500);
             }
             catch (IOException)
             {
@@ -858,6 +849,58 @@ public class MainForm : Form
 
             BeginInvoke(new Action(UpdateUI));
         });
+    }
+
+    /// <summary>
+    /// 扫描新日志文件并切换状态（消除三处重复代码）
+    /// </summary>
+    /// <returns>true=成功扫描并切换，false=扫描失败或未找到文件</returns>
+    bool TryScanAndSwitch(string filePath, ref Parser parser, ref long pos)
+    {
+        try
+        {
+            _scanning = true;
+            lock (_parserLock) { ScanExisting(filePath, out _parser, out pos); parser = _parser; }
+            _scanning = false;
+
+            HandleScannedGameState(parser);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[日志] ⚠️ 扫描新日志异常: {ex.Message}，跳到文件尾");
+            _scanning = false;
+            lock (_parserLock) { _parser = new Parser(); parser = _parser; }
+            pos = GetFileEnd(filePath);
+            return true; // 仍然算成功切换，只是数据丢了
+        }
+    }
+
+    /// <summary>
+    /// 扫描完成后根据游戏状态设置 UI（消除三处重复代码）
+    /// </summary>
+    void HandleScannedGameState(Parser parser)
+    {
+        if (parser.Game.IsActive
+            && string.IsNullOrEmpty(parser.Game.HeroName)
+            && string.IsNullOrEmpty(parser.Game.PlayerTag)
+            && parser.Game.AccountIdLo == 0)
+        {
+            Console.WriteLine("[日志] 📦 检测到旧数据（无有效信息），跳到文件尾等待新对局");
+            parser.Game.IsActive = false;
+        }
+        else if (parser.Game.IsActive)
+        {
+            Console.WriteLine($"[日志] 🔄 检测到进行中对局: {parser.Game.PlayerTag} | 英雄={parser.Game.HeroName} | Lo={parser.Game.AccountIdLo}");
+            parser.ResetLobbyState();
+            _state = AppState.InGame;
+            _playerTag = parser.Game.PlayerTag;
+            TriggerCheckLeagueIfNeeded();
+        }
+        else
+        {
+            Console.WriteLine("[日志] 📭 无进行中对局，等待新游戏开始...");
+        }
     }
 
     static void ScanExisting(string filePath, out Parser parser, out long pos)
