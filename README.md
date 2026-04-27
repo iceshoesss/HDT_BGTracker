@@ -234,87 +234,6 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 详细字段说明和 API 文档见 [API.md](API.md)。
 
-## 当前开发状态
-
-### bg_tool v0.4.0 (2026-04-24)
-- **gameUuid 改为服务端生成**：修复同一局不同玩家生成不同 UUID 导致淘汰赛匹配失败
-- 移除 `GenerateDeterministicUuid`，check-league 不再发送 gameUuid
-- 使用服务端返回的 `gameUuid` 进行 update-placement
-
-### HDT 插件 v0.7.0 (2026-04-24)
-- **gameUuid 改为服务端生成**：同 bg_tool v0.4.0
-- 移除本地 SHA256 UUID 计算，从 check-league 响应中提取服务端 gameUuid
-
-### bg_tool v0.3.1 (2026-04-24)
-- HttpClient 禁用系统代理：修复玩家开代理/加速器时 API 请求失败（浏览器能访问但 bg_tool 报"发送请求时出错"）
-- 强制 TLS 1.2：兼容将来切 HTTPS
-
-### HDT 插件 v0.6.1 (2026-04-24)
-- HttpClient 禁用系统代理：同 bg_tool v0.3.1
-
-### bg_tool v0.3.0 (2026-04-24)
-- 确定性 gameUuid：用 Lo 集合 SHA256 生成，同一局所有人一致
-- 移除 HearthMirror GameUuid 依赖，省去最多 9 秒等待
-- 好友房 GameType 前缀匹配（支持 GT_BATTLEGROUNDS_FRIENDLY）
-- 去掉等待 Power.log 刷屏日志
-
-### bg_tool v0.2.9 (2026-04-24)
-- 修复好友房 GameType 识别：精确匹配 `GT_BATTLEGROUNDS` 改为 `StartsWith` 前缀匹配，支持 `GT_BATTLEGROUNDS_FRIENDLY`
-- 同步修复 bg_parser
-
-### bg_tool v0.2.8 (2026-04-24)
-- 移除 Diagnose() 诊断代码
-- 启动先检测炉石进程，再获取 ID
-- 玩家名立即显示（不等验证码上传）
-- HearthMirror 失败重试间隔 30s → 5s
-
-### bg_tool v0.2.6 (2026-04-23)
-- 从炉石进程自动获取安装目录（HDT 同款方案：Process.MainModule.FileName）
-- 国服常见中文路径兜底 + 盘符自动扫描
-- 日志轮询优化：文件大小预检（减少 90% IO）+ 行前缀过滤（跳过 90% 冗余行）
-- 修复中途启动 bg_tool 丢失联赛对局：扫描完成后补发 check-league
-- DEV_NOTES 新增 HDT 日志读取方案对比分析（§16）
-
-### bg_tool v0.2.3 (2026-04-23)
-- check-league 接入 HearthDb 解析英雄名，POST 携带 heroName
-- 修复 players dict 匿式对象 JSON 序列化 bug
-- 不再过滤 Lo=0 玩家，本地玩家附带 battleTag + displayName + startedAt
-- gameUuid 为空重试 3 次（共 ~9 秒），Lo 全为 0 时跳过
-
-### bg_tool v0.2.2 (2026-04-21)
-- 修复非联赛对局验证码不显示：check-league 回调中验证码更新与 isLeague 判断解耦
-
-### bg_tool v0.2.1 (2026-04-21)
-- 标题栏显示版本号
-- 点击玩家名跳转 URL 改为 apiBaseUrl 拼接
-- 断线重连时日志显示具体时间
-- apiKey 改为编译时常量，不暴露在 config.json
-- 启动扫描旧日志不触发 check_league，避免读到残留内存数据
-- 日志优化：bg_tool.log 超 1MB 覆盖重写，移除 Lo=0 诊断日志
-
-### bg_tool v0.2.0 (2026-04-21)
-- WinForms 桌面应用（深色主题 UI）
-- 对接 Flask API（check-league + update-placement）
-- 联赛对局持久化到 games.json
-- 启动 Ping 服务检测、日志面板
-- 统一配置 shared_config.json
-- 实时监控、中途接入、断线重连、自动切换日志
-- HearthMirror 集成获取 8 个玩家 Lo + HeroCardId
-- 批量解析 `--parse` 模式、mock_server.py 调试
-
-### Web v0.4.2 (2026-04-17)
-- 使用指南页面、管理员删除对局
-
-### QQ Bot v0.1.1 (2026-04-17)
-- 排行榜、选手查询、队列状态、最近对局、QQ 绑定/解绑
-- 帮助命令、webhook 接收并转发到群通知
-
-### 进行中
-- bg_tool WinForms UI 细节优化
-- QQ 机器人更多命令（报名/退出队列、管理员命令）
-- ELO 评分系统（feature/elo 分支，待上线）
-- 比赛定制规则：断线重连检测标记（将来按需实现）
-
 ## 更新日志
 
 > Web 端更新日志已迁移至 [LeagueWeb](https://github.com/iceshoesss/LeagueWeb) 仓库。
@@ -347,51 +266,93 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 - 修复炉石重启后 bg_tool 不触发 check-league：HearthMirrorClient.TryInit() 检测进程 ID 变化，炉石重启后自动重新初始化 Reflection 连接
 - 日志监控检测到文件截断时重置读取位置（炉石重启时 Power.log 重写导致 pos 越界）
 
-### v0.2.2 (2026-04-21)
+### bg_tool v0.4.0 (2026-04-24)
+- **gameUuid 改为服务端生成**：修复同一局不同玩家生成不同 UUID 导致淘汰赛匹配失败
+- 移除 `GenerateDeterministicUuid`，check-league 不再发送 gameUuid
+- 使用服务端返回的 `gameUuid` 进行 update-placement
+
+### HDT 插件 v0.7.0 (2026-04-24)
+- **gameUuid 改为服务端生成**：同 bg_tool v0.4.0
+- 移除本地 SHA256 UUID 计算，从 check-league 响应中提取服务端 gameUuid
+
+### bg_tool v0.3.1 (2026-04-24)
+- HttpClient 禁用系统代理：修复玩家开代理/加速器时 API 请求失败（浏览器能访问但 bg_tool 报"发送请求时出错"）
+- 强制 TLS 1.2：兼容将来切 HTTPS
+
+### HDT 插件 v0.6.1 (2026-04-24)
+- HttpClient 禁用系统代理：同 bg_tool v0.3.1
+
+### bg_tool v0.3.0 (2026-04-24)
+- 确定性 gameUuid：用 Lo 集合 SHA256 生成，同一局所有人一致
+- 移除 HearthMirror GameUuid 依赖，省去最多 9 秒等待
+- 好友房 GameType 前缀匹配（支持 GT_BATTLEGROUNDS_FRIENDLY）
+- 去掉等待 Power.log 刷屏日志
+
+### bg_tool v0.2.9 (2026-04-24)
+- 修复好友房 GameType 识别：精确匹配 `GT_BATTLEGROUNDS` 改为 `StartsWith` 前缀匹配，支持 `GT_BATTLEGROUNDS_FRIENDLY`
+
+### bg_tool v0.2.8 (2026-04-24)
+- 移除 Diagnose() 诊断代码
+- 启动先检测炉石进程，再获取 ID
+- 玩家名立即显示（不等验证码上传）
+- HearthMirror 失败重试间隔 30s → 5s
+
+### bg_tool v0.2.6 (2026-04-23)
+- 从炉石进程自动获取安装目录（HDT 同款方案：Process.MainModule.FileName）
+- 国服常见中文路径兜底 + 盘符自动扫描
+- 日志轮询优化：文件大小预检（减少 90% IO）+ 行前缀过滤（跳过 90% 冗余行）
+- 修复中途启动 bg_tool 丢失联赛对局：扫描完成后补发 check-league
+
+### bg_tool v0.2.3 (2026-04-23)
+- check-league 接入 HearthDb 解析英雄名，POST 携带 heroName
+- 修复 players dict 匿式对象 JSON 序列化 bug
+- 不再过滤 Lo=0 玩家，本地玩家附带 battleTag + displayName + startedAt
+- gameUuid 为空重试 3 次（共 ~9 秒），Lo 全为 0 时跳过
+
+### bg_tool v0.2.2 (2026-04-21)
 - 修复非联赛对局验证码不显示：check-league 回调中验证码更新与 isLeague 判断解耦
 
-### v0.2.1 (2026-04-21)
+### bg_tool v0.2.1 (2026-04-21)
 - 标题栏显示版本号、点击玩家名跳转 URL 拼接、断线重连日志
 - apiKey 改为编译时常量、启动扫描旧日志不触发 check_league
 - 日志优化：超 1MB 覆盖重写
 
-### v0.2.0 (2026-04-21)
+### bg_tool v0.2.0 (2026-04-21)
 - WinForms 桌面应用（深色主题 UI）
 - 对接 Flask API（check-league + update-placement）
 - 联赛对局持久化到 games.json
 - 启动 Ping 服务检测、日志面板
 - 统一配置 shared_config.json
-- mock_server.py 支持状态追踪
+- 实时监控、中途接入、断线重连、自动切换日志
+- HearthMirror 集成获取 8 个玩家 Lo + HeroCardId
+- 批量解析 `--parse` 模式、mock_server.py 调试
 
-### v0.6.1 (2026-04-24)
-- HttpClient 禁用系统代理：修复玩家开代理/加速器时 API 请求失败
-
-### v0.5.8 (2026-04-23)
+### HDT 插件 v0.5.8 (2026-04-23)
 - check-league LobbyInfo 延迟加载保护加强：gameUuid 为空重试 3 次（共 ~9 秒），accountIdLo 全为 0 时等 3 秒后重新读取 LobbyInfo
 
-### v0.5.7 (2026-04-18)
-- 修复日志刷屏：GetPlayerId/GetAccountIdLo 未找到时加 1 秒日志节流，避免 OnUpdate 每 100ms 写一条重复日志
+### HDT 插件 v0.5.7 (2026-04-18)
+- 修复日志刷屏：GetPlayerId/GetAccountIdLo 未找到时加 1 秒日志节流
 
-### v0.5.6 (2026-04-14)
-- 修复 GetPlayerId 失败导致 update-placement 静默丢失：三个缓存独立重试，accountIdLo 改用 Player.AccountId.Lo 优先，空值时有日志+重试
+### HDT 插件 v0.5.6 (2026-04-14)
+- 修复 GetPlayerId 失败导致 update-placement 静默丢失：三个缓存独立重试
 - 修复 409 误判为失败：已提交的 placement 返回 409 时不再重试
 
-### v0.5.5 (2026-04-14)
+### HDT 插件 v0.5.5 (2026-04-14)
 - update-placement 网络失败时重试 3 次
-- 插件认证：所有请求带 `Authorization: Bearer <key>` + 版本号 header，服务端双重校验
+- 插件认证：所有请求带 `Authorization: Bearer <key>` + 版本号 header
 
-### v0.5.4 (2026-04-14)
+### HDT 插件 v0.5.4 (2026-04-14)
 - check-league 网络失败时重试 3 次
 
-### v0.5.3 (2026-04-14)
+### HDT 插件 v0.5.3 (2026-04-14)
 - 修复淘汰玩家排名丢失：placement 为 null 时重试读取，最多 10 次
 
-### v0.5.2 (2026-04-13)
+### HDT 插件 v0.5.2 (2026-04-13)
 - 队列超时机制：报名队列 10 分钟自动踢出，等待队列 20 分钟自动解散
 - 登出时自动退出所有队列
-- 代码重构：验证码逻辑去重、print 替换为 logging、移除 league_players 冗余字段
+- 代码重构：验证码逻辑去重、print 替换为 logging
 
-### v0.5.1 (2026-04-13)
+### HDT 插件 v0.5.1 (2026-04-13)
 - 版本号更新，编译输出改用下划线分隔
 
 详细开发记录见 [DEV_NOTES.md](DEV_NOTES.md)。

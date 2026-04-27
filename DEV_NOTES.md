@@ -549,28 +549,39 @@ python bg_parser/bg_parser.py
 
 ### 已知问题
 
-- [x] **bg_tool 获取到观战者的 ID**（2026-04-23）：bg_tool 从 Power.log 的 CREATE_GAME 块读取第一个非零 `GameAccountId.Lo` 作为本地玩家 ID，但观战好友也会有非零 Lo，如果排在前面就被错误采用。HDT 插件用 HearthMirror LobbyInfo 按名字匹配不存在此问题。修复方案：STEP 13 调用 `FetchLobbyPlayers(playerTag)` 时传入本地玩家 BattleTag，HearthMirror 通过 `p.Name == displayName` 匹配本地玩家并提取真实 Lo，覆盖 Power.log 的值。已修复。
-- [x] **bg_tool 闪退无报错**（2026-04-20）：最初误判为 x86 注册表重定向问题，实际根因是未打开游戏时 `LogPathFinder.Find()` 返回 null，程序直接 return 退出。修复方案：未找到 Power.log 时循环等待游戏启动（3 秒重试），而非直接退出。见 commit `b793bec`。
-- [x] **bg_tool 英雄解析失败**（2026-04-20）：`HERO_ENTITY` 在 Power.log 中有时出现在 `FULL_ENTITY` 之前，导致 `FindHeroByEntity` 返回 null → 英雄名显示"(等待数据)"，后续 LEADERBOARD_PLACE 也因 `Game.HeroCardId` 为空无法匹配排名。修复方案：HERO_ENTITY 找不到英雄时不播报事件，等 FULL_ENTITY 补上后播报；STEP MAIN_START/MAIN_CLEANUP 时主动重试 `FindHeroByEntity`；LEADERBOARD_PLACE 增加 EntityId 匹配 fallback。已修复。**注意**：playerSlot 不能作为本地玩家标识（实际日志中本地英雄 player=1，Python parser 也不使用 playerSlot）。
-- [x] **bg_tool 启动读取旧数据**（2026-04-20）：上局游戏未正常结束（无 STATE=COMPLETE），工具启动时 `FindLastCreateGamePos` 定位到最后一个 CREATE_GAME 并扫描旧数据，误认为"进行中"。修复方案：ScanExisting 后检测 active 但无任何游戏数据（无英雄/PlayerTag/AccountIdLo）时，判定为旧数据，跳到文件尾等待新游戏。已修复。**已知边界场景**：玩家断线重连回同一局时，bg_tool 从重连的 CREATE_GAME 开始扫描，`_pendingNewGame` 为 null（全新 Parser），重连数据无法恢复旧局状态，Game 为空壳。该场景不常见，暂不处理。
-- [x] **bg_tool 缺少 HearthDb 引用**（2026-04-20）：最初移除了 `ResolveHeroName()` 对 HearthDb 的依赖，改由服务端解析英雄名。2026-04-22 重新加回 csproj 引用。2026-04-23 改用内置 JSON 替代：删除 HearthDb.dll 引用，`HeroNameResolver.cs` 从嵌入资源 `bg_heroes.json`（~40KB）加载静态字典，手写极简 JSON 解析器，零外部依赖。同时修复 `ApiClient.CheckLeagueAsync` 中 players dict 匿名对象序列化 bug（`ToString()` 输出 C# 对象格式而非 JSON），改为 `Dictionary<string, object>`。
-- [x] **check-league 400 空参数**（2026-04-22）：HearthMirror 的 LobbyInfo 在 STEP 13 偶尔延迟加载，gameUuid 为空时插件仍发送请求导致服务端 400。修复方案：HDT 插件 CheckLeagueQueue 中 gameUuid 为空时等待 3 秒重试，仍为空则跳过；bg_tool ApiClient.CheckLeagueAsync 中 gameUuid 为空直接跳过。已修复。
-- [x] **联赛对局玩家名字为空**（2026-04-22）：HearthMirror 只有本地玩家有 Name（显示名，无 #tag），插件发送的 players dict 中其他 7 人 battleTag 为空串。服务端 check-league 构建 players 时 `detail.get("battleTag", fallback)` 因 detail dict 存在（有 heroCardId）导致空串覆盖了 fallback。修复方案：服务端改用 `or` 三级 fallback（请求数据 → 等待组 name → player_records.playerId 查库）。注意必须查 player_records 而非 league_players，因为 player_records.playerId 是插件上传的完整 battleTag（带 #tag），league_players.battleTag 可能缺 #tag。已修复。
-- [x] **bg_tool STEP 13 MatchInfo 不可用导致 check-league 被跳过**（2026-04-24）：bg_tool 在 STEP 13 时调用 `FetchMatchInfo()` 获取 BattleTag，但 BG 模式下 MatchInfo 在此时机不可用，导致 `matchOk=false` 直接短路，8 个玩家全部无法上报联赛对局。实际启动时已通过 `GetBattleTag()` 和 `GetAccountId()` 获取了 BattleTag 和 Lo，`FetchMatchInfo()` 完全多余。修复方案：去掉 STEP 13 的 `FetchMatchInfo()` 调用，直接用启动时缓存的 `LocalPlayerBattleTag`；`FetchLobbyPlayers` 匹配 Lo 失败时 fallback 到启动时的 `Game.AccountIdLo`。已修复。
+#### 已修复
+
+| 问题 | 日期 | 修复方案 |
+|------|------|----------|
+| bg_tool 获取到观战者 ID | 04-23 | STEP 13 传入本地玩家 BattleTag，HearthMirror 按名字匹配真实 Lo |
+| bg_tool 闪退无报错 | 04-20 | Power.log 未找到时循环等待（3 秒重试），不直接退出 |
+| bg_tool 英雄解析失败 | 04-20 | HERO_ENTITY 找不到英雄时等 FULL_ENTITY 补上；STEP MAIN_START/MAIN_CLEANUP 重试匹配 |
+| bg_tool 启动读取旧数据 | 04-20 | ScanExisting 后检测 active 但无数据时判定旧数据，跳到文件尾 |
+| bg_tool 缺少 HearthDb 引用 | 04-20 | 改用内置 `bg_heroes.json` + 手写 JSON 解析器，零外部依赖 |
+| check-league 400 空参数 | 04-22 | gameUuid 为空时跳过请求或重试 |
+| 联赛对局玩家名字为空 | 04-22 | 服务端三级 fallback：请求数据 → 等待组 name → player_records 查库 |
+| bg_tool STEP 13 MatchInfo 不可用 | 04-24 | 去掉 FetchMatchInfo()，直接用启动时缓存的 LocalPlayerBattleTag |
+| bg_tool 日志栏无输出 | 04-27 | UiTextWriter catch 改为写入文件日志而非静默吞掉 |
+| bg_tool `_parser` 线程安全 | 04-27 | 加 `_parserLock` 保护所有读写 |
+| bg_tool volatile 缺失 | 04-27 | `_state`/`_leagueChecked`/`_scanning` 加 volatile |
+| bg_tool 断线重连后中途启动对局丢失 | 04-27 | `"reconnect"` 事件中 `_state == Waiting` 时设为 `InGame` |
+| bg_tool Power.log 删除后卡死 | 04-27 | FileNotFoundException 单独处理，立即搜索新日志 |
+| bg_tool HearthMirrorClient 缓存不更新 | 04-27 | PID 变化时 Reset() + 重新获取 |
+| bg_tool LogPathFinder 缓存永不失效 | 04-27 | 新增 ResetProcessDirCache()，PID 变化时调用 |
+| bg_tool 初始等待循环无 PID 追踪 | 04-27 | 每 3 秒检查 PID，变化时重置缓存重新搜索 |
+| bg_tool 日志暴露内部方法名 | 04-27 | 去掉方法名后缀 |
+| bg_tool `_leagueChecked` 未重置 | 04-27 | HandleScannedGameState 扫描新对局时重置 `_leagueChecked = false` |
+| 好友房 GameType 识别 | 04-24 | `StartsWith("GT_BATTLEGROUNDS")` 前缀匹配 |
+| bg_tool 对接 Flask API | v0.2.0 | check-league + update-placement |
+| UUID 问题 | v0.4.0 | gameUuid 改为服务端生成 |
+
+#### 未修复
+
 - [ ] **bg_parser 游戏结束检测不完全可靠**（2026-04-16）：Python 参考实现，仅用于测试验证，不做修改。
-- [x] **bg_tool 日志栏无输出**（2026-04-26 发现，2026-04-27 修复）：选手端常见问题，bg_tool 完全运行正常（服务正常、验证码、英雄检测都OK），但日志栏 RichTextBox 无任何输出。bg_tool.log 文件可能有内容（待确认）。根因：`UiTextWriter.AppendToUi` 中 `catch { }` 静默吞掉所有异常，`BeginInvoke` 失败时日志无声丢失。修复方案：`catch (Exception ex) { _inner.WriteLine($"[UI日志异常] {ex.Message}"); }`。已修复。
-- [x] **bg_tool `_parser` 引用线程安全**（2026-04-26 发现，2026-04-27 修复）：`LogMonitorLoop` 后台线程会重新赋值 `_parser`（新日志文件扫描时 `ScanExisting(currentPath, out _parser, out pos)`），UI 线程通过 `UpdateUI()` 读 `_parser?.Game`，无锁保护。极端情况下 UI 线程读到半初始化的 Parser。修复方案：加 `_parserLock` 对象，所有 `_parser` 读写均在 `lock (_parserLock)` 内完成；`LogMonitorLoop` 中用本地 `parser` 变量避免频繁加锁。已修复。
-- [x] **bg_tool `_state`/`_leagueChecked`/`_scanning` 无线程同步**（2026-04-26 发现，2026-04-27 修复）：三个字段被后台线程写、UI 线程读，无 `volatile` 或锁。x86 上不太容易触发，但存在理论上的可见性问题。修复方案：三个字段均加 `volatile` 修饰。已修复。
-- [x] **bg_tool 断线重连后中途启动对局丢失**（2026-04-27 发现并修复）：bg_tool 在断线重连后才启动时，`FindLastCreateGamePos` 定位到重连的 CREATE_GAME（含 TURN tag），`_pendingNewGame` 为 null 导致回滚不执行，`ResetGame()` 清空所有数据。更关键的是 `"reconnect"` 事件只打日志不改 `_state`，导致 `_state` 停留在 `Waiting`，游戏结束时排名上报逻辑被跳过。修复方案：`"reconnect"` 事件中若 `_state == Waiting` 则设为 `InGame`。不影响 bg_tool 已运行时的正常重连流程（`_state` 已是 `InGame`）。已修复。
-- [x] **bg_tool Power.log 删除后卡死**（2026-04-27 发现并修复）：炉石退出时 Power.log 被销毁，bg_tool 主循环 `FileInfo.Length` 抛 `FileNotFoundException` → `catch { Sleep(2000); continue; }` → 无限重试旧路径。虽然 `fileCheckCounter` 确实递增（100 轮后触发 `CheckNewLogFile`），但每轮 2 秒延迟意味着需要 200+ 秒才能恢复。修复方案：`FileInfo` 的 `FileNotFoundException` 单独处理，立即调用 `LogPathFinder.Find()` 搜索新日志；找到后通过 `TryScanAndSwitch` 切换；未找到则 2 秒后重试。同时提取 `TryScanAndSwitch` 和 `HandleScannedGameState` 消除三处重复代码。初始等待循环也加了 PID 追踪，炉石重启时重置缓存重新搜索。已修复。
-- [ ] **bg_tool `LogPathFinder.Find()` 扫描所有盘符**（2026-04-26 发现）：`DriveInfo.GetDrives()` + `Directory.GetDirectories(root, pattern)` 遍历所有固定盘符根目录。在有网络映射盘、慢速硬盘、无权限目录的机器上可能阻塞很久。建议改为只扫描注册表和进程路径找到的目录，兜底路径列表保留但不全盘扫描。
-- [x] **bg_tool `HearthMirrorClient` 缓存值不更新**（2026-04-26 发现，2026-04-27 修复）：`LocalPlayerBattleTag` 和 `LocalPlayerLo` 启动时获取一次再也不更新。用户切换 Battle.net 账号、炉石进程重启（bg_tool 未关）、HearthMirror 初始化时炉石还在登录界面等场景会使用过期数据。修复方案：监控循环每轮检查炉石进程 PID，发现变化立即 `Reset()` + 重新 `FetchBattleTag`/`FetchAccountId` + `UploadRatingAsync`。不再依赖 `TryInit` 被游戏事件触发。已修复。
-- [x] **bg_tool `LogPathFinder.FindHsDirFromProcess()` 缓存永不失效**（2026-04-27 修复）：`_processDirCached` 一旦为 `true` 再也不重新检查。修复方案：新增 `ResetProcessDirCache()` 方法，监控循环中炉石进程 PID 变化（重启/关闭）时调用。已修复。
-- [x] **bg_tool 初始等待循环无 PID 追踪**（2026-04-27 修复）：初始循环等待 Power.log 时，炉石关闭/重启后 bg_tool 不知道，继续在旧目录搜索。修复方案：初始循环每 3 秒检查炉石进程 PID，发现变化时重置 `LogPathFinder` 缓存 + `HearthMirrorClient` 并重新获取玩家信息。fetch 失败时不更新 PID 缓存，下轮自动重试。已修复。
-- [x] **bg_tool 日志暴露内部方法名**（2026-04-27 修复）：`HearthMirrorClient` 日志中包含 `（GetBattleTag）`、`（GetAccountId）`、`（MatchInfo）`、`（名字匹配: xxx）` 等内部实现细节。修复方案：去掉方法名后缀，只保留关键信息。已修复。
-- [ ] **bg_tool `UpdateUI()` 每次调用都读文件**（2026-04-26 发现）：`GameStore.GetRecent` 和 `GetToday` 每次 `File.ReadAllText` + 解析整个 JSON。`UpdateUI` 在每次游戏事件时调用，`games.json` 积累大量记录后会造成 UI 卡顿。建议加缓存或增量更新。
-- [ ] **bg_tool bg_tool.log 无运行时轮转**（2026-04-26 发现）：只在启动时检查 1MB 上限并覆盖重写。工具运行多天后日志文件无限增长。建议运行时检查文件大小并轮转。
-- [ ] **bg_tool 观战时 `league_matches` 写入观战者名字**（2026-04-26 发现）：虽然联赛数据按 Lo 匹配完全正确（积分/排名无影响），但 `league_matches.players` 中的 `battleTag`/`displayName` 会写成观战者的名字。排行榜已通过按 `accountIdLo` 分组修复显示问题，但底层数据仍需修正。根因：bg_tool 发送的 `playerId` 和 `players[lo].battleTag` 在观战时是观战者身份。修复方向：服务端 `check-league` 不信任插件传的 `battleTag`，改为从 `player_records` 按 `accountIdLo` 查库获取正确身份。
+- [ ] **bg_tool `LogPathFinder.Find()` 扫描所有盘符**（2026-04-26）：`DriveInfo.GetDrives()` 遍历所有固定盘符根目录，网络映射盘/慢速硬盘上可能阻塞。建议只扫描注册表和进程路径找到的目录。
+- [ ] **bg_tool `UpdateUI()` 每次调用都读文件**（2026-04-26）：`GameStore.GetRecent`/`GetToday` 每次 `File.ReadAllText` + JSON 解析，records 积累后卡顿。建议加缓存。
+- [ ] **bg_tool bg_tool.log 无运行时轮转**（2026-04-26）：只在启动时检查 1MB 上限，运行多天后无限增长。
+- [ ] **bg_tool 观战时 `league_matches` 写入观战者名字**（2026-04-26）：按 Lo 匹配积分/排名正确，但 battleTag/displayName 是观战者。修复方向：服务端从 player_records 按 accountIdLo 查库。
 
 ### 待办
 
@@ -693,7 +704,7 @@ Python 原型（bg_parser）功能已完善，C# 重写版（bg_tool）已完成
 
 ---
 
-## 11. WinForms 独立软件改造（开发中）
+## 11. WinForms 独立软件（bg_tool）
 
 bg_tool 最终目标：脱离 HDT 插件，独立存在一个上报分数给联赛网站的软件。
 
