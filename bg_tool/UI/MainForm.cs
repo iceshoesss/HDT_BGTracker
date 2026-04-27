@@ -49,14 +49,15 @@ public class MainForm : Form
 
     // ── 状态 ──
     enum AppState { Waiting, InGame, LeagueGame, Uploaded }
-    AppState _state = AppState.Waiting;
+    volatile AppState _state = AppState.Waiting;
     string _playerTag = "";
     string _verifyCode = "待接入";
     Parser? _parser;
+    readonly object _parserLock = new object(); // 保护 _parser 引用的读写
     Config _config = null!;
-    bool _leagueChecked = false; // 当前对局是否已调过 check-league
+    volatile bool _leagueChecked = false; // 当前对局是否已调过 check-league
     string _currentGameUuid = "";
-    bool _scanning = false; // 扫描旧日志期间不触发 check_league
+    volatile bool _scanning = false; // 扫描旧日志期间不触发 check_league
 
     // ═══════════════════════════════════════
     //  构造
@@ -371,7 +372,8 @@ public class MainForm : Form
                 break;
             case AppState.InGame:
             case AppState.LeagueGame:
-                var game = _parser?.Game;
+                Game? game;
+                lock (_parserLock) { game = _parser?.Game; }
                 if (game != null && !string.IsNullOrEmpty(game.HeroName))
                 {
                     lblGameIcon.Text = _state == AppState.LeagueGame ? "⚔️" : "🎮";
@@ -493,31 +495,31 @@ public class MainForm : Form
         }
         Console.WriteLine("[日志] ✅ 已定位炉石日志");
 
-        _parser = new Parser();
+        Parser parser;
         long pos;
 
         try
         {
             _scanning = true;
-            ScanExisting(logPath, out _parser, out pos);
+            lock (_parserLock) { ScanExisting(logPath, out _parser, out pos); parser = _parser; }
             _scanning = false;
 
             // 检测空壳旧数据
-            if (_parser.Game.IsActive
-                && string.IsNullOrEmpty(_parser.Game.HeroName)
-                && string.IsNullOrEmpty(_parser.Game.PlayerTag)
-                && _parser.Game.AccountIdLo == 0)
+            if (parser.Game.IsActive
+                && string.IsNullOrEmpty(parser.Game.HeroName)
+                && string.IsNullOrEmpty(parser.Game.PlayerTag)
+                && parser.Game.AccountIdLo == 0)
             {
                 Console.WriteLine("[日志] 📦 检测到旧数据（无有效信息），跳到文件尾等待新对局");
-                _parser.Game.IsActive = false;
+                parser.Game.IsActive = false;
                 pos = GetFileEnd(logPath);
             }
-            else if (_parser.Game.IsActive)
+            else if (parser.Game.IsActive)
             {
-                Console.WriteLine($"[日志] 🔄 检测到进行中对局: {_parser.Game.PlayerTag} | 英雄={_parser.Game.HeroName} | Lo={_parser.Game.AccountIdLo}");
-                _parser.ResetLobbyState();
+                Console.WriteLine($"[日志] 🔄 检测到进行中对局: {parser.Game.PlayerTag} | 英雄={parser.Game.HeroName} | Lo={parser.Game.AccountIdLo}");
+                parser.ResetLobbyState();
                 _state = AppState.InGame;
-                _playerTag = _parser.Game.PlayerTag;
+                _playerTag = parser.Game.PlayerTag;
                 TriggerCheckLeagueIfNeeded();
             }
             else
@@ -528,7 +530,7 @@ public class MainForm : Form
         catch (Exception ex)
         {
             Console.WriteLine($"[日志] ⚠️ 扫描异常: {ex.Message}，跳到文件尾");
-            _parser = new Parser();
+            lock (_parserLock) { _parser = new Parser(); parser = _parser; }
             pos = GetFileEnd(logPath);
         }
 
@@ -552,22 +554,22 @@ public class MainForm : Form
                     {
                         currentPath = newPath;
                         _scanning = true;
-                        ScanExisting(currentPath, out _parser, out pos);
+                        lock (_parserLock) { ScanExisting(currentPath, out _parser, out pos); parser = _parser; }
                         _scanning = false;
 
-                        if (_parser.Game.IsActive
-                            && string.IsNullOrEmpty(_parser.Game.HeroName)
-                            && string.IsNullOrEmpty(_parser.Game.PlayerTag)
-                            && _parser.Game.AccountIdLo == 0)
+                        if (parser.Game.IsActive
+                            && string.IsNullOrEmpty(parser.Game.HeroName)
+                            && string.IsNullOrEmpty(parser.Game.PlayerTag)
+                            && parser.Game.AccountIdLo == 0)
                         {
-                            _parser.Game.IsActive = false;
+                            parser.Game.IsActive = false;
                             pos = GetFileEnd(currentPath);
                         }
-                        else if (_parser.Game.IsActive)
+                        else if (parser.Game.IsActive)
                         {
-                            _parser.ResetLobbyState();
+                            parser.ResetLobbyState();
                             _state = AppState.InGame;
-                            _playerTag = _parser.Game.PlayerTag;
+                            _playerTag = parser.Game.PlayerTag;
                             TriggerCheckLeagueIfNeeded();
                         }
                         else
@@ -651,7 +653,7 @@ public class MainForm : Form
                         && !line.Contains("PowerTaskList.DebugDump()"))
                         continue;
 
-                    var evt = _parser.ProcessLine(line);
+                    var evt = parser.ProcessLine(line);
                     if (evt == null) continue;
 
                     switch (evt)
@@ -665,7 +667,7 @@ public class MainForm : Form
                             Console.WriteLine($"[游戏] 🔄 断线重连 {DateTime.Now:HH:mm:ss}");
                             break;
                         case "player_info":
-                            _playerTag = _parser.Game.PlayerTag;
+                            _playerTag = parser.Game.PlayerTag;
                             uiChanged = true;
                             break;
                         case "hero_entity":
@@ -676,7 +678,7 @@ public class MainForm : Form
                             if (!_leagueChecked && !_scanning)
                             {
                                 _leagueChecked = true;
-                                var game = _parser.Game;
+                                var game = parser.Game;
 
                                 // HearthMirror 可能修正了 PlayerTag，同步到 UI
                                 if (!string.IsNullOrEmpty(game.PlayerTag) && game.PlayerTag != _playerTag)
@@ -726,9 +728,9 @@ public class MainForm : Form
                         case "game_end":
                         case "concede":
                             // 如果是联赛对局，上报排名
-                            if (_state == AppState.LeagueGame && _parser.Game.HeroPlacement > 0)
+                            if (_state == AppState.LeagueGame && parser.Game.HeroPlacement > 0)
                             {
-                                var game = _parser.Game;
+                                var game = parser.Game;
                                 var placement = game.HeroPlacement;
                                 var gameUuid = _currentGameUuid;
                                 var playerTag = game.PlayerTag;
@@ -790,9 +792,12 @@ public class MainForm : Form
     void TriggerCheckLeagueIfNeeded()
     {
         if (_leagueChecked) return;
-        if (_parser == null || !_parser.Game.IsActive) return;
-
-        var game = _parser.Game;
+        Game game;
+        lock (_parserLock)
+        {
+            if (_parser == null || !_parser.Game.IsActive) return;
+            game = _parser.Game;
+        }
 
         // 扫描阶段如果没读到 STEP 13（英雄选择中才打开工具），数据不完整
         // 不锁 _leagueChecked，等真正的 STEP 13 触发
@@ -1016,7 +1021,11 @@ class UiTextWriter : TextWriter
                 _rtb.ScrollToCaret();
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // UI 日志渲染失败时写入文件日志，避免静默丢失
+            try { _inner.WriteLine($"[UI日志异常] {ex.GetType().Name}: {ex.Message}"); } catch { }
+        }
     }
 }
 
