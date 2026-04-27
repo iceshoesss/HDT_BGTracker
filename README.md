@@ -319,6 +319,13 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 > Web 端更新日志已迁移至 [LeagueWeb](https://github.com/iceshoesss/LeagueWeb) 仓库。
 
+### bg_tool v0.5.0 (2026-04-27)
+- **线程安全**：`_parser` 引用加锁保护、`_state`/`_leagueChecked`/`_scanning` 加 volatile
+- **Power.log 生命周期**：炉石退出时立即搜索新日志（不再卡死 200 秒）；初始等待循环追踪炉石进程 PID，重启时自动重置缓存并重新获取玩家信息
+- **断线重连**：bg_tool 在重连后启动时正确追踪对局状态
+- **炉石重启检测**：监控循环主动检测 PID 变化，立即刷新 BattleTag/AccountId/验证码（不依赖游戏事件触发）
+- **日志优化**：去掉内部方法名、失败时输出诊断日志、UI 渲染异常写入文件日志
+
 ### bg_tool v0.4.1 (2026-04-26)
 - 修复炉石重启后 bg_tool 不触发 check-league：HearthMirrorClient.TryInit() 检测进程 ID 变化，炉石重启后自动重新初始化 Reflection 连接
 - 日志监控检测到文件截断时重置读取位置（炉石重启时 Power.log 重写导致 pos 越界）
