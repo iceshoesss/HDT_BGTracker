@@ -493,7 +493,9 @@ public class MainForm : Form
             {
                 if (curPid == 0)
                     Console.WriteLine("[日志] ⚠️ 炉石进程已退出");
-                else if (initHsPid != 0)
+                else if (initHsPid == 0)
+                    Console.WriteLine($"[日志] 🔄 炉石已启动（PID {curPid}）");
+                else
                     Console.WriteLine($"[日志] 🔄 炉石进程已重启（PID {initHsPid}→{curPid}）");
                 initHsPid = curPid;
                 LogPathFinder.ResetProcessDirCache();
