@@ -66,8 +66,7 @@ class MockState:
         game_uuid = data.get("gameUuid", "")
         account_lo = str(data.get("accountIdLo", ""))
         placement = data.get("placement", 0)
-        reconnect_count = data.get("reconnectCount", 0)
-        first_reconnect_at = data.get("firstReconnectAt", "")
+        reconnect_times = data.get("reconnectTimes", [])
 
         if game_uuid not in self.games:
             return {"error": "对局不存在"}, 404
@@ -79,8 +78,8 @@ class MockState:
 
         # 断线重连信息
         reconnect_info = ""
-        if reconnect_count > 0:
-            reconnect_info = f" | 🔄 断线{reconnect_count}次, 首次拔线: {first_reconnect_at or '未知'}"
+        if reconnect_times:
+            reconnect_info = f" | 🔄 断线{len(reconnect_times)}次, 首次拔线: {reconnect_times[0]}"
 
         if finalized:
             print(f"  🏁 对局结束: {game_uuid} ({total}/8 已提交){reconnect_info}")

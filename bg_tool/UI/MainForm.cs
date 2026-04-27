@@ -797,7 +797,7 @@ public class MainForm : Form
                                 var accountIdLo = game.AccountIdLo;
                                 Task.Run(async () =>
                                 {
-                                    var ok = await ApiClient.UpdatePlacementAsync(gameUuid, playerTag, accountIdLo, placement, game.ReconnectCount, game.FirstReconnectAt);
+                                    var ok = await ApiClient.UpdatePlacementAsync(gameUuid, playerTag, accountIdLo, placement, game.ReconnectTimes);
                                     if (ok)
                                     {
                                         var points = placement == 1 ? 9 : Math.Max(1, 9 - placement);
