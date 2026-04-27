@@ -233,6 +233,10 @@ public static class ApiClient
                 Console.WriteLine("[API] ✅ 验证码: " + VerificationCode);
                 return true;
             }
+            else
+            {
+                Console.WriteLine("[API] ⚠️ upload-rating 响应中无 verificationCode，json=" + json);
+            }
         }
         catch (Exception e)
         {
