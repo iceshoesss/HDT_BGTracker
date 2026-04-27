@@ -16,6 +16,7 @@ import json
 import random
 import string
 import sys
+import uuid
 from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -32,18 +33,19 @@ class MockState:
         self.games = {}  # gameUuid -> {players, placements}
 
     def check_league(self, data):
-        game_uuid = data.get("gameUuid", "")
+        # 淘汰赛由服务端生成 gameUuid，积分赛使用客户端传入的
+        client_uuid = data.get("gameUuid", "").strip()
+        server_uuid = str(uuid.uuid4()) if not client_uuid else client_uuid
         code = gen_verification_code()
 
-        if game_uuid:
-            self.games[game_uuid] = {
-                "players": data.get("accountIdLoList", []),
-                "placements": {},
-                "code": code,
-            }
-            print(f"  📋 创建对局记录: {game_uuid} ({len(self.games[game_uuid]['players'])} 人)")
+        self.games[server_uuid] = {
+            "players": data.get("accountIdLoList", []),
+            "placements": {},
+            "code": code,
+        }
+        print(f"  📋 创建对局记录: {server_uuid} ({len(self.games[server_uuid]['players'])} 人)")
 
-        return {"isLeague": True, "verificationCode": code}
+        return {"isLeague": True, "verificationCode": code, "gameUuid": server_uuid}
 
     def update_placement(self, data):
         game_uuid = data.get("gameUuid", "")
