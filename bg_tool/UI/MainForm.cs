@@ -482,6 +482,7 @@ public class MainForm : Form
         // 等待 Power.log 出现（进入酒馆战棋时生成）
         string? logPath = null;
         var initHsPid = 0;
+        var hmFetchStart = DateTime.MinValue; // 开始尝试获取玩家信息的时间
         try { var p = Process.GetProcessesByName("Hearthstone"); if (p.Length > 0) initHsPid = p[0].Id; } catch { }
 
         while (logPath == null)
@@ -500,11 +501,15 @@ public class MainForm : Form
                 }
                 else if (initHsPid == 0)
                 {
-                    Console.WriteLine($"[日志] 🔄 炉石已启动（PID {curPid}）");
-                    LogPathFinder.ResetProcessDirCache();
-                    HearthMirrorClient.Reset();
+                    if (hmFetchStart == DateTime.MinValue)
+                    {
+                        Console.WriteLine($"[日志] 🔄 炉石已启动（PID {curPid}）");
+                        LogPathFinder.ResetProcessDirCache();
+                        HearthMirrorClient.Reset();
+                        hmFetchStart = DateTime.UtcNow;
+                    }
 
-                    // 尝试获取玩家信息，失败则下轮重试
+                    // 尝试获取玩家信息，失败则下轮静默重试
                     var tagOk = HearthMirrorClient.FetchBattleTag();
                     var loOk = HearthMirrorClient.FetchAccountId();
                     if (tagOk && loOk && !string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
@@ -528,13 +533,15 @@ public class MainForm : Form
                             Console.WriteLine("[启动] ⚠️ upload-rating 失败: " + ex.Message);
                         }
                         initHsPid = curPid; // 成功后才更新，避免重复获取
+                        hmFetchStart = DateTime.MinValue;
                         BeginInvoke(new Action(UpdateUI));
                     }
-                    else
+                    else if ((DateTime.UtcNow - hmFetchStart).TotalSeconds > 30)
                     {
                         Console.WriteLine("[启动] ⏳ HearthMirror 未就绪，稍后重试...");
                         // 不更新 initHsPid，下轮循环重试
                     }
+                    // 30 秒内静默重试，不打印
                 }
                 else
                 {
@@ -579,6 +586,7 @@ public class MainForm : Form
 
         // 追踪炉石进程 PID，主动检测重启（不依赖 TryInit 被调用）
         var hsPid = 0;
+        var hmRestartFetchStart = DateTime.MinValue; // 重启后开始尝试获取的时间
         try { var p = Process.GetProcessesByName("Hearthstone"); if (p.Length > 0) hsPid = p[0].Id; } catch { }
 
         while (true)
@@ -604,17 +612,20 @@ public class MainForm : Form
                 try { var procs = Process.GetProcessesByName("Hearthstone"); if (procs.Length > 0) currentHsPid = procs[0].Id; } catch { }
                 if (currentHsPid != 0 && currentHsPid != hsPid)
                 {
-                    Console.WriteLine($"[重启] 🔄 检测到炉石进程变化（PID {hsPid}→{currentHsPid}），重新获取玩家信息...");
-                    hsPid = currentHsPid;
-
-                    // 重置 HearthMirror + LogPathFinder 缓存
-                    HearthMirrorClient.Reset();
-                    LogPathFinder.ResetProcessDirCache();
+                    if (hmRestartFetchStart == DateTime.MinValue)
+                    {
+                        Console.WriteLine($"[重启] 🔄 检测到炉石进程变化（PID {hsPid}→{currentHsPid}），重新获取玩家信息...");
+                        HearthMirrorClient.Reset();
+                        LogPathFinder.ResetProcessDirCache();
+                        hmRestartFetchStart = DateTime.UtcNow;
+                    }
 
                     var tagOk = HearthMirrorClient.FetchBattleTag();
                     var loOk = HearthMirrorClient.FetchAccountId();
                     if (tagOk && loOk && !string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
                     {
+                        hsPid = currentHsPid; // 成功后才更新，失败时下轮继续重试
+                        hmRestartFetchStart = DateTime.MinValue;
                         _playerTag = HearthMirrorClient.LocalPlayerBattleTag;
                         Console.WriteLine("[重启] ✅ 新玩家: " + _playerTag + " Lo=" + HearthMirrorClient.LocalPlayerLo);
 
@@ -639,10 +650,12 @@ public class MainForm : Form
                         _state = AppState.Waiting;
                         BeginInvoke(new Action(UpdateUI));
                     }
-                    else
+                    else if ((DateTime.UtcNow - hmRestartFetchStart).TotalSeconds > 30)
                     {
                         Console.WriteLine("[重启] ⏳ HearthMirror 未就绪，稍后重试...");
+                        // 不更新 hsPid，下轮循环继续重试
                     }
+                    // 30 秒内静默重试，不打印
                 }
                 else if (currentHsPid != 0)
                 {
