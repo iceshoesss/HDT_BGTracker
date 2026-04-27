@@ -31,6 +31,21 @@ class MockState:
     """模拟服务端状态"""
     def __init__(self):
         self.games = {}  # gameUuid -> {players, placements}
+        self.verification_codes = {}  # playerId -> code
+
+    def upload_rating(self, data):
+        player_id = data.get("playerId", "")
+        if not player_id:
+            return {"error": "playerId 为空"}, 400
+
+        # 每个玩家固定一个验证码（和正式服务器一致）
+        if player_id not in self.verification_codes:
+            self.verification_codes[player_id] = gen_verification_code()
+            print(f"  🔑 生成验证码: {player_id} → {self.verification_codes[player_id]}")
+        else:
+            print(f"  🔑 返回已有验证码: {player_id} → {self.verification_codes[player_id]}")
+
+        return {"ok": True, "verificationCode": self.verification_codes[player_id]}
 
     def check_league(self, data):
         # 淘汰赛由服务端生成 gameUuid，积分赛使用客户端传入的
@@ -105,6 +120,9 @@ class MockHandler(BaseHTTPRequestHandler):
         if "/check-league" in self.path:
             resp = state.check_league(data)
             status = 200
+        elif "/upload-rating" in self.path:
+            resp, raw_status = state.upload_rating(data)
+            status = int(raw_status)
         elif "/update-placement" in self.path:
             resp, raw_status = state.update_placement(data)
             status = int(raw_status)
@@ -137,7 +155,7 @@ def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
     server = HTTPServer(("0.0.0.0", port), MockHandler)
     print(f"🎯 Mock API 服务器启动: http://0.0.0.0:{port}")
-    print(f"   接收 /api/plugin/check-league 和 /api/plugin/update-placement")
+    print(f"   接收 /api/plugin/upload-rating、check-league、update-placement")
     print(f"   请求记录保存到 mock_requests.log")
     print(f"   Ctrl+C 停止\n")
     try:
