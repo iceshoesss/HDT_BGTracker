@@ -230,7 +230,7 @@ public static class ApiClient
             if (!string.IsNullOrEmpty(vc))
             {
                 VerificationCode = vc;
-                Console.WriteLine("[API] ✅ 验证码: " + VerificationCode + "（upload-rating）");
+                Console.WriteLine("[API] ✅ 验证码: " + VerificationCode);
                 return true;
             }
         }
