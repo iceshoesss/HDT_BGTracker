@@ -45,7 +45,7 @@ class MockState:
         else:
             print(f"  🔑 返回已有验证码: {player_id} → {self.verification_codes[player_id]}")
 
-        return {"ok": True, "verificationCode": self.verification_codes[player_id]}
+        return {"ok": True, "verificationCode": self.verification_codes[player_id]}, 200
 
     def check_league(self, data):
         # 淘汰赛由服务端生成 gameUuid，积分赛使用客户端传入的
