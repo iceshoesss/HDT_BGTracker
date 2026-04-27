@@ -319,6 +319,13 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 > Web 端更新日志已迁移至 [LeagueWeb](https://github.com/iceshoesss/LeagueWeb) 仓库。
 
+### bg_tool v0.5.2 (2026-04-26)
+- check-league 失败后持续重试直到成功或对局结束
+
+### bg_tool v0.5.1 (2026-04-26)
+- 修复验证码日志去掉 upload-rating 后缀
+- HearthMirror 未就绪时静默重试 30 秒，避免重复刷屏日志
+
 ### bg_tool v0.5.0 (2026-04-27)
 - **线程安全**：`_parser` 引用加锁保护、`_state`/`_leagueChecked`/`_scanning` 加 volatile
 - **Power.log 生命周期**：炉石退出时立即搜索新日志（不再卡死 200 秒）；初始等待循环追踪炉石进程 PID，重启时自动重置缓存并重新获取玩家信息
