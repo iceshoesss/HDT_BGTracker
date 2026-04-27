@@ -887,7 +887,7 @@ public class MainForm : Form
         Console.WriteLine("[日志] 📋 扫描完成，补发 check-league（STEP 13 已过）");
 
         TryCheckLeagueWithRetry(
-            game.PlayerTag, game.AccountIdLo, game.LobbyPlayers,
+            game.PlayerTag, game.AccountIdLo, game.LobbyPlayers!,
             _config.Region, _config.Mode);
     }
 
@@ -934,7 +934,7 @@ public class MainForm : Form
                 try
                 {
                     var retryOk = await ApiClient.CheckLeagueAsync(
-                        _pendingPlayerTag!, _pendingAccountIdLo!, _pendingLobbyPlayers!,
+                        _pendingPlayerTag!, _pendingAccountIdLo!.Value, _pendingLobbyPlayers!,
                         _pendingRegion!, _pendingMode!, DateTime.UtcNow.ToString("o"));
 
                     if (retryOk)
