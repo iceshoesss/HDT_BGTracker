@@ -492,32 +492,56 @@ public class MainForm : Form
             if (curPid != initHsPid)
             {
                 if (curPid == 0)
-                    Console.WriteLine("[日志] ⚠️ 炉石进程已退出");
-                else if (initHsPid == 0)
-                    Console.WriteLine($"[日志] 🔄 炉石已启动（PID {curPid}）");
-                else
-                    Console.WriteLine($"[日志] 🔄 炉石进程已重启（PID {initHsPid}→{curPid}）");
-                initHsPid = curPid;
-                LogPathFinder.ResetProcessDirCache();
-                HearthMirrorClient.Reset();
-
-                // 炉石在运行时重新获取玩家信息
-                if (curPid != 0)
                 {
+                    Console.WriteLine("[日志] ⚠️ 炉石进程已退出");
+                    initHsPid = curPid;
+                    LogPathFinder.ResetProcessDirCache();
+                    HearthMirrorClient.Reset();
+                }
+                else if (initHsPid == 0)
+                {
+                    Console.WriteLine($"[日志] 🔄 炉石已启动（PID {curPid}）");
+                    LogPathFinder.ResetProcessDirCache();
+                    HearthMirrorClient.Reset();
+
+                    // 尝试获取玩家信息，失败则下轮重试
                     var tagOk = HearthMirrorClient.FetchBattleTag();
                     var loOk = HearthMirrorClient.FetchAccountId();
                     if (tagOk && loOk && !string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
                     {
                         _playerTag = HearthMirrorClient.LocalPlayerBattleTag;
                         Console.WriteLine("[启动] ✅ 玩家信息已获取: " + _playerTag);
-                        ApiClient.UploadRatingAsync(
-                            HearthMirrorClient.LocalPlayerBattleTag,
-                            HearthMirrorClient.LocalPlayerLo,
-                            0, _config.Region, _config.Mode).GetAwaiter().GetResult();
-                        if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
-                            _verifyCode = ApiClient.VerificationCode;
+                        try
+                        {
+                            ApiClient.UploadRatingAsync(
+                                HearthMirrorClient.LocalPlayerBattleTag,
+                                HearthMirrorClient.LocalPlayerLo,
+                                0, _config.Region, _config.Mode).GetAwaiter().GetResult();
+                            if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
+                            {
+                                _verifyCode = ApiClient.VerificationCode;
+                                Console.WriteLine("[启动] ✅ 验证码: " + _verifyCode);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine("[启动] ⚠️ upload-rating 失败: " + ex.Message);
+                        }
+                        initHsPid = curPid; // 成功后才更新，避免重复获取
                         BeginInvoke(new Action(UpdateUI));
                     }
+                    else
+                    {
+                        Console.WriteLine("[启动] ⏳ HearthMirror 未就绪，稍后重试...");
+                        // 不更新 initHsPid，下轮循环重试
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"[日志] 🔄 炉石进程已重启（PID {initHsPid}→{curPid}）");
+                    initHsPid = curPid;
+                    LogPathFinder.ResetProcessDirCache();
+                    HearthMirrorClient.Reset();
                 }
             }
 
