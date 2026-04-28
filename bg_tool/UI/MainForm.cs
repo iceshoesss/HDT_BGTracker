@@ -503,7 +503,7 @@ public class MainForm : Form
                     else if ((DateTime.UtcNow - hmFetchStart).TotalSeconds > 30)
                     {
                         Console.WriteLine("[启动] ⏳ HearthMirror 未就绪，稍后重试...");
-                        // 不更新 initHsPid，下轮循环重试
+                        // 不更新 initHSPATH，下轮循环重试
                     }
                     // 30 秒内静默重试，不打印
                 }
@@ -514,6 +514,50 @@ public class MainForm : Form
                     LogPathFinder.ResetProcessDirCache();
                     HearthMirrorClient.Reset();
                 }
+            }
+            // 炉石已在运行（进程无变化），主动获取玩家信息 + 验证码
+            else if (string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag) && hmFetchStart == DateTime.MinValue)
+            {
+                hmFetchStart = DateTime.UtcNow;
+                Console.WriteLine("[日志] 🔄 炉石已在运行（PID " + curPid + "），尝试获取玩家信息...");
+            }
+
+            // 炉石已在运行时的玩家信息获取（hmFetchStart 已设置）
+            if (curPid == initHsPid && curPid != 0
+                && string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag)
+                && hmFetchStart != DateTime.MinValue)
+            {
+                var tagOk = HearthMirrorClient.FetchBattleTag();
+                var loOk = HearthMirrorClient.FetchAccountId();
+                if (tagOk && loOk && !string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
+                {
+                    _playerTag = HearthMirrorClient.LocalPlayerBattleTag;
+                    Console.WriteLine("[启动] ✅ 玩家信息已获取: " + _playerTag);
+                    try
+                    {
+                        ApiClient.UploadRatingAsync(
+                            HearthMirrorClient.LocalPlayerBattleTag,
+                            HearthMirrorClient.LocalPlayerLo,
+                            0, _config.Region, _config.Mode).GetAwaiter().GetResult();
+                        if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
+                        {
+                            _verifyCode = ApiClient.VerificationCode;
+                            Console.WriteLine("[启动] ✅ 验证码: " + _verifyCode);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("[启动] ⚠️ upload-rating 失败: " + ex.Message);
+                    }
+                    hmFetchStart = DateTime.MinValue;
+                    BeginInvoke(new Action(UpdateUI));
+                }
+                else if ((DateTime.UtcNow - hmFetchStart).TotalSeconds > 30)
+                {
+                    Console.WriteLine("[启动] ⏳ HearthMirror 未就绪，稍后重试...");
+                    hmFetchStart = DateTime.MinValue; // 重置，下轮重试
+                }
+                // 30 秒内静默重试
             }
 
             logPath = LogPathFinder.Find(null);
