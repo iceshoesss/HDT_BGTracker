@@ -571,7 +571,6 @@ python bg_parser/bg_parser.py
 | bg_tool 初始等待循环无 PID 追踪 | 04-27 | 每 3 秒检查 PID，变化时重置缓存重新搜索 |
 | bg_tool 日志暴露内部方法名 | 04-27 | 去掉方法名后缀 |
 | bg_tool `_leagueChecked` 未重置 | 04-27 | HandleScannedGameState 扫描新对局时重置 `_leagueChecked = false` |
-| bg_tool 炉石已启动时启动卡顿+日志为空 | 04-28 | 构造函数 Task 和 LogMonitorLoop 竞争初始化 HearthMirror → 加锁 + 删重复 Task + 缓存盘符扫描 |
 | 好友房 GameType 识别 | 04-24 | `StartsWith("GT_BATTLEGROUNDS")` 前缀匹配 |
 | bg_tool 对接 Flask API | v0.2.0 | check-league + update-placement |
 | UUID 问题 | v0.4.0 | gameUuid 改为服务端生成 |
@@ -579,7 +578,7 @@ python bg_parser/bg_parser.py
 #### 未修复
 
 - [ ] **bg_parser 游戏结束检测不完全可靠**（2026-04-16）：Python 参考实现，仅用于测试验证，不做修改。
-- [ ] **bg_tool `LogPathFinder.Find()` 扫描所有盘符**（2026-04-26）：`DriveInfo.GetDrives()` 遍历所有固定盘符根目录，网络映射盘/慢速硬盘上可能阻塞。**已部分修复（04-28）：扫描结果缓存，只扫一次。**
+- [ ] **bg_tool `LogPathFinder.Find()` 扫描所有盘符**（2026-04-26）：`DriveInfo.GetDrives()` 遍历所有固定盘符根目录，网络映射盘/慢速硬盘上可能阻塞。建议只扫描注册表和进程路径找到的目录。
 - [ ] **bg_tool `UpdateUI()` 每次调用都读文件**（2026-04-26）：`GameStore.GetRecent`/`GetToday` 每次 `File.ReadAllText` + JSON 解析，records 积累后卡顿。建议加缓存。
 - [ ] **bg_tool bg_tool.log 无运行时轮转**（2026-04-26）：只在启动时检查 1MB 上限，运行多天后无限增长。
 - [ ] **bg_tool 观战时 `league_matches` 写入观战者名字**（2026-04-26）：按 Lo 匹配积分/排名正确，但 battleTag/displayName 是观战者。修复方向：服务端从 player_records 按 accountIdLo 查库。
