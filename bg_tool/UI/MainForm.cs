@@ -1000,21 +1000,6 @@ public class MainForm : Form
             _leagueChecked = false; // 新对局必须重新 check-league（上一局的标记不能带到下一局）
             _currentGameUuid = "";  // 清空上一局的 gameUuid，等 check-league 返回新的
             _playerTag = parser.Game.PlayerTag;
-
-            // 扫描阶段跳过了 STEP 13 的 HearthMirror 调用（IsScanning=true），
-            // 如果 LobbyPlayers 为空但 PlayerTag 有效，主动获取
-            var game = parser.Game;
-            if (!string.IsNullOrEmpty(game.PlayerTag)
-                && (game.LobbyPlayers == null || game.LobbyPlayers.Count == 0))
-            {
-                Console.WriteLine("[日志] 📋 中途启动，主动获取 LobbyPlayers...");
-                game.LobbyPlayers = HearthMirrorClient.FetchLobbyPlayers(game.PlayerTag);
-                game.GameUuid = HearthMirrorClient.LastGameUuid;
-                if (HearthMirrorClient.LocalPlayerLo != 0)
-                    game.AccountIdLo = HearthMirrorClient.LocalPlayerLo;
-                Console.WriteLine($"[日志] 📋 获取到 {game.LobbyPlayers.Count} 个玩家 | Lo={game.AccountIdLo}");
-            }
-
             TriggerCheckLeagueIfNeeded();
         }
         else
