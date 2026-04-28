@@ -100,6 +100,36 @@ public class MainForm : Form
         BuildUI();
         UpdateUI();
 
+        // 启动时尝试从 HearthMirror 获取玩家信息（主菜单即可，单次尝试）
+        // LogMonitorLoop 会在炉石重启时重新获取，这里只处理"炉石已在运行"的情况
+        Task.Run(async () =>
+        {
+            var tagOk = HearthMirrorClient.FetchBattleTag();
+            var loOk = HearthMirrorClient.FetchAccountId();
+
+            if (tagOk && loOk && !string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
+            {
+                _playerTag = HearthMirrorClient.LocalPlayerBattleTag;
+                Console.WriteLine("[启动] ✅ 玩家信息已获取: " + _playerTag + " Lo=" + HearthMirrorClient.LocalPlayerLo);
+                BeginInvoke(new Action(UpdateUI));
+
+                await ApiClient.UploadRatingAsync(
+                    HearthMirrorClient.LocalPlayerBattleTag,
+                    HearthMirrorClient.LocalPlayerLo,
+                    0, _config.Region, _config.Mode);
+
+                if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
+                {
+                    _verifyCode = ApiClient.VerificationCode;
+                    BeginInvoke(new Action(UpdateUI));
+                }
+            }
+            else
+            {
+                Console.WriteLine("[启动] ⏳ 主菜单无法获取玩家信息，等待游戏中自动获取");
+            }
+        });
+
         // 异步测试 API 连通性
         Task.Run(async () =>
         {
@@ -521,40 +551,6 @@ public class MainForm : Form
                 Thread.Sleep(3000);
         }
         Console.WriteLine("[日志] ✅ 已定位 Power.log");
-
-        // 首次获取玩家信息 + 验证码（Find() 返回后、ScanExisting 之前）
-        if (string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
-        {
-            Console.WriteLine("[启动] ⏳ 尝试获取玩家信息...");
-            var tagOk = HearthMirrorClient.FetchBattleTag();
-            var loOk = HearthMirrorClient.FetchAccountId();
-            if (tagOk && loOk && !string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
-            {
-                _playerTag = HearthMirrorClient.LocalPlayerBattleTag;
-                Console.WriteLine("[启动] ✅ 玩家信息已获取: " + _playerTag + " Lo=" + HearthMirrorClient.LocalPlayerLo);
-                BeginInvoke(new Action(UpdateUI));
-                try
-                {
-                    ApiClient.UploadRatingAsync(
-                        HearthMirrorClient.LocalPlayerBattleTag,
-                        HearthMirrorClient.LocalPlayerLo,
-                        0, _config.Region, _config.Mode).GetAwaiter().GetResult();
-                    if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
-                    {
-                        _verifyCode = ApiClient.VerificationCode;
-                        BeginInvoke(new Action(UpdateUI));
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("[启动] ⚠️ upload-rating 失败: " + ex.Message);
-                }
-            }
-            else
-            {
-                Console.WriteLine("[启动] ⏳ 玩家信息暂不可用，等待游戏中自动获取");
-            }
-        }
 
         Parser parser;
         long pos;
