@@ -893,29 +893,37 @@ public class MainForm : Form
     }
 
     /// <summary>
-    /// 尝试 check-league（初始 3 次快速重试）。失败则启动 15 秒周期重试。
+    /// 尝试 check-league（初始 3 次快速重试）。网络异常则启动 15 秒周期重试，非联赛对局直接停止。
     /// </summary>
     void TryCheckLeagueWithRetry(string playerTag, ulong accountIdLo,
         List<LobbyPlayer> lobbyPlayers, string region, string mode)
     {
         Task.Run(async () =>
         {
-            bool ok = false;
-            // 初始 3 次快速重试
+            // 初始 3 次快速重试（仅在网络异常时重试）
             for (int retry = 0; retry < 3 && _state == AppState.InGame; retry++)
             {
-                ok = await ApiClient.CheckLeagueAsync(playerTag, accountIdLo, lobbyPlayers, region, mode, DateTime.UtcNow.ToString("o"));
-                if (ok) break;
-                if (retry < 2) await Task.Delay(1000 * (retry + 1));
+                try
+                {
+                    var ok = await ApiClient.CheckLeagueAsync(playerTag, accountIdLo, lobbyPlayers, region, mode, DateTime.UtcNow.ToString("o"));
+                    if (ok)
+                    {
+                        HandleCheckLeagueResult();
+                    }
+                    else
+                    {
+                        Console.WriteLine("[API] 非联赛对局，停止 check-league");
+                    }
+                    return; // 拿到有效响应（无论 isLeague），停止
+                }
+                catch
+                {
+                    // 网络异常，继续重试
+                    if (retry < 2) await Task.Delay(1000 * (retry + 1));
+                }
             }
 
-            if (ok)
-            {
-                HandleCheckLeagueResult();
-                return;
-            }
-
-            // 3 次全失败 → 启动 15 秒周期重试
+            // 3 次全异常 → 启动 15 秒周期重试
             Console.WriteLine("[API] ⚠️ check-league 初始重试失败，启动 15 秒周期重试...");
             _pendingPlayerTag = playerTag;
             _pendingAccountIdLo = accountIdLo;
@@ -946,12 +954,15 @@ public class MainForm : Form
                     }
                     else
                     {
-                        Console.WriteLine($"[API] ⏳ check-league 重试失败，15 秒后继续...");
+                        // 非联赛对局，停止重试
+                        StopCheckLeagueRetry();
+                        Console.WriteLine("[API] 非联赛对局，停止 check-league 周期重试");
                     }
                 }
-                catch (Exception ex)
+                catch
                 {
-                    Console.WriteLine($"[API] ⏳ check-league 重试异常: {ex.Message}，15 秒后继续...");
+                    // 网络异常，继续重试
+                    Console.WriteLine("[API] ⏳ check-league 重试异常，15 秒后继续...");
                 }
             }, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
         });
