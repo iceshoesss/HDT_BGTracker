@@ -100,50 +100,6 @@ public class MainForm : Form
         BuildUI();
         UpdateUI();
 
-        // 获取玩家信息 + 验证码
-        Task.Run(async () =>
-        {
-            while (string.IsNullOrEmpty(ApiClient.VerificationCode))
-            {
-                // 等待炉石进程启动
-                while (Process.GetProcessesByName("Hearthstone").Length == 0)
-                    await Task.Delay(1000);
-                Console.WriteLine("[启动] ✅ 检测到炉石进程");
-
-                // 炉石在就持续尝试，进程退出则回到等待
-                while (Process.GetProcessesByName("Hearthstone").Length > 0)
-                {
-                    var tagOk = HearthMirrorClient.FetchBattleTag();
-                    var loOk = HearthMirrorClient.FetchAccountId();
-
-                    if (tagOk && loOk && !string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
-                    {
-                        _playerTag = HearthMirrorClient.LocalPlayerBattleTag;
-                        Console.WriteLine("[启动] ✅ 玩家信息已获取: " + _playerTag + " Lo=" + HearthMirrorClient.LocalPlayerLo);
-                        BeginInvoke(new Action(UpdateUI));
-
-                        await ApiClient.UploadRatingAsync(
-                            HearthMirrorClient.LocalPlayerBattleTag,
-                            HearthMirrorClient.LocalPlayerLo,
-                            0, _config.Region, _config.Mode);
-
-                        if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
-                        {
-                            _verifyCode = ApiClient.VerificationCode;
-                            BeginInvoke(new Action(UpdateUI));
-                        }
-                        return; // 完成，退出整个 Task
-                    }
-
-                    await Task.Delay(5000);
-                }
-
-                // 炉石进程退出，重新等待
-                Console.WriteLine("[启动] ⚠️ 炉石进程已退出，等待重新启动...");
-                HearthMirrorClient.Reset();
-            }
-        });
-
         // 异步测试 API 连通性
         Task.Run(async () =>
         {
@@ -566,6 +522,40 @@ public class MainForm : Form
         }
         Console.WriteLine("[日志] ✅ 已定位 Power.log");
 
+        // 单次获取玩家信息 + 验证码（Find() 返回后、ScanExisting 之前）
+        if (string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
+        {
+            Console.WriteLine("[启动] ⏳ 尝试获取玩家信息...");
+            var tagOk = HearthMirrorClient.FetchBattleTag();
+            var loOk = HearthMirrorClient.FetchAccountId();
+            if (tagOk && loOk && !string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
+            {
+                _playerTag = HearthMirrorClient.LocalPlayerBattleTag;
+                Console.WriteLine("[启动] ✅ 玩家信息已获取: " + _playerTag + " Lo=" + HearthMirrorClient.LocalPlayerLo);
+                BeginInvoke(new Action(UpdateUI));
+                try
+                {
+                    ApiClient.UploadRatingAsync(
+                        HearthMirrorClient.LocalPlayerBattleTag,
+                        HearthMirrorClient.LocalPlayerLo,
+                        0, _config.Region, _config.Mode).GetAwaiter().GetResult();
+                    if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
+                    {
+                        _verifyCode = ApiClient.VerificationCode;
+                        BeginInvoke(new Action(UpdateUI));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("[启动] ⚠️ upload-rating 失败: " + ex.Message);
+                }
+            }
+            else
+            {
+                Console.WriteLine("[启动] ⏳ 玩家信息暂不可用，等待游戏中自动获取");
+            }
+        }
+
         Parser parser;
         long pos;
 
@@ -893,29 +883,32 @@ public class MainForm : Form
     }
 
     /// <summary>
-    /// 尝试 check-league（初始 3 次快速重试）。失败则启动 15 秒周期重试。
+    /// 尝试 check-league（初始 3 次快速重试）。错误则启动 15 秒周期重试，非联赛对局直接停止。
     /// </summary>
     void TryCheckLeagueWithRetry(string playerTag, ulong accountIdLo,
         List<LobbyPlayer> lobbyPlayers, string region, string mode)
     {
         Task.Run(async () =>
         {
-            bool ok = false;
-            // 初始 3 次快速重试
+            // 初始 3 次快速重试（仅在错误/异常时重试）
             for (int retry = 0; retry < 3 && _state == AppState.InGame; retry++)
             {
-                ok = await ApiClient.CheckLeagueAsync(playerTag, accountIdLo, lobbyPlayers, region, mode, DateTime.UtcNow.ToString("o"));
-                if (ok) break;
+                var ok = await ApiClient.CheckLeagueAsync(playerTag, accountIdLo, lobbyPlayers, region, mode, DateTime.UtcNow.ToString("o"));
+                if (ok == true)
+                {
+                    HandleCheckLeagueResult();
+                    return;
+                }
+                else if (ok == false)
+                {
+                    Console.WriteLine("[API] 非联赛对局，停止 check-league");
+                    return;
+                }
+                // ok == null（错误），继续重试
                 if (retry < 2) await Task.Delay(1000 * (retry + 1));
             }
 
-            if (ok)
-            {
-                HandleCheckLeagueResult();
-                return;
-            }
-
-            // 3 次全失败 → 启动 15 秒周期重试
+            // 3 次全错误 → 启动 15 秒周期重试
             Console.WriteLine("[API] ⚠️ check-league 初始重试失败，启动 15 秒周期重试...");
             _pendingPlayerTag = playerTag;
             _pendingAccountIdLo = accountIdLo;
@@ -932,26 +925,26 @@ public class MainForm : Form
                     return;
                 }
 
-                try
-                {
-                    var retryOk = await ApiClient.CheckLeagueAsync(
-                        _pendingPlayerTag!, _pendingAccountIdLo!.Value, _pendingLobbyPlayers!,
-                        _pendingRegion!, _pendingMode!, DateTime.UtcNow.ToString("o"));
+                var retryOk = await ApiClient.CheckLeagueAsync(
+                    _pendingPlayerTag!, _pendingAccountIdLo!.Value, _pendingLobbyPlayers!,
+                    _pendingRegion!, _pendingMode!, DateTime.UtcNow.ToString("o"));
 
-                    if (retryOk)
-                    {
-                        HandleCheckLeagueResult();
-                        StopCheckLeagueRetry();
-                        Console.WriteLine("[API] ✅ check-league 周期重试成功");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"[API] ⏳ check-league 重试失败，15 秒后继续...");
-                    }
-                }
-                catch (Exception ex)
+                if (retryOk == true)
                 {
-                    Console.WriteLine($"[API] ⏳ check-league 重试异常: {ex.Message}，15 秒后继续...");
+                    HandleCheckLeagueResult();
+                    StopCheckLeagueRetry();
+                    Console.WriteLine("[API] ✅ check-league 周期重试成功");
+                }
+                else if (retryOk == false)
+                {
+                    // 非联赛对局，停止重试
+                    StopCheckLeagueRetry();
+                    Console.WriteLine("[API] 非联赛对局，停止 check-league 周期重试");
+                }
+                else
+                {
+                    // 错误，继续重试
+                    Console.WriteLine("[API] ⏳ check-league 重试失败，15 秒后继续...");
                 }
             }, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
         });
@@ -1041,6 +1034,21 @@ public class MainForm : Form
             _leagueChecked = false; // 新对局必须重新 check-league（上一局的标记不能带到下一局）
             _currentGameUuid = "";  // 清空上一局的 gameUuid，等 check-league 返回新的
             _playerTag = parser.Game.PlayerTag;
+
+            // 扫描阶段跳过了 STEP 13 的 HearthMirror 调用（IsScanning=true），
+            // 如果 LobbyPlayers 为空但 PlayerTag 有效，主动获取
+            var game = parser.Game;
+            if (!string.IsNullOrEmpty(game.PlayerTag)
+                && (game.LobbyPlayers == null || game.LobbyPlayers.Count == 0))
+            {
+                Console.WriteLine("[日志] 📋 中途启动，主动获取 LobbyPlayers...");
+                game.LobbyPlayers = HearthMirrorClient.FetchLobbyPlayers(game.PlayerTag);
+                game.GameUuid = HearthMirrorClient.LastGameUuid;
+                if (HearthMirrorClient.LocalPlayerLo != 0)
+                    game.AccountIdLo = HearthMirrorClient.LocalPlayerLo;
+                Console.WriteLine($"[日志] 📋 获取到 {game.LobbyPlayers.Count} 个玩家 | Lo={game.AccountIdLo}");
+            }
+
             TriggerCheckLeagueIfNeeded();
         }
         else
