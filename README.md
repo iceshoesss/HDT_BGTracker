@@ -238,12 +238,6 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 > Web 端更新日志已迁移至 [LeagueWeb](https://github.com/iceshoesss/LeagueWeb) 仓库。
 
-### bg_tool v0.5.6 (2026-04-28)
-- 修复启动卡顿：`PreloadPlayerInfo` 从 `cgPos` 开始读取，不再扫描整个 Power.log
-- `FindLastCreateGamePos` 改为从文件末尾反向扫描，大文件启动秒开
-- `CheckLeagueAsync` 返回 `bool?` 三态，非联赛对局正确停止重试
-- 重复启动 bg_tool 弹窗提示"bg_tool 已经在运行了"，不再因文件锁崩溃
-
 ### bg_tool v0.5.4 (2026-04-27)
 - 修复退出游戏再进后无法 upload-placement：扫描发现新对局时未重置 `_leagueChecked`，导致 check-league 被跳过
 - `game_start` 和扫描检测新对局时同步清空 `_currentGameUuid`，避免残留上一局 gameUuid

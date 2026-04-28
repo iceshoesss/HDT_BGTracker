@@ -604,7 +604,6 @@ python bg_parser/bg_parser.py
 | 进程 | 炉石先开、工具后开 | 外层循环检测进程 → 获取玩家信息 → 定位 Power.log → 扫描已有内容 |
 | 进程 | 炉石退出再开（PID 变了） | 实时监控通过 PID 变化检测 → `Reset()` + `ResetProcessDirCache()` → 重新获取 |
 | 进程 | 炉石未启动就开工具 | 外层循环 `while (Process.GetProcessesByName("Hearthstone").Length == 0)` 等待 |
-| 进程 | 重复启动 bg_tool | Mutex 单实例检查，弹窗提示"bg_tool 已经在运行了" |
 | 文件 | Power.log 被删除（炉石退出） | `FileNotFoundException` → `LogPathFinder.Find()` 搜索新文件 |
 | 文件 | 新日志在不同子目录 | `CheckNewLogFile` 每 100 次循环扫描 `Hearthstone_*` 子目录 |
 | 文件 | 文件被截断/重写 | `fileLen < pos` 检测 → 重置 pos 到 0 |
@@ -616,7 +615,7 @@ python bg_parser/bg_parser.py
 | 游戏 | 好友房 | `GT_BATTLEGROUNDS_FRIENDLY` 以 `GT_BATTLEGROUNDS` 开头，通过前缀匹配（v0.2.9 修复） |
 | 游戏 | 断线重连 | CREATE_GAME 块内检测 `TURN` 标签 → 回滚到旧局 → `ReconnectTimes` 记录时间 |
 | 游戏 | 投降 | tag 3479/4356 预兆 → tag 4302 确认 → `LEADERBOARD_PLACE=8` → `concede` |
-| API | check-league 失败 | 初始 3 次快速重试 → 15 秒周期重试直到成功或对局结束（`bool?` 三态：`null`=错误重试、`false`=非联赛停止、`true`=联赛确认） |
+| API | check-league 失败 | 初始 3 次快速重试 → 15 秒周期重试直到成功或对局结束 |
 | API | update-placement 失败 | 3 次重试，间隔 2 秒 |
 | API | 服务端版本过低 | 403 拒绝（`MIN_PLUGIN_VERSION`） |
 | 数据 | BattleTag 获取失败 | 回退到 `_playerTag`（parser 从 Power.log 解析） |
@@ -1134,13 +1133,6 @@ HearthMirror 的 `Reflection.GetBattlegroundsLobbyInfo()` 返回 `HearthMirror.O
 2. 查看 HDT 插件 `RatingTracker.cs` → `GetRegion()` 调用 `Core.Game.CurrentRegion`，`GetMode()` 用 `Core.Game.IsBattlegroundsDuosMatch`
 3. `Core.Game` 是 HDT 的 `GameV2` 类，Region 来自 Battle.net 客户端的区域配置（不是游戏内存），Mode 来自 HDT 对游戏实体标签的解析
 4. 结论：bg_tool 无法绕过 HDT 框架获取这两项，必须硬编码或从外部配置
-
-#### bg_tool v0.5.6 (2026-04-28)
-- 修复启动卡顿：`PreloadPlayerInfo` 从整个 Power.log 头部读取改为从 `cgPos`（最后 CREATE_GAME 位置）开始，避免大文件扫描耗时数十秒
-- `FindLastCreateGamePos` 改为从文件末尾反向扫描（64KB 缓冲区），替代逐字节正向扫描
-- `CheckLeagueAsync` 返回值改为 `bool?`：`true`=联赛、`false`=非联赛、`=null`=错误可重试。非联赛对局正确停止重试，不再无限 15 秒轮询
-- `TryCheckLeagueWithRetry` 去掉 try-catch，改用 `bool?` 三态判断，逻辑更清晰
-- `bg_tool.log` 重复启动修复：Mutex 单实例检查，已运行时弹窗提示"bg_tool 已经在运行了"，不再因文件锁崩溃
 
 #### bg_tool v0.5.4 (2026-04-27)
 - 修复退出游戏再进后无法 upload-placement：`HandleScannedGameState` 扫描发现新对局时未重置 `_leagueChecked`，导致 check-league 被跳过、对局不被标记为联赛
