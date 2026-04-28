@@ -13,6 +13,7 @@ namespace BgTool
 /// </summary>
 public static class HearthMirrorClient
 {
+    private static readonly object _lock = new object();
     private static bool _available;
     private static HearthMirror.Reflection? _reflection;
     private static int _hsProcessId;  // 记录初始化时的炉石进程 ID
@@ -39,6 +40,17 @@ public static class HearthMirrorClient
 
     public static bool TryInit()
     {
+        lock (_lock)
+        {
+            return TryInitLocked();
+        }
+    }
+
+    /// <summary>
+    /// 内部初始化（必须在 _lock 内调用）
+    /// </summary>
+    private static bool TryInitLocked()
+    {
         if (_available)
         {
             // 检查炉石进程是否还活着，进程变了则重新初始化
@@ -47,19 +59,16 @@ public static class HearthMirrorClient
                 var procs = Process.GetProcessesByName("Hearthstone");
                 if (procs.Length == 0)
                 {
-                    // 炉石已关闭，重置状态
                     Console.WriteLine("[HearthMirror] ⚠️ 炉石进程已退出，重置连接");
-                    Reset();
+                    ResetInternal();
                     return false;
                 }
                 var currentPid = procs[0].Id;
                 if (currentPid != _hsProcessId)
                 {
-                    // 炉石重启了（进程 ID 变了），重新初始化
                     Console.WriteLine($"[HearthMirror] 🔄 炉石进程已重启（PID {_hsProcessId}→{currentPid}），重新初始化");
-                    Reset();
+                    ResetInternal();
                     RestartDetected = true;
-                    // 继续往下走，重新创建 Reflection
                 }
                 else
                 {
@@ -68,17 +77,16 @@ public static class HearthMirrorClient
             }
             catch
             {
-                // 进程检查失败，保守重置
-                Reset();
+                ResetInternal();
                 return false;
             }
         }
 
         try
         {
+            Console.WriteLine("[HearthMirror] ⏳ 正在初始化 Reflection...");
             _reflection = new HearthMirror.Reflection();
             _available = true;
-            // 记录当前炉石进程 ID
             try
             {
                 var procs = Process.GetProcessesByName("Hearthstone");
@@ -89,9 +97,9 @@ public static class HearthMirrorClient
             Console.WriteLine("[HearthMirror] ✅ 已加载，可获取对手 Lo");
             return true;
         }
-        catch
+        catch (Exception ex)
         {
-            // 失败不设 _initAttempted，允许重试（炉石可能还没启动）
+            Console.WriteLine("[HearthMirror] ❌ 初始化失败: " + ex.Message);
             return false;
         }
     }
@@ -100,6 +108,17 @@ public static class HearthMirrorClient
     /// 重置状态（炉石进程退出后调用，下次 TryInit 会重新初始化）
     /// </summary>
     public static void Reset()
+    {
+        lock (_lock)
+        {
+            ResetInternal();
+        }
+    }
+
+    /// <summary>
+    /// 内部重置（必须在 _lock 内调用）
+    /// </summary>
+    private static void ResetInternal()
     {
         _available = false;
         _reflection = null;
@@ -122,10 +141,16 @@ public static class HearthMirrorClient
     /// </summary>
     public static bool FetchBattleTag()
     {
-        if (!TryInit() || _reflection == null) return false;
+        HearthMirror.Reflection? reflection;
+        lock (_lock)
+        {
+            if (!TryInitLocked()) return false;
+            reflection = _reflection;
+        }
+        if (reflection == null) return false;
         try
         {
-            var bt = _reflection.GetBattleTag();
+            var bt = reflection.GetBattleTag();
             if (bt != null)
             {
                 LocalPlayerBattleTag = bt.Name + "#" + bt.Number;
@@ -142,10 +167,16 @@ public static class HearthMirrorClient
     /// </summary>
     public static bool FetchAccountId()
     {
-        if (!TryInit() || _reflection == null) return false;
+        HearthMirror.Reflection? reflection;
+        lock (_lock)
+        {
+            if (!TryInitLocked()) return false;
+            reflection = _reflection;
+        }
+        if (reflection == null) return false;
         try
         {
-            var accountId = _reflection.GetAccountId();
+            var accountId = reflection.GetAccountId();
             if (accountId != null && accountId.Lo != 0)
             {
                 LocalPlayerLo = accountId.Lo;
@@ -162,12 +193,17 @@ public static class HearthMirrorClient
     /// </summary>
     public static bool FetchMatchInfo()
     {
-        if (!TryInit() || _reflection == null)
-            return false;
+        HearthMirror.Reflection? reflection;
+        lock (_lock)
+        {
+            if (!TryInitLocked()) return false;
+            reflection = _reflection;
+        }
+        if (reflection == null) return false;
 
         try
         {
-            var matchInfo = _reflection.GetMatchInfo();
+            var matchInfo = reflection.GetMatchInfo();
             if (matchInfo?.LocalPlayer?.BattleTag != null)
             {
                 var bt = matchInfo.LocalPlayer.BattleTag;
@@ -201,12 +237,17 @@ public static class HearthMirrorClient
     {
         LocalPlayerLo = 0;
 
-        if (!TryInit() || _reflection == null)
-            return new List<LobbyPlayer>();
+        HearthMirror.Reflection? reflection;
+        lock (_lock)
+        {
+            if (!TryInitLocked()) return new List<LobbyPlayer>();
+            reflection = _reflection;
+        }
+        if (reflection == null) return new List<LobbyPlayer>();
 
         try
         {
-            var lobby = _reflection.GetBattlegroundsLobbyInfo();
+            var lobby = reflection.GetBattlegroundsLobbyInfo();
             if (lobby?.Players == null || lobby.Players.Count == 0)
                 return new List<LobbyPlayer>();
 

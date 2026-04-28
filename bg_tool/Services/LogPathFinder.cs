@@ -45,43 +45,53 @@ public static class LogPathFinder
 
         // 常见路径兜底
         var triedPaths = new List<string>();
-        var candidateDirs = new List<string>
+        List<string> candidateDirs;
+        lock (_dirCacheLock)
         {
-            @"D:\Battle.net\Hearthstone\Logs",
-            @"C:\Program Files (x86)\Hearthstone\Logs",
-            @"C:\Program Files\Hearthstone\Logs",
-            @"D:\Hearthstone\Logs",
-            // 国服常见中文路径
-            @"D:\暴雪战网\炉石传说\Hearthstone\Logs",
-            @"C:\暴雪战网\炉石传说\Hearthstone\Logs",
-            @"E:\暴雪战网\炉石传说\Hearthstone\Logs",
-            @"D:\暴雪战网\Hearthstone\Logs",
-            @"C:\暴雪战网\Hearthstone\Logs",
-            @"E:\暴雪战网\Hearthstone\Logs",
-        };
-
-        // 扫描所有盘符下匹配 *Hearthstone* 或 *炉石* 的目录
-        foreach (var drive in DriveInfo.GetDrives())
-        {
-            if (drive.DriveType != DriveType.Fixed || !drive.IsReady) continue;
-            var root = drive.RootDirectory.FullName;
-            foreach (var pattern in new[] { "*Hearthstone*", "*炉石*" })
+            if (_cachedCandidateDirs == null)
             {
-                try
+                _cachedCandidateDirs = new List<string>
                 {
-                    foreach (var dir in Directory.GetDirectories(root, pattern))
+                    @"D:\Battle.net\Hearthstone\Logs",
+                    @"C:\Program Files (x86)\Hearthstone\Logs",
+                    @"C:\Program Files\Hearthstone\Logs",
+                    @"D:\Hearthstone\Logs",
+                    // 国服常见中文路径
+                    @"D:\暴雪战网\炉石传说\Hearthstone\Logs",
+                    @"C:\暴雪战网\炉石传说\Hearthstone\Logs",
+                    @"E:\暴雪战网\炉石传说\Hearthstone\Logs",
+                    @"D:\暴雪战网\Hearthstone\Logs",
+                    @"C:\暴雪战网\Hearthstone\Logs",
+                    @"E:\暴雪战网\Hearthstone\Logs",
+                };
+
+                // 扫描所有盘符下匹配 *Hearthstone* 或 *炉石* 的目录
+                Console.WriteLine("[日志] 🔍 扫描盘符查找炉石目录...");
+                foreach (var drive in DriveInfo.GetDrives())
+                {
+                    if (drive.DriveType != DriveType.Fixed || !drive.IsReady) continue;
+                    var root = drive.RootDirectory.FullName;
+                    foreach (var pattern in new[] { "*Hearthstone*", "*炉石*" })
                     {
-                        var logsPath = Path.Combine(dir, "Logs");
-                        if (!candidateDirs.Contains(logsPath, StringComparer.OrdinalIgnoreCase))
-                            candidateDirs.Add(logsPath);
-                        // 也检查 Battle.net 子目录
-                        var bnLogs = Path.Combine(dir, "Hearthstone", "Logs");
-                        if (!candidateDirs.Contains(bnLogs, StringComparer.OrdinalIgnoreCase))
-                            candidateDirs.Add(bnLogs);
+                        try
+                        {
+                            foreach (var dir in Directory.GetDirectories(root, pattern))
+                            {
+                                var logsPath = Path.Combine(dir, "Logs");
+                                if (!_cachedCandidateDirs.Contains(logsPath, StringComparer.OrdinalIgnoreCase))
+                                    _cachedCandidateDirs.Add(logsPath);
+                                // 也检查 Battle.net 子目录
+                                var bnLogs = Path.Combine(dir, "Hearthstone", "Logs");
+                                if (!_cachedCandidateDirs.Contains(bnLogs, StringComparer.OrdinalIgnoreCase))
+                                    _cachedCandidateDirs.Add(bnLogs);
+                            }
+                        }
+                        catch { } // 跳过无权限的目录
                     }
                 }
-                catch { } // 跳过无权限的目录
+                Console.WriteLine($"[日志] 📁 扫描完成，{_cachedCandidateDirs.Count} 个候选路径");
             }
+            candidateDirs = _cachedCandidateDirs;
         }
 
         foreach (var logsDir in candidateDirs)
@@ -103,6 +113,10 @@ public static class LogPathFinder
     }
 
     private static bool _diagnosed;
+
+    // 缓存盘符扫描结果，避免每次 Find() 重复扫描
+    private static List<string>? _cachedCandidateDirs;
+    private static readonly object _dirCacheLock = new object();
 
     /// <summary>
     /// 检查是否有更新的日志文件（游戏重启时切换）
@@ -221,6 +235,7 @@ public static class LogPathFinder
     {
         _processDirCached = false;
         _processDir = null;
+        // 不清除目录缓存 — 盘符上的炉石安装位置不会因重启改变
     }
 
     private static string? FindLogInDir(string logsDir)

@@ -100,50 +100,6 @@ public class MainForm : Form
         BuildUI();
         UpdateUI();
 
-        // 获取玩家信息 + 验证码
-        Task.Run(async () =>
-        {
-            while (string.IsNullOrEmpty(ApiClient.VerificationCode))
-            {
-                // 等待炉石进程启动
-                while (Process.GetProcessesByName("Hearthstone").Length == 0)
-                    await Task.Delay(1000);
-                Console.WriteLine("[启动] ✅ 检测到炉石进程");
-
-                // 炉石在就持续尝试，进程退出则回到等待
-                while (Process.GetProcessesByName("Hearthstone").Length > 0)
-                {
-                    var tagOk = HearthMirrorClient.FetchBattleTag();
-                    var loOk = HearthMirrorClient.FetchAccountId();
-
-                    if (tagOk && loOk && !string.IsNullOrEmpty(HearthMirrorClient.LocalPlayerBattleTag))
-                    {
-                        _playerTag = HearthMirrorClient.LocalPlayerBattleTag;
-                        Console.WriteLine("[启动] ✅ 玩家信息已获取: " + _playerTag + " Lo=" + HearthMirrorClient.LocalPlayerLo);
-                        BeginInvoke(new Action(UpdateUI));
-
-                        await ApiClient.UploadRatingAsync(
-                            HearthMirrorClient.LocalPlayerBattleTag,
-                            HearthMirrorClient.LocalPlayerLo,
-                            0, _config.Region, _config.Mode);
-
-                        if (!string.IsNullOrEmpty(ApiClient.VerificationCode))
-                        {
-                            _verifyCode = ApiClient.VerificationCode;
-                            BeginInvoke(new Action(UpdateUI));
-                        }
-                        return; // 完成，退出整个 Task
-                    }
-
-                    await Task.Delay(5000);
-                }
-
-                // 炉石进程退出，重新等待
-                Console.WriteLine("[启动] ⚠️ 炉石进程已退出，等待重新启动...");
-                HearthMirrorClient.Reset();
-            }
-        });
-
         // 异步测试 API 连通性
         Task.Run(async () =>
         {
