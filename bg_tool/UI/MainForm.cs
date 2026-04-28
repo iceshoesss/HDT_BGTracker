@@ -1049,23 +1049,7 @@ public class MainForm : Form
                 Console.WriteLine($"[日志] 📋 获取到 {game.LobbyPlayers.Count} 个玩家 | Lo={game.AccountIdLo}");
             }
 
-            // LobbyPlayers 已就绪（扫描到 STEP 13 或上面主动获取），直接触发 check-league
-            // 不依赖 HeroName — 英雄可能还没选，但 check-league 不需要英雄信息
-            if (!_leagueChecked
-                && game.LobbyPlayers != null && game.LobbyPlayers.Count > 0
-                && !string.IsNullOrEmpty(game.PlayerTag) && game.AccountIdLo != 0)
-            {
-                _leagueChecked = true;
-                Console.WriteLine("[日志] 📋 LobbyPlayers 就绪，触发 check-league");
-                TryCheckLeagueWithRetry(
-                    game.PlayerTag, game.AccountIdLo, game.LobbyPlayers,
-                    _config.Region, _config.Mode);
-            }
-            else
-            {
-                // 数据不完整，等实时 STEP 13 补全
-                TriggerCheckLeagueIfNeeded();
-            }
+            TriggerCheckLeagueIfNeeded();
         }
         else
         {
