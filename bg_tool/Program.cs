@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Reflection;
+using System.Threading;
 using System.Windows.Forms;
 
 #nullable enable
@@ -13,30 +14,41 @@ class Program
     [STAThread]
     static void Main(string[] args)
     {
-        // 启动保护：任何异常都写文件，避免 WinExe 静默崩溃
-        try
+        // 单实例检查
+        bool createdNew;
+        using (var mutex = new Mutex(true, "BgTool_SingleInstance", out createdNew))
         {
-            Run(args);
-        }
-        catch (Exception ex)
-        {
+            if (!createdNew)
+            {
+                MessageBox.Show("bg_tool 已在运行中，请勿重复开启", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            // 启动保护：任何异常都写文件，避免 WinExe 静默崩溃
             try
             {
-                var crashPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bg_tool_crash.log");
-                File.WriteAllText(crashPath,
-                    $"=== bg_tool 启动崩溃 {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n" +
-                    $"OS: {Environment.OSVersion}\n" +
-                    $".NET: {Environment.Version}\n" +
-                    $"64-bit OS: {Environment.Is64BitOperatingSystem}\n" +
-                    $"64-bit Process: {Environment.Is64BitProcess}\n" +
-                    $"\n{ex}");
-                MessageBox.Show(
-                    $"bg_tool 启动失败，错误已写入:\n{crashPath}\n\n{ex.Message}",
-                    "启动错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Run(args);
             }
-            catch
+            catch (Exception ex)
             {
-                MessageBox.Show($"bg_tool 启动失败:\n{ex}", "启动错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                try
+                {
+                    var crashPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bg_tool_crash.log");
+                    File.WriteAllText(crashPath,
+                        $"=== bg_tool 启动崩溃 {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n" +
+                        $"OS: {Environment.OSVersion}\n" +
+                        $".NET: {Environment.Version}\n" +
+                        $"64-bit OS: {Environment.Is64BitOperatingSystem}\n" +
+                        $"64-bit Process: {Environment.Is64BitProcess}\n" +
+                        $"\n{ex}");
+                    MessageBox.Show(
+                        $"bg_tool 启动失败，错误已写入:\n{crashPath}\n\n{ex.Message}",
+                        "启动错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                catch
+                {
+                    MessageBox.Show($"bg_tool 启动失败:\n{ex}", "启动错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             }
         }
     }
