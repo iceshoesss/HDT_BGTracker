@@ -54,7 +54,8 @@ class Program
                 overwrite = true;
         }
         catch { }
-        var logWriter = new StreamWriter(logPath, append: !overwrite) { AutoFlush = true };
+        var fs = new FileStream(logPath, overwrite ? FileMode.Create : FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+        var logWriter = new StreamWriter(fs) { AutoFlush = true };
         Console.SetOut(logWriter);
         Console.SetError(logWriter);
         Console.WriteLine($"\n=== bg_tool 启动 {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
