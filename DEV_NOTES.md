@@ -571,6 +571,9 @@ python bg_parser/bg_parser.py
 | bg_tool 初始等待循环无 PID 追踪 | 04-27 | 每 3 秒检查 PID，变化时重置缓存重新搜索 |
 | bg_tool 日志暴露内部方法名 | 04-27 | 去掉方法名后缀 |
 | bg_tool `_leagueChecked` 未重置 | 04-27 | HandleScannedGameState 扫描新对局时重置 `_leagueChecked = false` |
+| bg_tool 炉石已启动时启动卡顿 | 04-28 | 构造函数 Task 和 LogMonitorLoop 竞争初始化 HearthMirror → 删构造函数 Task，统一在 LogMonitorLoop 中获取 |
+| bg_tool 中途启动不触发 check-league | 04-28 | 扫描阶段 IsScanning=true 跳过 STEP 13 → HandleScannedGameState 主动获取 LobbyPlayers |
+| bg_tool 非联赛对局无限重试 | 04-28 | CheckLeagueAsync 返回 bool?，false 直接停止，null 才重试 |
 | 好友房 GameType 识别 | 04-24 | `StartsWith("GT_BATTLEGROUNDS")` 前缀匹配 |
 | bg_tool 对接 Flask API | v0.2.0 | check-league + update-placement |
 | UUID 问题 | v0.4.0 | gameUuid 改为服务端生成 |
