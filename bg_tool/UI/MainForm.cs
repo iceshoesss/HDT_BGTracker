@@ -1057,7 +1057,7 @@ public class MainForm : Form
         parser = new Parser();
         parser.IsScanning = true;  // 扫描阶段不做 HearthMirror 调用（游戏未就绪），留给实时阶段
         var cgPos = FindLastCreateGamePos(filePath);
-        PreloadPlayerInfo(filePath, parser);
+        PreloadPlayerInfo(filePath, parser, cgPos);
 
         using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
         using (var reader = new StreamReader(fs))
@@ -1070,7 +1070,10 @@ public class MainForm : Form
         parser.IsScanning = false;
     }
 
-    static void PreloadPlayerInfo(string filePath, Parser parser)
+    /// <summary>
+    /// 从 cgPos 开始向后扫描，预加载玩家信息（只读最后一局的数据）
+    /// </summary>
+    static void PreloadPlayerInfo(string filePath, Parser parser, long startPos)
     {
         try
         {
@@ -1078,43 +1081,53 @@ public class MainForm : Form
             bool foundLo = false;
             bool foundHero = false;
 
-            foreach (var line in File.ReadLines(filePath))
+            using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             {
-                if (!foundName && line.Contains("DebugPrintGame()") && line.Contains("PlayerName="))
+                fs.Seek(startPos, SeekOrigin.Begin);
+                using (var reader = new StreamReader(fs))
                 {
-                    var m = System.Text.RegularExpressions.Regex.Match(line, @"PlayerID=(\d+),\s*PlayerName=(.+?)$");
-                    if (m.Success)
+                    while (!reader.EndOfStream)
                     {
-                        var name = m.Groups[2].Value.Trim();
-                        if (name != "古怪之德鲁伊" && name != "惊魂之武僧")
+                        var line = reader.ReadLine();
+                        if (line == null) break;
+
+                        if (!foundName && line.Contains("DebugPrintGame()") && line.Contains("PlayerName="))
                         {
-                            parser.Game.PlayerTag = name;
-                            parser.Game.PlayerDisplayName = name.Contains("#")
-                                ? name.Substring(0, name.LastIndexOf("#"))
-                                : name;
-                            foundName = true;
+                            var m = System.Text.RegularExpressions.Regex.Match(line, @"PlayerID=(\d+),\s*PlayerName=(.+?)$");
+                            if (m.Success)
+                            {
+                                var name = m.Groups[2].Value.Trim();
+                                if (name != "古怪之德鲁伊" && name != "惊魂之武僧")
+                                {
+                                    parser.Game.PlayerTag = name;
+                                    parser.Game.PlayerDisplayName = name.Contains("#")
+                                        ? name.Substring(0, name.LastIndexOf("#"))
+                                        : name;
+                                    foundName = true;
+                                }
+                            }
                         }
+                        if (!foundLo && line.Contains("GameAccountId="))
+                        {
+                            var m = System.Text.RegularExpressions.Regex.Match(line, @"GameAccountId=\[hi=\d+ lo=(\d+)\]");
+                            if (m.Success)
+                            {
+                                var lo = ulong.Parse(m.Groups[1].Value);
+                                if (lo != 0) { parser.Game.AccountIdLo = lo; foundLo = true; }
+                            }
+                        }
+                        if (!foundHero && line.Contains("HERO_ENTITY") && !string.IsNullOrEmpty(parser.Game.PlayerTag))
+                        {
+                            var m = System.Text.RegularExpressions.Regex.Match(line, @"TAG_CHANGE Entity=(.+?) tag=HERO_ENTITY value=(\d+)");
+                            if (m.Success && m.Groups[1].Value.Trim() == parser.Game.PlayerTag)
+                            {
+                                parser.Game.HeroEntityId = int.Parse(m.Groups[2].Value);
+                                foundHero = true;
+                            }
+                        }
+                        if (foundName && foundLo && foundHero) break;
                     }
                 }
-                if (!foundLo && line.Contains("GameAccountId="))
-                {
-                    var m = System.Text.RegularExpressions.Regex.Match(line, @"GameAccountId=\[hi=\d+ lo=(\d+)\]");
-                    if (m.Success)
-                    {
-                        var lo = ulong.Parse(m.Groups[1].Value);
-                        if (lo != 0) { parser.Game.AccountIdLo = lo; foundLo = true; }
-                    }
-                }
-                if (!foundHero && line.Contains("HERO_ENTITY") && !string.IsNullOrEmpty(parser.Game.PlayerTag))
-                {
-                    var m = System.Text.RegularExpressions.Regex.Match(line, @"TAG_CHANGE Entity=(.+?) tag=HERO_ENTITY value=(\d+)");
-                    if (m.Success && m.Groups[1].Value.Trim() == parser.Game.PlayerTag)
-                    {
-                        parser.Game.HeroEntityId = int.Parse(m.Groups[2].Value);
-                        foundHero = true;
-                    }
-                }
-                if (foundName && foundLo && foundHero) break;
             }
         }
         catch { }
