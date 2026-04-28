@@ -97,7 +97,7 @@ public static class ApiClient
     /// <summary>
     /// 英雄选定后调用，检查是否为联赛对局
     /// </summary>
-    public static async Task<bool> CheckLeagueAsync(
+    public static async Task<bool?> CheckLeagueAsync(
         string playerId,
         ulong accountIdLo,
         List<LobbyPlayer> lobbyPlayers,
@@ -159,7 +159,7 @@ public static class ApiClient
         try
         {
             var (ok, json) = await PostAsync("/api/plugin/check-league", body);
-            if (!ok) throw new Exception($"HTTP 请求失败: {LastError}");
+            if (!ok) return null; // HTTP 错误，调用方可重试
 
             // 解析响应
             // 无论 isLeague 结果如何，都提取 verificationCode
@@ -196,7 +196,7 @@ public static class ApiClient
         {
             LastError = $"check-league 异常: {e.Message}";
             Console.WriteLine($"[API] ⚠️ {LastError}");
-            throw; // 向上抛出，让重试逻辑区分"网络错误"和"非联赛"
+            return null; // 网络异常，调用方可重试
         }
     }
 

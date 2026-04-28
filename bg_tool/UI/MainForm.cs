@@ -893,37 +893,32 @@ public class MainForm : Form
     }
 
     /// <summary>
-    /// 尝试 check-league（初始 3 次快速重试）。网络异常则启动 15 秒周期重试，非联赛对局直接停止。
+    /// 尝试 check-league（初始 3 次快速重试）。错误则启动 15 秒周期重试，非联赛对局直接停止。
     /// </summary>
     void TryCheckLeagueWithRetry(string playerTag, ulong accountIdLo,
         List<LobbyPlayer> lobbyPlayers, string region, string mode)
     {
         Task.Run(async () =>
         {
-            // 初始 3 次快速重试（仅在网络异常时重试）
+            // 初始 3 次快速重试（仅在错误/异常时重试）
             for (int retry = 0; retry < 3 && _state == AppState.InGame; retry++)
             {
-                try
+                var ok = await ApiClient.CheckLeagueAsync(playerTag, accountIdLo, lobbyPlayers, region, mode, DateTime.UtcNow.ToString("o"));
+                if (ok == true)
                 {
-                    var ok = await ApiClient.CheckLeagueAsync(playerTag, accountIdLo, lobbyPlayers, region, mode, DateTime.UtcNow.ToString("o"));
-                    if (ok)
-                    {
-                        HandleCheckLeagueResult();
-                    }
-                    else
-                    {
-                        Console.WriteLine("[API] 非联赛对局，停止 check-league");
-                    }
-                    return; // 拿到有效响应（无论 isLeague），停止
+                    HandleCheckLeagueResult();
+                    return;
                 }
-                catch
+                else if (ok == false)
                 {
-                    // 网络异常，继续重试
-                    if (retry < 2) await Task.Delay(1000 * (retry + 1));
+                    Console.WriteLine("[API] 非联赛对局，停止 check-league");
+                    return;
                 }
+                // ok == null（错误），继续重试
+                if (retry < 2) await Task.Delay(1000 * (retry + 1));
             }
 
-            // 3 次全异常 → 启动 15 秒周期重试
+            // 3 次全错误 → 启动 15 秒周期重试
             Console.WriteLine("[API] ⚠️ check-league 初始重试失败，启动 15 秒周期重试...");
             _pendingPlayerTag = playerTag;
             _pendingAccountIdLo = accountIdLo;
@@ -940,29 +935,26 @@ public class MainForm : Form
                     return;
                 }
 
-                try
-                {
-                    var retryOk = await ApiClient.CheckLeagueAsync(
-                        _pendingPlayerTag!, _pendingAccountIdLo!.Value, _pendingLobbyPlayers!,
-                        _pendingRegion!, _pendingMode!, DateTime.UtcNow.ToString("o"));
+                var retryOk = await ApiClient.CheckLeagueAsync(
+                    _pendingPlayerTag!, _pendingAccountIdLo!.Value, _pendingLobbyPlayers!,
+                    _pendingRegion!, _pendingMode!, DateTime.UtcNow.ToString("o"));
 
-                    if (retryOk)
-                    {
-                        HandleCheckLeagueResult();
-                        StopCheckLeagueRetry();
-                        Console.WriteLine("[API] ✅ check-league 周期重试成功");
-                    }
-                    else
-                    {
-                        // 非联赛对局，停止重试
-                        StopCheckLeagueRetry();
-                        Console.WriteLine("[API] 非联赛对局，停止 check-league 周期重试");
-                    }
-                }
-                catch
+                if (retryOk == true)
                 {
-                    // 网络异常，继续重试
-                    Console.WriteLine("[API] ⏳ check-league 重试异常，15 秒后继续...");
+                    HandleCheckLeagueResult();
+                    StopCheckLeagueRetry();
+                    Console.WriteLine("[API] ✅ check-league 周期重试成功");
+                }
+                else if (retryOk == false)
+                {
+                    // 非联赛对局，停止重试
+                    StopCheckLeagueRetry();
+                    Console.WriteLine("[API] 非联赛对局，停止 check-league 周期重试");
+                }
+                else
+                {
+                    // 错误，继续重试
+                    Console.WriteLine("[API] ⏳ check-league 重试失败，15 秒后继续...");
                 }
             }, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
         });
@@ -1130,31 +1122,70 @@ public class MainForm : Form
 
     static long FindLastCreateGamePos(string path)
     {
-        long lastPos = 0;
+        // 从文件末尾反向扫描，找到最后一个 CREATE_GAME 行的位置
+        // 比逐字节正向扫描快几个数量级（Power.log 可达数百 MB）
         using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
         {
-            var lineStart = 0L;
-            var sb = new StringBuilder();
-            int b;
-            while ((b = fs.ReadByte()) != -1)
+            if (fs.Length == 0) return 0;
+
+            var needle = "CREATE_GAME";
+            var buf = new byte[Math.Min(64 * 1024, fs.Length)]; // 64KB 缓冲区
+            long searchEnd = fs.Length;
+            long lastMatch = 0;
+            var tail = new byte[0]; // 上一块的尾部残留（跨块行）
+
+            while (searchEnd > 0)
             {
-                if (b == '\n')
+                int chunkSize = (int)Math.Min(buf.Length, searchEnd);
+                searchEnd -= chunkSize;
+                fs.Seek(searchEnd, SeekOrigin.Begin);
+                int bytesRead = fs.Read(buf, 0, chunkSize);
+
+                // 和上一块的尾部拼接
+                var block = new byte[bytesRead + tail.Length];
+                if (tail.Length > 0) Buffer.BlockCopy(tail, 0, block, 0, tail.Length);
+                Buffer.BlockCopy(buf, 0, block, tail.Length, bytesRead);
+
+                // 从末尾向前找行
+                int pos = block.Length;
+                var lines = new List<(int start, int len)>();
+                while (pos > 0)
                 {
-                    var line = sb.ToString();
-                    if (line.Length > 0 && line[line.Length - 1] == '\r')
-                        line = line.Substring(0, line.Length - 1);
-                    if (System.Text.RegularExpressions.Regex.IsMatch(line, @"GameState\.DebugPrintPower\(\) - CREATE_GAME$"))
-                        lastPos = lineStart;
-                    sb.Clear();
-                    lineStart = fs.Position;
+                    int nl = -1;
+                    for (int i = pos - 1; i >= 0; i--)
+                    {
+                        if (block[i] == '\n') { nl = i; break; }
+                    }
+                    if (nl < 0)
+                    {
+                        // 到了块首，残留给下一块
+                        tail = new byte[pos];
+                        Buffer.BlockCopy(block, 0, tail, 0, pos);
+                        break;
+                    }
+                    int lineStart = nl + 1;
+                    int lineLen = pos - lineStart;
+                    if (lineLen > 0 && block[lineStart + lineLen - 1] == '\r') lineLen--;
+                    if (lineLen > 0)
+                        lines.Add((lineStart, lineLen));
+                    pos = nl;
                 }
-                else
+
+                // 从后往前检查行
+                foreach (var (start, len) in lines)
                 {
-                    sb.Append((char)b);
+                    var line = Encoding.UTF8.GetString(block, start, len);
+                    if (line.Contains("GameState.DebugPrintPower()") && line.EndsWith(needle))
+                    {
+                        // 计算在文件中的绝对位置
+                        lastMatch = searchEnd + start;
+                        // 找到就返回（最后出现的 CREATE_GAME）
+                        return lastMatch;
+                    }
                 }
             }
+            return 0;
         }
-        return lastPos;
     }
 
     static long GetFileEnd(string path)
