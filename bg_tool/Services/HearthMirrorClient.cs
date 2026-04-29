@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using Microsoft.CSharp.RuntimeBinder;
 
 #nullable enable
 
@@ -161,7 +160,7 @@ public static class HearthMirrorClient
                     return true;
                 }
             }
-            catch (RuntimeBinderException)
+            catch (Exception)
             {
                 Console.WriteLine("[HearthMirror] ⚠️ AccountId.Lo 绑定失败（可能未就绪）");
             }

@@ -22,9 +22,6 @@
     <Reference Include="System.Net.Http">
       <Private>False</Private>
     </Reference>
-    <Reference Include="Microsoft.CSharp">
-      <Private>False</Private>
-    </Reference>
     <Reference Include="System.Web.Extensions">
       <Private>False</Private>
     </Reference>
