@@ -574,6 +574,8 @@ python bg_parser/bg_parser.py
 | bg_tool 炉石已启动时启动卡顿 | 04-28 | 构造函数 Task 和 LogMonitorLoop 竞争初始化 HearthMirror → 删构造函数 Task，统一在 LogMonitorLoop 中获取 |
 | bg_tool 中途启动不触发 check-league | 04-28 | 扫描阶段 IsScanning=true 跳过 STEP 13 → HandleScannedGameState 主动获取 LobbyPlayers |
 | bg_tool 非联赛对局无限重试 | 04-28 | CheckLeagueAsync 返回 bool?，false 直接停止，null 才重试 |
+| bg_tool untapped-scry-dotnet.dll 加载失败 | 04-29 | `untapped-scry-dotnet.dll` 是 C++/CLI 混合程序集（HearthMirror 的传递依赖），加载时需要 VC++ Runtime。用户未安装 VC++ 2015-2022 (x86) 时报 `FileNotFoundException: 找不到指定的模块`。**修复**：csproj 打包 `vcruntime140.dll` + `msvcp140.dll` 到输出目录，bg_tool 自带运行时，不依赖用户环境 |
+| bg_tool FetchAccountId RuntimeBinderException | 04-29 | `Reflection.GetAccountId()` 返回 dynamic 对象，炉石刚启动时内存未就绪，`accountId == null` 比较本身触发 `RuntimeBinderException: 无法对 null 引用执行运行时绑定`。**踩坑**：dynamic 对象的 `== null` 不是普通比较，底层要做运行时绑定，绑定失败就抛异常。内层 try-catch 接不住（因为炸在外层 null 比较上）。**修复**：合并为单层 try-catch，统一捕获所有 dynamic 绑定异常 |
 | 好友房 GameType 识别 | 04-24 | `StartsWith("GT_BATTLEGROUNDS")` 前缀匹配 |
 | bg_tool 对接 Flask API | v0.2.0 | check-league + update-placement |
 | UUID 问题 | v0.4.0 | gameUuid 改为服务端生成 |
@@ -695,6 +697,8 @@ Python 原型（bg_parser）功能已完善，C# 重写版（bg_tool）已完成
 ### C# net472 兼容性踩坑
 
 - ❌ **HearthMirror.dll 必须 x86 进程加载**：csproj 需 `<PlatformTarget>x86</PlatformTarget>`，否则 AnyCPU 在 64 位系统以 64 位运行，报"试图加载格式不正确的程序"
+- ❌ **HearthMirror 传递依赖 `untapped-scry-dotnet.dll` 是 C++/CLI 混合程序集**：它依赖 VC++ Runtime（`vcruntime140.dll`、`msvcp140.dll`）。用户未安装 VC++ 2015-2022 (x86) 时，`new HearthMirror.Reflection()` 能成功（纯 .NET 构造），但调用 `GetBattlegroundsLobbyInfo()` 等方法时触发 native DLL 加载，报 `FileNotFoundException: 找不到指定的模块`。**注意**：这是 native DLL 加载，不触发 .NET 的 `AssemblyResolve` 事件，所以即使 handler 从 `HDT_PATH` 找到文件也没用。**修复**：csproj 打包 VC++ Runtime DLL 到输出目录（`<Content Include="$(SystemRoot)\SysWOW64\vcruntime140.dll">`），`vcruntime140_1.dll` 不一定存在，用 `Condition="Exists(...)"` 按需复制
+- ❌ **dynamic 对象的 `== null` 比较会触发 RuntimeBinderException**：`Reflection.GetAccountId()` 返回 dynamic（COM 对象），炉石刚启动时内存未就绪，`accountId == null` 这个比较本身就要做运行时绑定，绑定失败就抛 `RuntimeBinderException: 无法对 null 引用执行运行时绑定`。**踩坑**：以为用 `if (accountId == null) return false;` 做 null 检查就安全了，实际上这行代码就是异常来源。内层 try-catch 接不住，因为异常炸在外层。**修复**：不要对 dynamic 做 null 比较，直接访问属性，用单层 try-catch 兜底
 - ❌ `namespace BgTool;`（文件作用域）→ 需要 `namespace BgTool { }`（C# 10 语法）
 - ❌ `new(...)`（目标类型 new）→ 需要 `new Regex(...)` 等显式类型（C# 9）
 - ❌ `cardId[prefix.Length..]`（范围语法）→ 需要 `cardId.Substring(prefix.Length)`（需 System.Range）
