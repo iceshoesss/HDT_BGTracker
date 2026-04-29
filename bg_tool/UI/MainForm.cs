@@ -255,6 +255,21 @@ public class MainForm : Form
         var lblLogTitle = MakeLabel("日志", 16, 4, 40, 14, 8f, FontStyle.Bold, C_TEXT_MUTED);
         pnlLog.Controls.Add(lblLogTitle);
 
+        var btnUpdate = new Button
+        {
+            Text = "🔄 检查更新",
+            Location = new Point(340, 2),
+            Size = new Size(84, 18),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = C_CARD,
+            ForeColor = C_TEXT_MUTED,
+            Font = new Font("Microsoft YaHei UI", 7f),
+            Cursor = Cursors.Hand,
+        };
+        btnUpdate.FlatAppearance.BorderColor = C_BORDER;
+        btnUpdate.Click += (s, e) => RunUpdateCheck(btnUpdate);
+        pnlLog.Controls.Add(btnUpdate);
+
         rtbLog = new RichTextBox
         {
             Location = new Point(0, 20),
@@ -273,6 +288,110 @@ public class MainForm : Form
         // 重定向 Console 输出到日志面板 + 文件
         var fileWriter = Console.Out; // Program.cs 已经重定向到文件
         Console.SetOut(new UiTextWriter(rtbLog, fileWriter));
+
+        // 启动时后台检查更新（不打扰用户）
+        Task.Run(async () =>
+        {
+            await Task.Delay(5000);  // 启动后等 5 秒再检查
+            var info = await UpdateChecker.CheckAsync();
+            if (info.HasUpdate)
+            {
+                BeginInvoke(new Action(() =>
+                {
+                    var msg = $"发现新版本 v{info.LatestVersion}（当前 v{info.CurrentVersion}）\n\n{info.ReleaseNotes}";
+                    var result = MessageBox.Show(msg, "🔄 有更新可用", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                    if (result == DialogResult.Yes)
+                        DoDownloadAndApply(info);
+                }));
+            }
+        });
+    }
+
+    // ── 更新检查 ──
+
+    void RunUpdateCheck(Button btn)
+    {
+        btn.Enabled = false;
+        btn.Text = "检查中...";
+        Task.Run(async () =>
+        {
+            var info = await UpdateChecker.CheckAsync();
+            BeginInvoke(new Action(() =>
+            {
+                btn.Enabled = true;
+                btn.Text = "🔄 检查更新";
+                if (info.HasUpdate)
+                {
+                    var msg = $"发现新版本 v{info.LatestVersion}（当前 v{info.CurrentVersion}）\n\n{info.ReleaseNotes}";
+                    var result = MessageBox.Show(msg, "🔄 有更新可用", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                    if (result == DialogResult.Yes)
+                        DoDownloadAndApply(info);
+                }
+                else
+                {
+                    MessageBox.Show($"已是最新版本 v{info.CurrentVersion}", "检查更新", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            }));
+        });
+    }
+
+    void DoDownloadAndApply(UpdateChecker.UpdateInfo info)
+    {
+        var dlg = new Form
+        {
+            Text = "下载更新",
+            Size = new Size(360, 120),
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            StartPosition = FormStartPosition.CenterParent,
+            BackColor = C_BG,
+            ForeColor = C_TEXT,
+        };
+
+        var lbl = new Label
+        {
+            Text = $"正在下载 v{info.LatestVersion}...",
+            Location = new Point(20, 15),
+            Size = new Size(300, 20),
+            ForeColor = C_TEXT,
+        };
+
+        var progressBar = new ProgressBar
+        {
+            Location = new Point(20, 45),
+            Size = new Size(300, 25),
+            Style = ProgressBarStyle.Continuous,
+        };
+
+        dlg.Controls.AddRange(new Control[] { lbl, progressBar });
+        dlg.Show(this);
+
+        var progress = new Progress<int>(pct =>
+        {
+            progressBar.Value = pct;
+            lbl.Text = $"正在下载 v{info.LatestVersion}... {pct}%";
+        });
+
+        var cts = new CancellationTokenSource();
+
+        Task.Run(async () =>
+        {
+            var file = await UpdateChecker.DownloadAsync(info, progress, cts.Token);
+            BeginInvoke(new Action(() =>
+            {
+                dlg.Close();
+                if (file != null)
+                {
+                    UpdateChecker.ApplyUpdate(file);
+                }
+                else
+                {
+                    MessageBox.Show("下载失败，请手动下载：\n" + info.DownloadUrl,
+                        "更新失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }));
+        });
     }
 
     // ── 辅助：创建 Label ──
