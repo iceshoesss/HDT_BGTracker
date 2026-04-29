@@ -150,24 +150,18 @@ public static class HearthMirrorClient
         {
             var accountId = _reflection.GetAccountId();
             if (accountId == null) return false;
-            try
+            var lo = (ulong)accountId.Lo;
+            if (lo != 0)
             {
-                var lo = (ulong)accountId.Lo;
-                if (lo != 0)
-                {
-                    LocalPlayerLo = lo;
-                    Console.WriteLine("[HearthMirror] ✅ AccountId.Lo=" + LocalPlayerLo);
-                    return true;
-                }
-            }
-            catch (Exception)
-            {
-                Console.WriteLine("[HearthMirror] ⚠️ AccountId.Lo 绑定失败（可能未就绪）");
+                LocalPlayerLo = lo;
+                Console.WriteLine("[HearthMirror] ✅ AccountId.Lo=" + LocalPlayerLo);
+                return true;
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[HearthMirror] ❌ FetchAccountId 失败: {ex.GetType().Name}: {ex.Message}");
+            // RuntimeBinderException: accountId 或 accountId.Lo 动态绑定失败（内存未就绪）
+            Console.WriteLine($"[HearthMirror] ⚠️ FetchAccountId 失败: {ex.GetType().Name}: {ex.Message}");
         }
         return false;
     }
