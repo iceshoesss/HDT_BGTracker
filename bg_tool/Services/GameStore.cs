@@ -26,7 +26,7 @@ public static class GameStore
     }
 
     /// <summary>
-    /// 加载所有记录
+    /// 加载所有记录（兼容旧 JSON 数组格式 + 新 JSONL 格式）
     /// </summary>
     public static List<GameRecord> Load()
     {
@@ -37,7 +37,11 @@ public static class GameStore
         {
             var text = File.ReadAllText(_path, Encoding.UTF8);
             if (string.IsNullOrWhiteSpace(text)) return new List<GameRecord>();
-            return ParseJsonArray(text);
+
+            var trimmed = text.TrimStart();
+            if (trimmed.StartsWith("["))
+                return ParseJsonArray(text);  // 旧格式兼容
+            return ParseJsonLines(text);      // 新 JSONL 格式
         }
         catch (Exception e)
         {
@@ -47,17 +51,16 @@ public static class GameStore
     }
 
     /// <summary>
-    /// 追加一条记录
+    /// 追加一条记录（JSONL 格式，每行一条，避免全量重写）
     /// </summary>
     public static void Save(GameRecord record)
     {
         if (string.IsNullOrEmpty(_path)) Init();
 
+        var line = RecordToJson(record);
         lock (_lock)
         {
-            var records = Load();
-            records.Add(record);
-            WriteAll(records);
+            File.AppendAllText(_path, line + "\n", Encoding.UTF8);
         }
 
         Console.WriteLine($"[GameStore] 已保存: 第{record.Placement}名 {record.HeroName} {(record.Points >= 0 ? "+" : "")}{record.Points}");
@@ -86,35 +89,46 @@ public static class GameStore
     {
         var all = Load();
         var result = new List<GameRecord>();
-        var start = Math.Max(0, all.Count - count);
-        for (int i = all.Count - 1; i >= start; i--)
+        for (int i = all.Count - 1; i >= 0 && result.Count < count; i--)
             result.Add(all[i]);
         return result;
     }
 
-    // ── 极简 JSON 序列化（无第三方依赖） ──
-
-    private static void WriteAll(List<GameRecord> records)
+    /// <summary>
+    /// 单条记录序列化为 JSON 字符串
+    /// </summary>
+    private static string RecordToJson(GameRecord r)
     {
         var sb = new StringBuilder();
-        sb.Append("[\n");
-        for (int i = 0; i < records.Count; i++)
-        {
-            var r = records[i];
-            if (i > 0) sb.Append(",\n");
-            sb.Append("  {");
-            sb.Append($"\"battleTag\":\"{Esc(r.BattleTag)}\",");
-            sb.Append($"\"heroName\":\"{Esc(r.HeroName)}\",");
-            sb.Append($"\"heroCardId\":\"{Esc(r.HeroCardId)}\",");
-            sb.Append($"\"placement\":{r.Placement},");
-            sb.Append($"\"points\":{r.Points},");
-            sb.Append($"\"gameUuid\":\"{Esc(r.GameUuid)}\",");
-            sb.Append($"\"timestamp\":\"{Esc(r.Timestamp)}\"");
-            sb.Append("}");
-        }
-        sb.Append("\n]\n");
-        File.WriteAllText(_path, sb.ToString(), Encoding.UTF8);
+        sb.Append("{");
+        sb.Append($"\"battleTag\":\"{Esc(r.BattleTag)}\",");
+        sb.Append($"\"heroName\":\"{Esc(r.HeroName)}\",");
+        sb.Append($"\"heroCardId\":\"{Esc(r.HeroCardId)}\",");
+        sb.Append($"\"placement\":{r.Placement},");
+        sb.Append($"\"points\":{r.Points},");
+        sb.Append($"\"gameUuid\":\"{Esc(r.GameUuid)}\",");
+        sb.Append($"\"timestamp\":\"{Esc(r.Timestamp)}\"");
+        sb.Append("}");
+        return sb.ToString();
     }
+
+    /// <summary>
+    /// 解析 JSONL 格式（每行一条 JSON）
+    /// </summary>
+    private static List<GameRecord> ParseJsonLines(string text)
+    {
+        var result = new List<GameRecord>();
+        foreach (var line in text.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrEmpty(trimmed) || !trimmed.StartsWith("{")) continue;
+            var rec = ParseRecord(trimmed);
+            if (rec != null) result.Add(rec);
+        }
+        return result;
+    }
+
+    // ── 极简 JSON 序列化（无第三方依赖） ──
 
     private static List<GameRecord> ParseJsonArray(string text)
     {
