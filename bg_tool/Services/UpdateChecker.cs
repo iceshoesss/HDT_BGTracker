@@ -21,9 +21,19 @@ public static class UpdateChecker
     private const string REPO_OWNER = "iceshoesss";
     private const string REPO_NAME = "HDT_BGTracker";
     private const string GITHUB_API = "https://api.github.com/repos/{0}/{1}/releases/latest";
-    private const string DOWNLOAD_MIRROR = "https://ghproxy.com/";  // 下载镜像前缀
+    private const string DEFAULT_MIRROR = "https://gh-proxy.com/";  // 默认下载镜像
 
     private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+    private static string _mirrorUrl = DEFAULT_MIRROR;
+
+    /// <summary>
+    /// 设置镜像代理地址（由 Config 传入）
+    /// </summary>
+    public static void SetMirror(string mirror)
+    {
+        if (!string.IsNullOrEmpty(mirror))
+            _mirrorUrl = mirror.TrimEnd('/') + "/";
+    }
 
     static UpdateChecker()
     {
@@ -111,7 +121,7 @@ public static class UpdateChecker
                     result.FileName = asset.Name;
                     result.FileSize = asset.Size;
                     // 生成镜像 URL
-                    result.MirrorUrl = DOWNLOAD_MIRROR + asset.Url;
+                    result.MirrorUrl = _mirrorUrl + asset.Url;
                     break;
                 }
             }

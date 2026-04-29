@@ -20,6 +20,7 @@ public class Config
     public string ApiBaseUrl { get; set; } = "http://localhost:5000";
     public string Region { get; set; } = "CN";
     public string Mode { get; set; } = "solo";
+    public string UpdateMirror { get; set; } = "https://gh-proxy.com/";
     public bool TestMode { get; set; } = false;
 
     public static Config Load()
@@ -92,6 +93,7 @@ public class Config
                     case "apiBaseUrl": cfg.ApiBaseUrl = val; break;
                     case "region": cfg.Region = val; break;
                     case "mode": cfg.Mode = val; break;
+                    case "updateMirror": cfg.UpdateMirror = val; break;
                     case "testMode": cfg.TestMode = val.Trim().ToLower() == "true"; break;
                 }
             }

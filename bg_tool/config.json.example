@@ -2,5 +2,6 @@
   "apiBaseUrl": "http://localhost:5000",
   "region": "CN",
   "mode": "solo",
+  "updateMirror": "https://gh-proxy.com/",
   "testMode": true
 }

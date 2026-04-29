@@ -96,6 +96,7 @@ public class MainForm : Form
         _config = Config.Load();
         ApiClient.Init(_config.ApiBaseUrl);
         GameStore.Init();
+        UpdateChecker.SetMirror(_config.UpdateMirror);
 
         BuildUI();
         UpdateUI();
