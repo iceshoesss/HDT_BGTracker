@@ -89,9 +89,9 @@ public static class HearthMirrorClient
             Console.WriteLine("[HearthMirror] ✅ 已加载，可获取对手 Lo");
             return true;
         }
-        catch
+        catch (Exception ex)
         {
-            // 失败不设 _initAttempted，允许重试（炉石可能还没启动）
+            Console.WriteLine($"[HearthMirror] ❌ 初始化失败: {ex.GetType().Name}: {ex.Message}");
             return false;
         }
     }
@@ -133,7 +133,10 @@ public static class HearthMirrorClient
                 return true;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[HearthMirror] ❌ FetchBattleTag 失败: {ex.GetType().Name}: {ex.Message}");
+        }
         return false;
     }
 
@@ -153,7 +156,10 @@ public static class HearthMirrorClient
                 return true;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[HearthMirror] ❌ FetchAccountId 失败: {ex.GetType().Name}: {ex.Message}");
+        }
         return false;
     }
 
