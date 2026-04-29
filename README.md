@@ -238,6 +238,9 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 > Web 端更新日志已迁移至 [LeagueWeb](https://github.com/iceshoesss/LeagueWeb) 仓库。
 
+### bg_tool v0.5.8 (2026-04-29)
+- 修复 FetchAccountId 动态绑定异常报错：accountId 是 dynamic 对象，null 比较触发 RuntimeBinderException
+
 ### bg_tool v0.5.7 (2026-04-29)
 - 修复缺少 VC++ Runtime 的用户 `untapped-scry-dotnet.dll` 加载失败：打包 x86 VC++ Runtime DLL，不依赖用户系统环境
 
