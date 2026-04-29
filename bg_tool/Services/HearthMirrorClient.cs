@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using Microsoft.CSharp.RuntimeBinder;
 
 #nullable enable
 
@@ -149,11 +150,20 @@ public static class HearthMirrorClient
         try
         {
             var accountId = _reflection.GetAccountId();
-            if (accountId != null && accountId.Lo != 0)
+            if (accountId == null) return false;
+            try
             {
-                LocalPlayerLo = accountId.Lo;
-                Console.WriteLine("[HearthMirror] ✅ AccountId.Lo=" + LocalPlayerLo);
-                return true;
+                var lo = (ulong)accountId.Lo;
+                if (lo != 0)
+                {
+                    LocalPlayerLo = lo;
+                    Console.WriteLine("[HearthMirror] ✅ AccountId.Lo=" + LocalPlayerLo);
+                    return true;
+                }
+            }
+            catch (RuntimeBinderException)
+            {
+                Console.WriteLine("[HearthMirror] ⚠️ AccountId.Lo 绑定失败（可能未就绪）");
             }
         }
         catch (Exception ex)
