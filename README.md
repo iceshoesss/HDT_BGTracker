@@ -238,6 +238,13 @@ MongoDB 数据库: `hearthstone`，集合: `player_records`
 
 > Web 端更新日志已迁移至 [LeagueWeb](https://github.com/iceshoesss/LeagueWeb) 仓库。
 
+### bg_tool v0.5.7 (2026-04-29)
+- 修复缺少 VC++ Runtime 的用户 `untapped-scry-dotnet.dll` 加载失败：打包 x86 VC++ Runtime DLL，不依赖用户系统环境
+
+### bg_tool v0.5.6 (2026-04-29)
+- HearthMirror 初始化失败时打印异常信息
+- games.json 改为 JSONL 追加写入
+
 ### bg_tool v0.5.4 (2026-04-27)
 - 修复退出游戏再进后无法 upload-placement：扫描发现新对局时未重置 `_leagueChecked`，导致 check-league 被跳过
 - `game_start` 和扫描检测新对局时同步清空 `_currentGameUuid`，避免残留上一局 gameUuid
