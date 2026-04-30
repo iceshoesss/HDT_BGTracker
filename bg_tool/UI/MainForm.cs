@@ -62,6 +62,7 @@ public class MainForm : Form
     // check-league 持续重试（初始 3 次失败后，每 15 秒重试直到成功或对局结束）
     System.Threading.Timer? _checkLeagueRetryTimer;
     string? _pendingPlayerTag;
+    volatile int _gameGeneration = 0; // 局数代际标记：game_start 递增，过期定时器回调自动跳过
     ulong? _pendingAccountIdLo;
     List<LobbyPlayer>? _pendingLobbyPlayers;
     string? _pendingRegion;
@@ -782,6 +783,7 @@ public class MainForm : Form
                             _state = AppState.InGame;
                             _leagueChecked = false;
                             _currentGameUuid = "";
+                            _gameGeneration++; // 使上一局的定时器回调失效
                             uiChanged = true;
                             break;
                         case "reconnect":
@@ -959,11 +961,12 @@ public class MainForm : Form
             _pendingLobbyPlayers = lobbyPlayers;
             _pendingRegion = region;
             _pendingMode = mode;
+            int generation = _gameGeneration; // 捕获当前局数
 
             _checkLeagueRetryTimer?.Dispose();
             _checkLeagueRetryTimer = new System.Threading.Timer(async _ =>
             {
-                if (_state != AppState.InGame)
+                if (_state != AppState.InGame || _gameGeneration != generation)
                 {
                     StopCheckLeagueRetry();
                     return;
@@ -972,6 +975,14 @@ public class MainForm : Form
                 var retryOk = await ApiClient.CheckLeagueAsync(
                     _pendingPlayerTag!, _pendingAccountIdLo!.Value, _pendingLobbyPlayers!,
                     _pendingRegion!, _pendingMode!, DateTime.UtcNow.ToString("o"));
+
+                // 再次检查代际：await 期间可能已换了新局
+                if (_gameGeneration != generation)
+                {
+                    Console.WriteLine("[API] ⏭️ 定时器回调已过期（新局已开始），丢弃结果");
+                    StopCheckLeagueRetry();
+                    return;
+                }
 
                 if (retryOk == true)
                 {

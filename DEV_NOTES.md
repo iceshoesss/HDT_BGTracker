@@ -579,6 +579,7 @@ python bg_parser/bg_parser.py
 | 好友房 GameType 识别 | 04-24 | `StartsWith("GT_BATTLEGROUNDS")` 前缀匹配 |
 | bg_tool 对接 Flask API | v0.2.0 | check-league + update-placement |
 | UUID 问题 | v0.4.0 | gameUuid 改为服务端生成 |
+| **check-league 定时器竞态覆盖 gameUuid** | 04-30 | **根因**：`System.Threading.Timer.Dispose()` 只能阻止尚未开始的回调，无法中断已在执行中的回调。当 `game_start` 调用 `StopCheckLeagueRetry()` 时，定时器回调可能已通过 `_state == InGame` 检查，正在 `await CheckLeagueAsync` 中。Dispose 后这个"僵尸"回调继续执行，用上一局的 LobbyPlayers 调 check-league，拿到旧 gameUuid，然后 `HandleCheckLeagueResult` 覆盖 `_currentGameUuid`。**修复**：新增 `_gameGeneration` 代际标记（`game_start` 递增），定时器回调在 `await` 前后各检查一次代际，过期则丢弃结果。HDT 插件同理。 |
 
 #### 未修复
 

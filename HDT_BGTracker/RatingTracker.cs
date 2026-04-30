@@ -82,6 +82,7 @@ namespace HDT_BGTracker
         private bool _lobbyLogged;
         private bool _isLeagueGame;
         private string _cachedGameUuid;
+        private volatile int _gameGeneration; // 局数代际标记：新局递增，过期 Task 结果自动丢弃
         private int _lastStepValue = -1;
         private int _placementRetryCount;
         private const int MaxPlacementRetries = 10;
@@ -150,7 +151,10 @@ namespace HDT_BGTracker
                     _wasInBgGame = true;
 
                     if (_bgGameStartTime == DateTime.MinValue)
+                    {
                         _bgGameStartTime = DateTime.Now;
+                        _gameGeneration++; // 新局开始，使上一局的异步回调失效
+                    }
 
                     // STEP 检测：STEP 13 (MAIN_CLEANUP) = 第一轮战斗结束
                     try
@@ -282,6 +286,7 @@ namespace HDT_BGTracker
         private void CheckLeagueQueue()
         {
             if (_httpClient == null) return;
+            int generation = _gameGeneration; // 捕获当前局数
 
             Task.Run(() =>
             {
@@ -403,7 +408,12 @@ namespace HDT_BGTracker
                             // <<< END TEST_MODE
 
                             // 提取服务端返回的 gameUuid（淘汰赛由服务端生成）
-                            if (dict != null && dict.ContainsKey("gameUuid"))
+                            // 代际检查：如果已换了新局，丢弃过期结果
+                            if (_gameGeneration != generation)
+                            {
+                                Log($"CheckLeagueQueue: ⏭️ 结果已过期（新局已开始），丢弃 gameUuid={dict?["gameUuid"]}");
+                            }
+                            else if (dict != null && dict.ContainsKey("gameUuid"))
                             {
                                 _cachedGameUuid = dict["gameUuid"]?.ToString() ?? "";
                                 Log($"CheckLeagueQueue: 服务端 gameUuid = {_cachedGameUuid}");
